@@ -1,0 +1,26 @@
+{
+    "name": "neos/api",
+    "type": "neos-package",
+    "description": "HTTP API for Neos, defined with neos/openapi and secured by neos/oauth",
+    "license": "MIT",
+    "require": {
+        "php": "^8.4",
+        "neos/flow": "^9.0",
+        "neos/neos": "^9.0",
+        "neos/oauth": "@dev",
+        "neos/openapi": "dev-main",
+        "neos/openapi-flowadapter": "dev-main",
+        "neos/schematic": "dev-main",
+        "neos/jsonschema": "dev-main"
+    },
+    "autoload": {
+        "psr-4": {
+            "Neos\\Api\\": "Classes/"
+        }
+    },
+    "extra": {
+        "neos": {
+            "package-key": "Neos.Api"
+        }
+    }
+}

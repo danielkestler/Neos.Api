@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex">
+    <title>Neos API</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@{swaggerUiVersion}/swagger-ui.css">
+</head>
+<body>
+<div id="swagger-ui"></div>
+<script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@{swaggerUiVersion}/swagger-ui-bundle.js"></script>
+<script>
+    const config = {config -> f:format.raw()};
+    window.ui = SwaggerUIBundle({
+        url: config.specUrl,
+        dom_id: '#swagger-ui',
+        oauth2RedirectUrl: window.location.origin + config.redirectPath,
+    });
+    window.ui.initOAuth({
+        clientId: config.clientId,
+        usePkceWithAuthorizationCodeGrant: true,
+        scopes: config.scopes,
+    });
+</script>
+</body>
+</html>

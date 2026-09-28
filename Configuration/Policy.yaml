@@ -1,0 +1,11 @@
+privilegeTargets:
+  'Neos\Flow\Security\Authorization\Privilege\Method\MethodPrivilege':
+    # The docs are public, calling the API requires logging in
+    'Neos.Api:Docs':
+      matcher: 'method(Neos\Api\Controller\DocsController->(index|oauth2Redirect)Action())'
+
+roles:
+  'Neos.Flow:Everybody':
+    privileges:
+      - privilegeTarget: 'Neos.Api:Docs'
+        permission: GRANT

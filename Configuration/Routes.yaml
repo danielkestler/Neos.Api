@@ -1,0 +1,19 @@
+-
+  name: 'API docs'
+  uriPattern: 'api/docs'
+  defaults:
+    '@package': 'Neos.Api'
+    '@controller': 'Docs'
+    '@action': 'index'
+    '@format': 'html'
+  httpMethods: ['GET']
+
+-
+  name: 'API docs: OAuth redirect'
+  uriPattern: 'api/docs/oauth2-redirect'
+  defaults:
+    '@package': 'Neos.Api'
+    '@controller': 'Docs'
+    '@action': 'oauth2Redirect'
+    '@format': 'html'
+  httpMethods: ['GET']
