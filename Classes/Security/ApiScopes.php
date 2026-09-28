@@ -6,10 +6,12 @@ namespace Neos\Api\Security;
 /**
  * The OAuth scopes of the API, to be used in the operations' `security` requirements
  *
- * Each one is registered with its description in Neos.OAuth.scopes, see Settings.yaml
+ * Each one is the matcher of an ApiPrivilege target in Policy.yaml, which the account must hold as well, see
+ * PrivilegeScopes
  */
 final class ApiScopes
 {
-    public const string READ = 'neos.read';
-    public const string WRITE = 'neos.write';
+    public const string ME_READ = 'me.read';
+    public const string USERS_READ = 'users.read';
+    public const string USERS_WRITE = 'users.write';
 }

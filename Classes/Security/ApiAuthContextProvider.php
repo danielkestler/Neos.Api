@@ -8,7 +8,6 @@ use Neos\Flow\Security\Account;
 use Neos\Flow\Security\Authorization\PrivilegeManagerInterface;
 use Neos\Flow\Security\Policy\PolicyService;
 use Neos\Flow\Security\Policy\Role;
-use Neos\OAuth\Domain\ScopeRegistry;
 use Neos\OAuth\Security\AuthorizationServerMetadata;
 use Neos\OAuth\Security\OAuthContext;
 use Neos\OpenApi\FlowAdapter\AuthContextProviderWithSchemes;
@@ -20,9 +19,9 @@ use Neos\OpenApi\Spec\SecuritySchemeOrReferenceObjectMap;
 use Psr\Http\Message\ServerRequestInterface;
 
 /**
- * Bridges Neos.OAuth to neos/openapi: operations declare
- * `security: [self::SCOPES => [ApiScopes::WRITE], self::PRIVILEGES => [ApiPrivileges::USERS_WRITE]]`, this hands them
- * the caller if the request's access token grants those scopes and its account holds those privileges
+ * Bridges Neos.OAuth to neos/openapi: operations declare `security: [self::SCOPES => [ApiScopes::USERS_WRITE]]`, this
+ * hands them the caller if the request's access token grants those scopes and its account holds the ApiPrivileges
+ * they stand for (see PrivilegeScopes). The privileges come from the account's roles, the scopes only narrow them down
  */
 #[Flow\Scope('singleton')]
 final class ApiAuthContextProvider implements AuthContextProviderWithSchemes
@@ -32,15 +31,9 @@ final class ApiAuthContextProvider implements AuthContextProviderWithSchemes
      */
     public const string SCOPES = 'oauth2';
 
-    /**
-     * The name of a security scheme that isn't a credential of its own: OpenAPI lets requirements of non-OAuth schemes
-     * list role names, which is how the operations declare the privileges the account of the OAuth token must hold
-     */
-    public const string PRIVILEGES = 'neosPrivileges';
-
     public function __construct(
         private readonly OAuthContext $oauthContext,
-        private readonly ScopeRegistry $scopeRegistry,
+        private readonly PrivilegeScopes $privilegeScopes,
         private readonly AuthorizationServerMetadata $authorizationServer,
         private readonly PolicyService $policyService,
         private readonly PrivilegeManagerInterface $privilegeManager,
@@ -49,7 +42,10 @@ final class ApiAuthContextProvider implements AuthContextProviderWithSchemes
 
     public function securitySchemes(): SecuritySchemeOrReferenceObjectMap
     {
-        $scopes = $this->scopeRegistry->descriptions();
+        $scopes = [];
+        foreach ($this->privilegeScopes->scopes() as $scope => $description) {
+            $scopes[$scope] = sprintf('%s (privilege %s)', $description, $this->privilegeScopes->privilegeTargetOf($scope));
+        }
         $tokenUrl = $this->authorizationServer->tokenUrl();
         return SecuritySchemeOrReferenceObjectMap::create()
             ->with(self::SCOPES, SecuritySchemeObject::oauth2(
@@ -58,12 +54,9 @@ final class ApiAuthContextProvider implements AuthContextProviderWithSchemes
                     authorizationCode: new OAuthFlowObject(scopes: $scopes, authorizationUrl: $this->authorizationServer->authorizationUrl(), tokenUrl: $tokenUrl, refreshUrl: $tokenUrl),
                 ),
                 description: sprintf(
-                    'OAuth 2 access token of a Neos account. The authorization code flow requires PKCE (%s).',
+                    'OAuth 2 access token of a Neos account. Each scope stands for a Neos privilege (see its description), which the roles of the account must grant as well: a scope can only narrow down what the account may do. The authorization code flow requires PKCE (%s).',
                     implode(', ', $this->authorizationServer->codeChallengeMethods()),
                 ),
-            ))
-            ->with(self::PRIVILEGES, SecuritySchemeObject::bearer(
-                description: sprintf('Not a credential of its own, nothing to enter: lists the Neos privileges the account of the "%s" access token must hold, which its roles grant.', self::SCOPES),
             ));
     }
 
@@ -81,7 +74,7 @@ final class ApiAuthContextProvider implements AuthContextProviderWithSchemes
         $missingPrivileges = null;
         foreach ($requirement as $alternative) {
             // anonymous alternatives are handled by neos/openapi, other schemes are unknown to this provider
-            if (!isset($alternative[self::SCOPES]) || array_diff(array_keys($alternative), [self::SCOPES, self::PRIVILEGES]) !== []) {
+            if (array_keys($alternative) !== [self::SCOPES]) {
                 continue;
             }
             if ($grant->missingScopes(...$alternative[self::SCOPES]) !== []) {
@@ -90,7 +83,7 @@ final class ApiAuthContextProvider implements AuthContextProviderWithSchemes
             }
             $roles = $this->rolesOf($grant->account);
             $missing = array_values(array_filter(
-                $alternative[self::PRIVILEGES] ?? [],
+                array_map($this->privilegeScopes->privilegeTargetOf(...), $alternative[self::SCOPES]),
                 fn (string $privilegeTarget) => !$this->privilegeManager->isPrivilegeTargetGrantedForRoles($roles, $privilegeTarget),
             ));
             if ($missing === []) {

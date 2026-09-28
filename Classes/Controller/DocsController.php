@@ -4,9 +4,9 @@ declare(strict_types=1);
 namespace Neos\Api\Controller;
 
 use GuzzleHttp\Psr7\Response;
+use Neos\Api\Security\PrivilegeScopes;
 use Neos\Flow\Annotations as Flow;
 use Neos\Flow\Mvc\Controller\ActionController;
-use Neos\OAuth\Domain\ScopeRegistry;
 use Neos\OpenApi\FlowAdapter\CompiledApis;
 use Psr\Http\Message\ResponseInterface;
 
@@ -21,7 +21,7 @@ class DocsController extends ActionController
     protected CompiledApis $compiledApis;
 
     #[Flow\Inject]
-    protected ScopeRegistry $scopeRegistry;
+    protected PrivilegeScopes $privilegeScopes;
 
     /**
      * @var array{clientId: string, swaggerUiVersion: string}
@@ -38,7 +38,7 @@ class DocsController extends ActionController
                 // absolute, but from the browser's location rather than the request's Host header
                 'redirectPath' => $this->uriBuilder->reset()->uriFor('oauth2Redirect'),
                 'clientId' => $this->docsSettings['clientId'],
-                'scopes' => $this->scopeRegistry->identifiers(),
+                'scopes' => array_keys($this->privilegeScopes->scopes()),
             ], JSON_THROW_ON_ERROR | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_SLASHES),
         ]);
     }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Neos\Api\Tests\Functional\Endpoints;
 
 use GuzzleHttp\Psr7\ServerRequest;
+use Neos\Api\Security\PrivilegeScopes;
 use Neos\Flow\Security\Authentication\AuthenticationManagerInterface;
 use Neos\Flow\Security\Authentication\Token\BearerToken;
 use Neos\Flow\Security\Authentication\TokenAndProviderFactoryInterface;
@@ -22,11 +23,11 @@ abstract class EndpointTestCase extends FunctionalTestCase
     private const string SECRET = 'machine-secret';
 
     /**
-     * A confidential client with the client credentials grant, acting as the account; persist it before requesting tokens
+     * A confidential client with the client credentials grant and all scopes of the API, acting as the account; persist it before requesting tokens
      */
     protected function addMachineClient(string $clientIdentifier, string $accountIdentifier): void
     {
-        $this->objectManager->get(OAuthClientRepository::class)->add(new OAuthClient($clientIdentifier, $clientIdentifier, password_hash(self::SECRET, PASSWORD_DEFAULT), [], [OAuthClient::GRANT_CLIENT_CREDENTIALS], ['neos.read', 'neos.write'], false, $accountIdentifier));
+        $this->objectManager->get(OAuthClientRepository::class)->add(new OAuthClient($clientIdentifier, $clientIdentifier, password_hash(self::SECRET, PASSWORD_DEFAULT), [], [OAuthClient::GRANT_CLIENT_CREDENTIALS], array_keys($this->objectManager->get(PrivilegeScopes::class)->scopes()), false, $accountIdentifier));
     }
 
     protected function token(string $clientIdentifier, ?string $scope): string

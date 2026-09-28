@@ -29,7 +29,7 @@ class MeTest extends EndpointTestCase
     #[Test]
     public function returnsTheAccountOfTheToken(): void
     {
-        $response = $this->get('/api/me', $this->token('editor-machine', 'neos.read'));
+        $response = $this->get('/api/me', $this->token('editor-machine', 'me.read'));
 
         self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
         $account = ['identifier' => 'editor', 'roles' => ['Neos.Neos:Editor']];
@@ -44,14 +44,14 @@ class MeTest extends EndpointTestCase
                 'active' => true,
                 'accounts' => [$account],
             ],
-            'token' => ['client' => 'editor-machine', 'scopes' => ['neos.read']],
+            'token' => ['client' => 'editor-machine', 'scopes' => ['me.read']],
         ], self::json($response));
     }
 
     #[Test]
     public function userIsNullForAccountsWithoutUser(): void
     {
-        $response = $this->get('/api/me', $this->token('service-machine', 'neos.read'));
+        $response = $this->get('/api/me', $this->token('service-machine', 'me.read'));
 
         self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
         $body = self::json($response);
@@ -77,7 +77,16 @@ class MeTest extends EndpointTestCase
         $response = $this->get('/api/me', $this->token('editor-machine', null));
 
         self::assertSame(403, $response->getStatusCode(), (string)$response->getBody());
-        self::assertStringContainsString('neos.read', self::json($response)['detail']);
+        self::assertStringContainsString('me.read', self::json($response)['detail']);
+    }
+
+    #[Test]
+    public function otherScopesDoNotGrantIt(): void
+    {
+        $response = $this->get('/api/me', $this->token('editor-machine', 'users.read users.write'));
+
+        self::assertSame(403, $response->getStatusCode(), (string)$response->getBody());
+        self::assertStringContainsString('me.read', self::json($response)['detail']);
     }
 
     #[Test]
@@ -87,7 +96,7 @@ class MeTest extends EndpointTestCase
 
         self::assertSame(200, $response->getStatusCode());
         $document = self::json($response);
-        self::assertSame([['oauth2' => ['neos.read']]], $document['paths']['/me']['get']['security']);
+        self::assertSame([['oauth2' => ['me.read']]], $document['paths']['/me']['get']['security']);
         self::assertSame('oauth2', $document['components']['securitySchemes']['oauth2']['type']);
         self::assertArrayHasKey('MeResponse', $document['components']['schemas']);
     }

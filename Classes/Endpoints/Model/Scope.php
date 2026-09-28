@@ -26,7 +26,7 @@ final readonly class Scope implements ProvidesSchema
         static $schema = null;
         return $schema ??= StringSchema::create(
             description: 'An OAuth scope granted to the access token',
-            examples: ['neos.read'],
+            examples: ['users.read'],
             pattern: '^[^\\s]+$',
         );
     }

@@ -21,16 +21,15 @@ Neos:
           authContextProvider: 'Neos\Api\Security\ApiAuthContextProvider'
 
   OAuth:
-    # one entry per constant of Neos\Api\Security\ApiScopes
-    scopes:
-      'neos.read': 'Read your account and the content of Neos'
-      'neos.write': 'Change the content and the users of Neos'
+    # the scopes are the ApiPrivilege targets of Policy.yaml
+    scopeProviders:
+      'Neos.Api': 'Neos\Api\Security\PrivilegeScopes'
     protectedResources:
       # the key is Neos\Api\Http\OAuthChallengeMiddleware::RESOURCE
       'Neos.Api':
         path: 'api'
         name: 'Neos API'
-        scopes: ['neos.read', 'neos.write']
+        scopeProvider: 'Neos\Api\Security\PrivilegeScopes'
         documentation: 'api/docs'
     clients:
       # Swagger UI on /api/docs: users log in with their Neos account (authorization code flow with PKCE)

@@ -4,19 +4,28 @@ privilegeTargets:
     'Neos.Api:Docs':
       matcher: 'method(Neos\Api\Controller\DocsController->(index|oauth2Redirect)Action())'
 
-  # one entry per constant of Neos\Api\Security\ApiPrivileges, required in the operations' security
+  # Each one is an OAuth scope as well: the matcher is its name (a constant of Neos\Api\Security\ApiScopes), the label
+  # its description on the consent page. A token needs the scope, its account the privilege
   'Neos\Api\Security\ApiPrivilege':
+    'Neos.Api:Me.Read':
+      label: 'Read your account'
+      matcher: 'me.read'
     'Neos.Api:Users.Read':
       label: 'List and read the Neos users'
-      matcher: 'Users.Read'
+      matcher: 'users.read'
     'Neos.Api:Users.Write':
       label: 'Change the Neos users'
-      matcher: 'Users.Write'
+      matcher: 'users.write'
 
 roles:
   'Neos.Flow:Everybody':
     privileges:
       - privilegeTarget: 'Neos.Api:Docs'
+        permission: GRANT
+
+  'Neos.Flow:AuthenticatedUser':
+    privileges:
+      - privilegeTarget: 'Neos.Api:Me.Read'
         permission: GRANT
 
   # administrators are editors, too

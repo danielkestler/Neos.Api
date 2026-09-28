@@ -41,7 +41,7 @@ class UsersTest extends EndpointTestCase
     #[Test]
     public function listsAllUsersForEditors(): void
     {
-        $response = $this->get('/api/users', $this->token('editor-machine', 'neos.read'));
+        $response = $this->get('/api/users', $this->token('editor-machine', 'users.read'));
 
         self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
         $users = self::json($response)['users'];
@@ -61,7 +61,7 @@ class UsersTest extends EndpointTestCase
     #[Test]
     public function getsAUserForEditors(): void
     {
-        $response = $this->get('/api/users/' . $this->adminId, $this->token('editor-machine', 'neos.read'));
+        $response = $this->get('/api/users/' . $this->adminId, $this->token('editor-machine', 'users.read'));
 
         self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
         self::assertSame('Ada Admin', self::json($response)['label']);
@@ -70,7 +70,7 @@ class UsersTest extends EndpointTestCase
     #[Test]
     public function readingIsDeniedToNonEditors(): void
     {
-        $token = $this->token('manager-machine', 'neos.read');
+        $token = $this->token('manager-machine', 'users.read');
         foreach (['/api/users', '/api/users/' . $this->adminId] as $path) {
             $response = $this->get($path, $token);
 
@@ -83,24 +83,24 @@ class UsersTest extends EndpointTestCase
     #[Test]
     public function unknownUsersAreNotFound(): void
     {
-        $response = $this->get('/api/users/' . self::UNKNOWN_ID, $this->token('editor-machine', 'neos.read'));
+        $response = $this->get('/api/users/' . self::UNKNOWN_ID, $this->token('editor-machine', 'users.read'));
         self::assertSame(404, $response->getStatusCode(), (string)$response->getBody());
         self::assertSame('application/problem+json', $response->getHeaderLine('Content-Type'));
 
-        $response = $this->patch('/api/users/' . self::UNKNOWN_ID, $this->token('admin-machine', 'neos.write'), ['firstName' => 'Nobody']);
+        $response = $this->patch('/api/users/' . self::UNKNOWN_ID, $this->token('admin-machine', 'users.write'), ['firstName' => 'Nobody']);
         self::assertSame(404, $response->getStatusCode(), (string)$response->getBody());
     }
 
     #[Test]
     public function rejectsInvalidUserIds(): void
     {
-        self::assertSame(400, $this->get('/api/users/not-a-uuid', $this->token('editor-machine', 'neos.read'))->getStatusCode());
+        self::assertSame(400, $this->get('/api/users/not-a-uuid', $this->token('editor-machine', 'users.read'))->getStatusCode());
     }
 
     #[Test]
     public function administratorsChangeUsers(): void
     {
-        $response = $this->patch('/api/users/' . $this->editorId, $this->token('admin-machine', 'neos.write'), ['firstName' => 'Edda', 'email' => 'edda@example.com']);
+        $response = $this->patch('/api/users/' . $this->editorId, $this->token('admin-machine', 'users.write'), ['firstName' => 'Edda', 'email' => 'edda@example.com']);
 
         self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
         $user = self::json($response);
@@ -108,14 +108,14 @@ class UsersTest extends EndpointTestCase
 
         // persisted: a new request reads it back
         $this->persistenceManager->clearState();
-        $user = self::json($this->get('/api/users/' . $this->editorId, $this->token('editor-machine', 'neos.read')));
+        $user = self::json($this->get('/api/users/' . $this->editorId, $this->token('editor-machine', 'users.read')));
         self::assertSame(['Edda Editor', 'edda@example.com'], [$user['label'], $user['email']]);
     }
 
     #[Test]
     public function changesTheExistingEmailAddress(): void
     {
-        $response = $this->patch('/api/users/' . $this->adminId, $this->token('admin-machine', 'neos.write'), ['email' => 'ada@example.org']);
+        $response = $this->patch('/api/users/' . $this->adminId, $this->token('admin-machine', 'users.write'), ['email' => 'ada@example.org']);
 
         self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
         self::assertSame(['Ada Admin', 'ada@example.org'], [self::json($response)['label'], self::json($response)['email']]);
@@ -124,7 +124,7 @@ class UsersTest extends EndpointTestCase
     #[Test]
     public function changingIsDeniedToEditors(): void
     {
-        $response = $this->patch('/api/users/' . $this->editorId, $this->token('editor-machine', 'neos.write'), ['firstName' => 'Evil']);
+        $response = $this->patch('/api/users/' . $this->editorId, $this->token('editor-machine', 'users.write'), ['firstName' => 'Evil']);
 
         self::assertSame(403, $response->getStatusCode(), (string)$response->getBody());
         self::assertStringContainsString('Neos.Api:Users.Write', self::json($response)['detail']);
@@ -133,16 +133,16 @@ class UsersTest extends EndpointTestCase
     #[Test]
     public function changingRequiresTheWriteScope(): void
     {
-        $response = $this->patch('/api/users/' . $this->editorId, $this->token('admin-machine', 'neos.read'), ['firstName' => 'Edda']);
+        $response = $this->patch('/api/users/' . $this->editorId, $this->token('admin-machine', 'users.read'), ['firstName' => 'Edda']);
 
         self::assertSame(403, $response->getStatusCode(), (string)$response->getBody());
-        self::assertStringContainsString('neos.write', self::json($response)['detail']);
+        self::assertStringContainsString('users.write', self::json($response)['detail']);
     }
 
     #[Test]
     public function rejectsInvalidChanges(): void
     {
-        $token = $this->token('admin-machine', 'neos.write');
+        $token = $this->token('admin-machine', 'users.write');
         foreach ([['email' => 'not-an-email'], ['firstName' => 42], ['password' => 'secret']] as $body) {
             $response = $this->patch('/api/users/' . $this->editorId, $token, $body);
 
@@ -156,7 +156,7 @@ class UsersTest extends EndpointTestCase
         $response = $this->get('/api/users', $this->token('admin-machine', null));
 
         self::assertSame(403, $response->getStatusCode(), (string)$response->getBody());
-        self::assertStringContainsString('neos.read', self::json($response)['detail']);
+        self::assertStringContainsString('users.read', self::json($response)['detail']);
     }
 
     #[Test]
@@ -171,9 +171,9 @@ class UsersTest extends EndpointTestCase
     {
         $document = self::json($this->get('/api/openapi.json', null));
 
-        self::assertSame([['oauth2' => ['neos.read'], 'neosPrivileges' => ['Neos.Api:Users.Read']]], $document['paths']['/users']['get']['security']);
-        self::assertSame([['oauth2' => ['neos.write'], 'neosPrivileges' => ['Neos.Api:Users.Write']]], $document['paths']['/users/{userId}']['patch']['security']);
-        self::assertSame('http', $document['components']['securitySchemes']['neosPrivileges']['type']);
+        self::assertSame([['oauth2' => ['users.read']]], $document['paths']['/users']['get']['security']);
+        self::assertSame([['oauth2' => ['users.write']]], $document['paths']['/users/{userId}']['patch']['security']);
+        self::assertSame(['oauth2'], array_keys($document['components']['securitySchemes']));
         self::assertSame(['listUsers', 'getUser', 'updateUser'], [
             $document['paths']['/users']['get']['operationId'],
             $document['paths']['/users/{userId}']['get']['operationId'],
@@ -182,6 +182,6 @@ class UsersTest extends EndpointTestCase
         // neos/openapi doesn't know about the 403 of missing scopes or privileges yet
         self::assertSame([200, 400, 401, 404], array_keys($document['paths']['/users/{userId}']['patch']['responses']));
         self::assertArrayHasKey('UserPatch', $document['components']['schemas']);
-        self::assertContains('neos.write', array_keys($document['components']['securitySchemes']['oauth2']['flows']['clientCredentials']['scopes']));
+        self::assertSame('Change the Neos users (privilege Neos.Api:Users.Write)', $document['components']['securitySchemes']['oauth2']['flows']['clientCredentials']['scopes']['users.write']);
     }
 }

@@ -10,7 +10,6 @@ use Neos\Api\Endpoints\Model\UserPatch;
 use Neos\Api\Endpoints\Model\UsersResponse;
 use Neos\Api\Endpoints\Response\NotFound;
 use Neos\Api\Security\ApiAuthContextProvider;
-use Neos\Api\Security\ApiPrivileges;
 use Neos\Api\Security\ApiScopes;
 use Neos\Neos\Domain\Model\User as NeosUser;
 use Neos\Neos\Domain\Model\UserId as NeosUserId;
@@ -35,8 +34,7 @@ final readonly class Users
         description: 'All Neos users with their accounts, ordered by account identifier.',
         operationId: 'listUsers',
         security: [
-            ApiAuthContextProvider::SCOPES => [ApiScopes::READ],
-            ApiAuthContextProvider::PRIVILEGES => [ApiPrivileges::USERS_READ],
+            ApiAuthContextProvider::SCOPES => [ApiScopes::USERS_READ],
         ],
     )]
     public function list(): UsersResponse
@@ -53,8 +51,7 @@ final readonly class Users
         summary: 'Get a user',
         operationId: 'getUser',
         security: [
-            ApiAuthContextProvider::SCOPES => [ApiScopes::READ],
-            ApiAuthContextProvider::PRIVILEGES => [ApiPrivileges::USERS_READ],
+            ApiAuthContextProvider::SCOPES => [ApiScopes::USERS_READ],
         ],
     )]
     public function get(UserId $userId): User|NotFound
@@ -70,8 +67,7 @@ final readonly class Users
         description: 'Changes the given properties and leaves the others as they are.',
         operationId: 'updateUser',
         security: [
-            ApiAuthContextProvider::SCOPES => [ApiScopes::WRITE],
-            ApiAuthContextProvider::PRIVILEGES => [ApiPrivileges::USERS_WRITE],
+            ApiAuthContextProvider::SCOPES => [ApiScopes::USERS_WRITE],
         ],
     )]
     public function update(

@@ -9,8 +9,8 @@ use Neos\Flow\Security\Authorization\Privilege\PrivilegeSubjectInterface;
 /**
  * A capability of the API that roles are granted or denied, e.g. listing users
  *
- * The ApiAuthContextProvider checks it for the caller's roles by its privilege target identifier, see ApiPrivileges. It guards no
- * method or entity, so there is nothing to match: the matcher only says in Policy.yaml what the privilege allows
+ * Its matcher is the OAuth scope a token needs to use it, its label describes that scope, see PrivilegeScopes. It
+ * guards no method or entity, so it matches nothing: the ApiAuthContextProvider checks it for the caller's roles
  */
 class ApiPrivilege extends AbstractPrivilege
 {
