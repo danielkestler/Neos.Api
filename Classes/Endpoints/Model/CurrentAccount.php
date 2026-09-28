@@ -12,7 +12,7 @@ use Neos\Schematic\Discovery\AutoDiscoveringSchema;
 /**
  * The account an access token acts as, the user it belongs to, and what the token grants
  */
-final readonly class MeResponse implements ProvidesSchema
+final readonly class CurrentAccount implements ProvidesSchema
 {
     /**
      * @param User|null $user null if the account belongs to no Neos user

@@ -83,7 +83,7 @@ class MeTest extends EndpointTestCase
     #[Test]
     public function otherScopesDoNotGrantIt(): void
     {
-        $response = $this->get('/api/me', $this->token('editor-machine', 'users.read users.write'));
+        $response = $this->get('/api/me', $this->token('editor-machine', 'users.read users.update'));
 
         self::assertSame(403, $response->getStatusCode(), (string)$response->getBody());
         self::assertStringContainsString('me.read', self::json($response)['detail']);
@@ -98,6 +98,6 @@ class MeTest extends EndpointTestCase
         $document = self::json($response);
         self::assertSame([['oauth2' => ['me.read']]], $document['paths']['/me']['get']['security']);
         self::assertSame('oauth2', $document['components']['securitySchemes']['oauth2']['type']);
-        self::assertArrayHasKey('MeResponse', $document['components']['schemas']);
+        self::assertArrayHasKey('CurrentAccount', $document['components']['schemas']);
     }
 }

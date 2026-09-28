@@ -1,40 +1,50 @@
 privilegeTargets:
   'Neos\Flow\Security\Authorization\Privilege\Method\MethodPrivilege':
     # The docs are public, calling the API requires logging in
-    'Neos.Api:Docs':
+    "Neos.Api:Docs":
       matcher: 'method(Neos\Api\Controller\DocsController->(index|oauth2Redirect)Action())'
 
   # Each one is an OAuth scope as well: the matcher is its name (a constant of Neos\Api\Security\ApiScopes), the label
   # its description on the consent page. A token needs the scope, its account the privilege
   'Neos\Api\Security\ApiPrivilege':
-    'Neos.Api:Me.Read':
-      label: 'Read your account'
-      matcher: 'me.read'
-    'Neos.Api:Users.Read':
-      label: 'List and read the Neos users'
-      matcher: 'users.read'
-    'Neos.Api:Users.Write':
-      label: 'Change the Neos users'
-      matcher: 'users.write'
+    "Neos.Api:Me.Read":
+      label: "Read your account"
+      matcher: "me.read"
+    "Neos.Api:Users.Read":
+      label: "List and read the Neos users"
+      matcher: "users.read"
+    "Neos.Api:Users.Update":
+      label: "Change the Neos users"
+      matcher: "users.update"
+    "Neos.Api:Users.Create":
+      label: "Create Neos users"
+      matcher: "users.create"
+    "Neos.Api:Users.Delete":
+      label: "Delete Neos users"
+      matcher: "users.delete"
 
 roles:
-  'Neos.Flow:Everybody':
+  "Neos.Flow:Everybody":
     privileges:
-      - privilegeTarget: 'Neos.Api:Docs'
+      - privilegeTarget: "Neos.Api:Docs"
         permission: GRANT
 
-  'Neos.Flow:AuthenticatedUser':
+  "Neos.Flow:AuthenticatedUser":
     privileges:
-      - privilegeTarget: 'Neos.Api:Me.Read'
+      - privilegeTarget: "Neos.Api:Me.Read"
         permission: GRANT
 
   # administrators are editors, too
-  'Neos.Neos:Editor':
+  "Neos.Neos:Editor":
     privileges:
-      - privilegeTarget: 'Neos.Api:Users.Read'
+      - privilegeTarget: "Neos.Api:Users.Read"
         permission: GRANT
 
-  'Neos.Neos:Administrator':
+  "Neos.Neos:Administrator":
     privileges:
-      - privilegeTarget: 'Neos.Api:Users.Write'
+      - privilegeTarget: "Neos.Api:Users.Update"
+        permission: GRANT
+      - privilegeTarget: "Neos.Api:Users.Create"
+        permission: GRANT
+      - privilegeTarget: "Neos.Api:Users.Delete"
         permission: GRANT

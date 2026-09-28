@@ -49,6 +49,19 @@ abstract class EndpointTestCase extends FunctionalTestCase
     /**
      * @param array<mixed> $body
      */
+    protected function post(string $path, ?string $bearer, array $body): ResponseInterface
+    {
+        return $this->request('POST', $path, $bearer, $body);
+    }
+
+    protected function delete(string $path, ?string $bearer): ResponseInterface
+    {
+        return $this->request('DELETE', $path, $bearer);
+    }
+
+    /**
+     * @param array<mixed> $body
+     */
     protected function patch(string $path, ?string $bearer, array $body): ResponseInterface
     {
         return $this->request('PATCH', $path, $bearer, $body);

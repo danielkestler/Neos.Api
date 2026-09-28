@@ -13,5 +13,7 @@ final class ApiScopes
 {
     public const string ME_READ = 'me.read';
     public const string USERS_READ = 'users.read';
-    public const string USERS_WRITE = 'users.write';
+    public const string USERS_UPDATE = 'users.update';
+    public const string USERS_CREATE = 'users.create';
+    public const string USERS_DELETE = 'users.delete';
 }

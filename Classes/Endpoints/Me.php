@@ -7,7 +7,7 @@ use Neos\Api\Domain\Account;
 use Neos\Api\Domain\User;
 use Neos\Api\Endpoints\Model\AccessTokenGrant;
 use Neos\Api\Endpoints\Model\ClientIdentifier;
-use Neos\Api\Endpoints\Model\MeResponse;
+use Neos\Api\Endpoints\Model\CurrentAccount;
 use Neos\Api\Endpoints\Model\Scope;
 use Neos\Api\Endpoints\Model\Scopes;
 use Neos\Api\Security\ApiAuthContextProvider;
@@ -38,11 +38,11 @@ final readonly class Me
             ApiAuthContextProvider::SCOPES => [ApiScopes::ME_READ],
         ],
     )]
-    public function get(#[AuthContext] ApiCaller $caller): MeResponse
+    public function get(#[AuthContext] ApiCaller $caller): CurrentAccount
     {
         // not UserService::getUser(), which fails for accounts without a party
         $user = $this->partyService->getAssignedPartyOfAccount($caller->account);
-        return new MeResponse(
+        return new CurrentAccount(
             Account::fromFlowAccount($caller->account),
             $user instanceof NeosUser ? User::fromNeosUser($user) : null,
             new AccessTokenGrant(

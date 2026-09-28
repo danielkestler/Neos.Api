@@ -22,9 +22,11 @@ class PrivilegeScopesTest extends FunctionalTestCase
         self::assertSame([
             'me.read' => 'Read your account',
             'users.read' => 'List and read the Neos users',
-            'users.write' => 'Change the Neos users',
+            'users.update' => 'Change the Neos users',
+            'users.create' => 'Create Neos users',
+            'users.delete' => 'Delete Neos users',
         ], $privilegeScopes->scopes());
-        self::assertSame('Neos.Api:Users.Write', $privilegeScopes->privilegeTargetOf('users.write'));
+        self::assertSame('Neos.Api:Users.Update', $privilegeScopes->privilegeTargetOf('users.update'));
     }
 
     #[Test]
@@ -32,11 +34,11 @@ class PrivilegeScopesTest extends FunctionalTestCase
     {
         $scopeRegistry = $this->objectManager->get(ScopeRegistry::class);
 
-        self::assertTrue($scopeRegistry->isKnown('users.write'));
-        self::assertSame('Change the Neos users', $scopeRegistry->describe('users.write'));
+        self::assertTrue($scopeRegistry->isKnown('users.update'));
+        self::assertSame('Change the Neos users', $scopeRegistry->describe('users.update'));
 
         $response = $this->browser->request('http://localhost/.well-known/oauth-protected-resource/api');
-        self::assertSame(['me.read', 'users.read', 'users.write'], json_decode((string)$response->getBody(), true, flags: JSON_THROW_ON_ERROR)['scopes_supported']);
+        self::assertSame(['me.read', 'users.read', 'users.update', 'users.create', 'users.delete'], json_decode((string)$response->getBody(), true, flags: JSON_THROW_ON_ERROR)['scopes_supported']);
     }
 
     #[Test]
@@ -73,6 +75,6 @@ class PrivilegeScopesTest extends FunctionalTestCase
     public function unknownScopesHaveNoPrivilege(): void
     {
         $this->expectExceptionCode(1790200010);
-        $this->objectManager->get(PrivilegeScopes::class)->privilegeTargetOf('users.delete');
+        $this->objectManager->get(PrivilegeScopes::class)->privilegeTargetOf('users.purge');
     }
 }

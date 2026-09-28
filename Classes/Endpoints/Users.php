@@ -6,14 +6,20 @@ namespace Neos\Api\Endpoints;
 use Neos\Api\Domain\User;
 use Neos\Api\Domain\UserId;
 use Neos\Api\Domain\Users as UserList;
+use Neos\Api\Endpoints\Model\NewUser;
 use Neos\Api\Endpoints\Model\UserPatch;
-use Neos\Api\Endpoints\Model\UsersResponse;
+use Neos\Api\Endpoints\Response\Conflict;
 use Neos\Api\Endpoints\Response\NotFound;
+use Neos\Api\Endpoints\Response\UnprocessableContent;
+use Neos\Api\Endpoints\Response\UserCreated;
 use Neos\Api\Security\ApiAuthContextProvider;
+use Neos\Api\Security\ApiCaller;
 use Neos\Api\Security\ApiScopes;
+use Neos\Flow\Security\Policy\PolicyService;
 use Neos\Neos\Domain\Model\User as NeosUser;
 use Neos\Neos\Domain\Model\UserId as NeosUserId;
 use Neos\Neos\Domain\Service\UserService;
+use Neos\OpenApi\Attributes\AuthContext;
 use Neos\OpenApi\Attributes\Operation;
 use Neos\OpenApi\Attributes\RequestBody;
 
@@ -24,6 +30,7 @@ final readonly class Users
 {
     public function __construct(
         private UserService $userService,
+        private PolicyService $policyService,
     ) {
     }
 
@@ -37,12 +44,43 @@ final readonly class Users
             ApiAuthContextProvider::SCOPES => [ApiScopes::USERS_READ],
         ],
     )]
-    public function list(): UsersResponse
+    public function list(): UserList
     {
-        return new UsersResponse(new UserList(...array_map(
+        return new UserList(...array_map(
             User::fromNeosUser(...),
             $this->userService->getUsers()->toArray(),
-        )));
+        ));
+    }
+
+    #[Operation(
+        path: '/users',
+        method: 'POST',
+        summary: 'Create a user',
+        description: 'Creates a Neos user with a backend account.',
+        operationId: 'createUser',
+        security: [
+            ApiAuthContextProvider::SCOPES => [ApiScopes::USERS_CREATE],
+        ],
+    )]
+    public function create(
+        #[RequestBody(description: 'The user and its account')] NewUser $newUser,
+    ): UserCreated|Conflict|UnprocessableContent {
+        if ($this->userService->getUser($newUser->username->value) !== null) {
+            return Conflict::because(sprintf('There is an account with the username %s already', $newUser->username->value));
+        }
+        foreach ($newUser->roles ?? [] as $role) {
+            // Flow can't assign abstract roles to accounts
+            if (!$this->policyService->hasRole($role->value) || $this->policyService->getRole($role->value)->isAbstract()) {
+                return UnprocessableContent::because(sprintf('There is no role %s that can be assigned to an account', $role->value));
+            }
+        }
+        $user = $this->userService->addUser(
+            $newUser->username->value,
+            $newUser->password->value,
+            $newUser->toNeosUser(),
+            $newUser->roleIdentifiers(),
+        );
+        return new UserCreated(User::fromNeosUser($user));
     }
 
     #[Operation(
@@ -67,7 +105,7 @@ final readonly class Users
         description: 'Changes the given properties and leaves the others as they are.',
         operationId: 'updateUser',
         security: [
-            ApiAuthContextProvider::SCOPES => [ApiScopes::USERS_WRITE],
+            ApiAuthContextProvider::SCOPES => [ApiScopes::USERS_UPDATE],
         ],
     )]
     public function update(
@@ -81,6 +119,29 @@ final readonly class Users
         $patch->applyTo($user);
         $this->userService->updateUser($user);
         return User::fromNeosUser($user);
+    }
+
+    #[Operation(
+        path: '/users/{userId}',
+        method: 'DELETE',
+        summary: 'Delete a user',
+        description: 'Deletes the user with its accounts and personal workspaces, including their unpublished changes, and ends its sessions. You can\'t delete your own user.',
+        operationId: 'deleteUser',
+        security: [
+            ApiAuthContextProvider::SCOPES => [ApiScopes::USERS_DELETE],
+        ],
+    )]
+    public function delete(#[AuthContext] ApiCaller $caller, UserId $userId): NotFound|Conflict|null
+    {
+        $user = $this->findUser($userId);
+        if ($user === null) {
+            return self::notFound($userId);
+        }
+        if ($user->getAccounts()->contains($caller->account)) {
+            return Conflict::because('You can\'t delete your own user');
+        }
+        $this->userService->deleteUser($user);
+        return null;
     }
 
     private function findUser(UserId $userId): ?NeosUser

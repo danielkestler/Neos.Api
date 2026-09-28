@@ -19,7 +19,7 @@ use Neos\OpenApi\Spec\SecuritySchemeOrReferenceObjectMap;
 use Psr\Http\Message\ServerRequestInterface;
 
 /**
- * Bridges Neos.OAuth to neos/openapi: operations declare `security: [self::SCOPES => [ApiScopes::USERS_WRITE]]`, this
+ * Bridges Neos.OAuth to neos/openapi: operations declare `security: [self::SCOPES => [ApiScopes::USERS_UPDATE]]`, this
  * hands them the caller if the request's access token grants those scopes and its account holds the ApiPrivileges
  * they stand for (see PrivilegeScopes). The privileges come from the account's roles, the scopes only narrow them down
  */
