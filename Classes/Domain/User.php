@@ -13,15 +13,36 @@ use Neos\Schematic\Discovery\AutoDiscoveringSchema;
  */
 final readonly class User implements ProvidesSchema
 {
+    /**
+     * @param EmailAddress|null $email the primary email address, null if the user has none
+     * @param bool $active whether one of the user's accounts may log in
+     */
     public function __construct(
         public UserId $id,
         public string $label,
+        public string $firstName,
+        public string $lastName,
+        public EmailAddress|null $email,
+        public bool $active,
+        public Accounts $accounts,
     ) {
     }
 
     public static function fromNeosUser(NeosUser $user): self
     {
-        return new self(UserId::fromString($user->getId()->value), $user->getLabel());
+        $address = $user->getPrimaryElectronicAddress();
+        return new self(
+            UserId::fromString($user->getId()->value),
+            $user->getLabel(),
+            $user->getName()->getFirstName(),
+            $user->getName()->getLastName(),
+            $address?->getType() === EmailAddress::ELECTRONIC_ADDRESS_TYPE ? EmailAddress::fromString($address->getIdentifier()) : null,
+            $user->isActive(),
+            new Accounts(...array_map(
+                Account::fromFlowAccount(...),
+                array_values($user->getAccounts()->toArray()),
+            )),
+        );
     }
 
     public static function schema(): Schema

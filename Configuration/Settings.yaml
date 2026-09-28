@@ -15,6 +15,7 @@ Neos:
             version: '1.0.0'
           classes:
             'Neos\Api\Endpoints\Me': true
+            'Neos\Api\Endpoints\Users': true
           specPath: 'openapi.json'
           # the docs are served by Neos.Api's DocsController, which lets users log in
           authContextProvider: 'Neos\Api\Security\ApiAuthContextProvider'
@@ -23,12 +24,13 @@ Neos:
     # one entry per constant of Neos\Api\Security\ApiScopes
     scopes:
       'neos.read': 'Read your account and the content of Neos'
+      'neos.write': 'Change the content and the users of Neos'
     protectedResources:
       # the key is Neos\Api\Http\OAuthChallengeMiddleware::RESOURCE
       'Neos.Api':
         path: 'api'
         name: 'Neos API'
-        scopes: ['neos.read']
+        scopes: ['neos.read', 'neos.write']
         documentation: 'api/docs'
     clients:
       # Swagger UI on /api/docs: users log in with their Neos account (authorization code flow with PKCE)

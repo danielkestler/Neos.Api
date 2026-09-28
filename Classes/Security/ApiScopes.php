@@ -11,4 +11,5 @@ namespace Neos\Api\Security;
 final class ApiScopes
 {
     public const string READ = 'neos.read';
+    public const string WRITE = 'neos.write';
 }

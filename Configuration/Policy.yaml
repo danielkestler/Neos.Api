@@ -4,8 +4,28 @@ privilegeTargets:
     'Neos.Api:Docs':
       matcher: 'method(Neos\Api\Controller\DocsController->(index|oauth2Redirect)Action())'
 
+  # one entry per constant of Neos\Api\Security\ApiPrivileges, required in the operations' security
+  'Neos\Api\Security\ApiPrivilege':
+    'Neos.Api:Users.Read':
+      label: 'List and read the Neos users'
+      matcher: 'Users.Read'
+    'Neos.Api:Users.Write':
+      label: 'Change the Neos users'
+      matcher: 'Users.Write'
+
 roles:
   'Neos.Flow:Everybody':
     privileges:
       - privilegeTarget: 'Neos.Api:Docs'
+        permission: GRANT
+
+  # administrators are editors, too
+  'Neos.Neos:Editor':
+    privileges:
+      - privilegeTarget: 'Neos.Api:Users.Read'
+        permission: GRANT
+
+  'Neos.Neos:Administrator':
+    privileges:
+      - privilegeTarget: 'Neos.Api:Users.Write'
         permission: GRANT

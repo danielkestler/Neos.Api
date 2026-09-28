@@ -5,6 +5,7 @@ namespace Neos\Api\Http;
 
 use GuzzleHttp\Psr7\Response;
 use Neos\Api\Security\InsufficientScope;
+use Neos\Api\Security\MissingPrivileges;
 use Neos\Flow\Annotations as Flow;
 use Neos\OAuth\Security\IssuerNotConfigured;
 use Neos\OAuth\Security\ProtectedResources;
@@ -22,6 +23,7 @@ use Psr\Http\Server\RequestHandlerInterface;
  * - 403 if an operation requires scopes the token lacks. RFC 6750 suggests a `WWW-Authenticate: Bearer
  *   error="insufficient_scope"` challenge, but PHP turns every response with that header into a 401 once Flow has
  *   sent the status line. So the required scopes are only in the problem body
+ * - 403 if the account of the token lacks the privileges an operation requires
  */
 final class OAuthChallengeMiddleware implements MiddlewareInterface
 {
@@ -38,12 +40,9 @@ final class OAuthChallengeMiddleware implements MiddlewareInterface
         try {
             $response = $handler->handle($request);
         } catch (InsufficientScope $exception) {
-            $scope = implode(' ', $exception->requiredScopes);
-            $problem = ProblemDocument::create(HttpStatusCode::fromInteger(403), 'Insufficient scope', sprintf('The access token must grant the scope(s): %s', $scope));
-            return new Response(403, [
-                'Content-Type' => ProblemDocument::CONTENT_TYPE,
-                'Cache-Control' => 'no-store',
-            ], json_encode($problem, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+            return self::forbidden('Insufficient scope', sprintf('The access token must grant the scope(s): %s', implode(' ', $exception->requiredScopes)));
+        } catch (MissingPrivileges $exception) {
+            return self::forbidden('Access denied', sprintf('The account of the access token must hold the privilege(s): %s', implode(', ', $exception->privilegeTargets)));
         }
         // neos/openapi answers unauthenticated requests with a bare "Bearer" challenge
         if ($response->getStatusCode() === 401 && $response->getHeaderLine('WWW-Authenticate') === 'Bearer') {
@@ -54,5 +53,14 @@ final class OAuthChallengeMiddleware implements MiddlewareInterface
             }
         }
         return $response;
+    }
+
+    private static function forbidden(string $title, string $detail): ResponseInterface
+    {
+        $problem = ProblemDocument::create(HttpStatusCode::fromInteger(403), $title, $detail);
+        return new Response(403, [
+            'Content-Type' => ProblemDocument::CONTENT_TYPE,
+            'Cache-Control' => 'no-store',
+        ], json_encode($problem, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
     }
 }

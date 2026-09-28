@@ -34,7 +34,9 @@ final readonly class Me
         summary: 'Get the current account',
         description: 'The account the access token acts as with its roles, the Neos user it belongs to, and the client and scopes of the token.',
         operationId: 'getMe',
-        security: [ApiAuthContextProvider::SCHEME => [ApiScopes::READ]],
+        security: [
+            ApiAuthContextProvider::SCOPES => [ApiScopes::READ],
+        ],
     )]
     public function get(#[AuthContext] ApiCaller $caller): MeResponse
     {
