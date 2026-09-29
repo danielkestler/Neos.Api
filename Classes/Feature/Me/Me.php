@@ -3,16 +3,13 @@ declare(strict_types=1);
 
 namespace Neos\Api\Feature\Me;
 
-use Neos\Api\Feature\Me\Model\AccessTokenGrant;
-use Neos\Api\Feature\Me\Model\ClientIdentifier;
 use Neos\Api\Feature\Me\Model\CurrentAccount;
-use Neos\Api\Feature\Me\Model\Scope;
-use Neos\Api\Feature\Me\Model\Scopes;
 use Neos\Api\Feature\Users\Model\Account;
 use Neos\Api\Feature\Users\Model\User;
 use Neos\Api\Security\ApiAuthContextProvider;
 use Neos\Api\Security\ApiCaller;
 use Neos\Api\Security\ApiScopes;
+use Neos\Api\SharedModel\AccessTokenGrant;
 use Neos\Neos\Domain\Model\User as NeosUser;
 use Neos\OpenApi\Attributes\AuthContext;
 use Neos\OpenApi\Attributes\Operation;
@@ -45,10 +42,7 @@ final readonly class Me
         return new CurrentAccount(
             Account::fromFlowAccount($caller->account),
             $user instanceof NeosUser ? User::fromNeosUser($user) : null,
-            new AccessTokenGrant(
-                ClientIdentifier::fromString($caller->clientIdentifier),
-                new Scopes(...array_map(Scope::fromString(...), $caller->scopes)),
-            ),
+            new AccessTokenGrant($caller->clientIdentifier, $caller->scopes),
         );
     }
 }

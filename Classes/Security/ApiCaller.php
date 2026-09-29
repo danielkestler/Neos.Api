@@ -3,6 +3,9 @@ declare(strict_types=1);
 
 namespace Neos\Api\Security;
 
+use Neos\Api\SharedModel\ClientIdentifier;
+use Neos\Api\SharedModel\Scope;
+use Neos\Api\SharedModel\Scopes;
 use Neos\Flow\Annotations as Flow;
 use Neos\Flow\Security\Account;
 use Neos\OAuth\Security\AuthenticatedGrant;
@@ -15,23 +18,24 @@ use Neos\OAuth\Security\AuthenticatedGrant;
 #[Flow\Proxy(false)]
 final readonly class ApiCaller
 {
-    /**
-     * @param list<string> $scopes
-     */
     private function __construct(
         public Account $account,
-        public string $clientIdentifier,
-        public array $scopes,
+        public ClientIdentifier $clientIdentifier,
+        public Scopes $scopes,
     ) {
     }
 
     public static function fromGrant(AuthenticatedGrant $grant): self
     {
-        return new self($grant->account, $grant->clientIdentifier, $grant->scopes);
+        return new self(
+            $grant->account,
+            ClientIdentifier::fromString($grant->clientIdentifier),
+            Scopes::fromStrings(...$grant->scopes),
+        );
     }
 
-    public function hasScope(string $scope): bool
+    public function hasScope(Scope $scope): bool
     {
-        return in_array($scope, $this->scopes, true);
+        return $this->scopes->contains($scope);
     }
 }

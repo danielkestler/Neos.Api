@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-namespace Neos\Api\Feature\Me\Model;
+namespace Neos\Api\SharedModel;
 
 use Neos\JsonSchema\ProvidesSchema;
 use Neos\JsonSchema\Schema;
@@ -22,6 +22,21 @@ final readonly class Scopes implements ProvidesSchema, \IteratorAggregate
     public function __construct(Scope ...$scopes)
     {
         $this->scopes = array_values($scopes);
+    }
+
+    public static function fromStrings(string ...$scopes): self
+    {
+        return new self(...array_map(Scope::fromString(...), $scopes));
+    }
+
+    public function contains(Scope $scope): bool
+    {
+        foreach ($this->scopes as $candidate) {
+            if ($candidate->value === $scope->value) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public static function schema(): Schema

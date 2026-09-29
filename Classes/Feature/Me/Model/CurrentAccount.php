@@ -5,6 +5,7 @@ namespace Neos\Api\Feature\Me\Model;
 
 use Neos\Api\Feature\Users\Model\Account;
 use Neos\Api\Feature\Users\Model\User;
+use Neos\Api\SharedModel\AccessTokenGrant;
 use Neos\JsonSchema\ProvidesSchema;
 use Neos\JsonSchema\Schema;
 use Neos\Schematic\Discovery\AutoDiscoveringSchema;
