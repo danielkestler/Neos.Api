@@ -14,10 +14,10 @@ Neos:
             title: "Neos API"
             version: "1.0.0"
           classes:
-            'Neos\Api\Endpoints\Me': true
-            'Neos\Api\Endpoints\Users': true
-            'Neos\Api\Endpoints\ContentRepositories': true
-            'Neos\Api\Endpoints\Sites': true
+            'Neos\Api\Feature\Me\Me': true
+            'Neos\Api\Feature\Users\Users': true
+            'Neos\Api\Feature\ContentRepositories\ContentRepositories': true
+            'Neos\Api\Feature\Sites\Sites': true
           specPath: "openapi.json"
           # the docs are served by Neos.Api's DocsController, which lets users log in
           authContextProvider: 'Neos\Api\Security\ApiAuthContextProvider'
@@ -27,7 +27,7 @@ Neos:
     scopeProviders:
       "Neos.Api": 'Neos\Api\Security\PrivilegeScopes'
     protectedResources:
-      # the key is Neos\Api\Http\OAuthChallengeMiddleware::RESOURCE
+      # the key is Neos\Api\Infrastructure\Http\OAuthChallengeMiddleware::RESOURCE
       "Neos.Api":
         path: "api"
         name: "Neos API"
@@ -61,8 +61,8 @@ Neos:
       middlewares:
         "Neos.Api:oauthChallenge":
           position: "before dispatch"
-          middleware: 'Neos\Api\Http\OAuthChallengeMiddleware'
+          middleware: 'Neos\Api\Infrastructure\Http\OAuthChallengeMiddleware'
         # around oauthChallenge, so its 401 and 403 get the headers as well
         'Neos.Api:cacheHeaders':
           position: 'before Neos.Api:oauthChallenge'
-          middleware: 'Neos\Api\Http\ApiCacheHeadersMiddleware'
+          middleware: 'Neos\Api\Infrastructure\Http\ApiCacheHeadersMiddleware'
