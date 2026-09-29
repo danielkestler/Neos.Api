@@ -5,7 +5,6 @@ namespace Neos\Api\Endpoints\Model\Site;
 
 use Neos\Api\Domain\Site\DomainId;
 use Neos\Api\Domain\Site\SiteName;
-use Neos\Api\Domain\Site\SiteState;
 use Neos\JsonSchema\ProvidesSchema;
 use Neos\JsonSchema\Schema;
 use Neos\Neos\Domain\Model\Site as NeosSite;
@@ -21,20 +20,22 @@ final readonly class SiteUpdate implements ProvidesSchema
      */
     public function __construct(
         public SiteName|null $name = null,
-        public SiteState|null $state = null,
+        public bool|null $online = null,
         public DomainId|null $primaryDomainId = null,
     ) {
     }
 
     /**
-     * Applies the name and state, the primary domain is looked up by the caller
+     * Applies the name and online state, the primary domain is looked up by the caller
      */
     public function applyTo(NeosSite $site): void
     {
         if ($this->name !== null) {
             $site->setName($this->name->value);
         }
-        $this->state?->applyTo($site);
+        if ($this->online !== null) {
+            $site->setState($this->online ? NeosSite::STATE_ONLINE : NeosSite::STATE_OFFLINE);
+        }
     }
 
     public static function schema(): Schema

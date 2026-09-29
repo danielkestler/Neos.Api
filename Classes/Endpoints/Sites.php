@@ -9,7 +9,6 @@ use Neos\Api\Domain\Site\PackageKey;
 use Neos\Api\Domain\Site\Site;
 use Neos\Api\Domain\Site\SiteNodeName;
 use Neos\Api\Domain\Site\Sites as SiteList;
-use Neos\Api\Domain\Site\SiteState;
 use Neos\Api\Endpoints\Model\Site\DomainCreate;
 use Neos\Api\Endpoints\Model\Site\DomainUpdate;
 use Neos\Api\Endpoints\Model\Site\PackageKeys;
@@ -135,7 +134,7 @@ final readonly class Sites
             $newSite->name->value,
             $newSite->nodeTypeName->value,
             $nodeName->value,
-            ($newSite->state ?? SiteState::ONLINE) === SiteState::OFFLINE,
+            !($newSite->online ?? true),
         );
         return new SiteCreated($this->site($site));
     }

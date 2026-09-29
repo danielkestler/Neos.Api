@@ -7,7 +7,6 @@ use Neos\Api\Domain\Site\NodeTypeName;
 use Neos\Api\Domain\Site\PackageKey;
 use Neos\Api\Domain\Site\SiteName;
 use Neos\Api\Domain\Site\SiteNodeName;
-use Neos\Api\Domain\Site\SiteState;
 use Neos\ContentRepository\Core\SharedModel\Node\NodeName;
 use Neos\JsonSchema\ProvidesSchema;
 use Neos\JsonSchema\Schema;
@@ -22,14 +21,14 @@ final readonly class SiteCreate implements ProvidesSchema
      * @param PackageKey $packageKey an installed site package, see getSiteCreationOptions
      * @param NodeTypeName $nodeTypeName the type of the site node, a non-abstract subtype of Neos.Neos:Site, see getSiteCreationOptions
      * @param SiteNodeName|null $nodeName derived from the name if left out
-     * @param SiteState|null $state online if left out
+     * @param bool|null $online true if left out
      */
     public function __construct(
         public PackageKey $packageKey,
         public SiteName $name,
         public NodeTypeName $nodeTypeName,
         public SiteNodeName|null $nodeName = null,
-        public SiteState|null $state = null,
+        public bool|null $online = null,
     ) {
     }
 

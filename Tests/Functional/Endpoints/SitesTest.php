@@ -56,7 +56,7 @@ class SitesTest extends EndpointTestCase
         self::assertSame([
             'nodeName' => 'demo',
             'name' => 'Demo Site',
-            'state' => 'online',
+            'online' => true,
             'siteResourcesPackageKey' => 'Neos.Demo',
             'domains' => [
                 ['id' => $this->secondDomainId, 'hostname' => 'example.com', 'scheme' => null, 'port' => 8080, 'active' => true, 'isPrimary' => false, 'url' => 'example.com:8080'],
@@ -64,7 +64,7 @@ class SitesTest extends EndpointTestCase
             ],
             'primaryDomain' => 'https://www.example.com',
         ], $sites[1]);
-        self::assertSame('offline', $sites[0]['state']);
+        self::assertFalse($sites[0]['online']);
     }
 
     #[Test]
@@ -147,16 +147,16 @@ class SitesTest extends EndpointTestCase
     #[Test]
     public function administratorsChangeSites(): void
     {
-        $response = $this->patch('/api/sites/demo', $this->token('admin-machine', 'sites.update'), ['name' => 'Renamed Site', 'state' => 'offline', 'primaryDomainId' => $this->secondDomainId]);
+        $response = $this->patch('/api/sites/demo', $this->token('admin-machine', 'sites.update'), ['name' => 'Renamed Site', 'online' => false, 'primaryDomainId' => $this->secondDomainId]);
 
         self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
         $site = self::json($response);
-        self::assertSame(['Renamed Site', 'offline', 'example.com:8080'], [$site['name'], $site['state'], $site['primaryDomain']]);
+        self::assertSame(['Renamed Site', false, 'example.com:8080'], [$site['name'], $site['online'], $site['primaryDomain']]);
         self::assertSame([true, false], array_column($site['domains'], 'isPrimary'));
 
         $this->persistenceManager->clearState();
         $site = self::json($this->get('/api/sites/demo', $this->token('admin-machine', 'sites.read')));
-        self::assertSame(['Renamed Site', 'offline', 'example.com:8080'], [$site['name'], $site['state'], $site['primaryDomain']]);
+        self::assertSame(['Renamed Site', false, 'example.com:8080'], [$site['name'], $site['online'], $site['primaryDomain']]);
     }
 
     #[Test]
@@ -176,7 +176,7 @@ class SitesTest extends EndpointTestCase
     public function rejectsInvalidSiteChanges(): void
     {
         $token = $this->token('admin-machine', 'sites.update');
-        foreach ([['name' => ''], ['name' => 'No <tags>'], ['state' => 'hidden'], ['nodeName' => 'renamed'], ['primaryDomainId' => 'www.example.com']] as $body) {
+        foreach ([['name' => ''], ['name' => 'No <tags>'], ['online' => 'offline'], ['nodeName' => 'renamed'], ['primaryDomainId' => 'www.example.com']] as $body) {
             $response = $this->patch('/api/sites/demo', $token, $body);
 
             self::assertSame(400, $response->getStatusCode(), json_encode($body) . ': ' . $response->getBody());
@@ -272,11 +272,11 @@ class SitesTest extends EndpointTestCase
     public function administratorsCreateSites(): void
     {
         $this->requireContentRepository();
-        $response = $this->post('/api/sites', $this->token('admin-machine', 'sites.create'), ['packageKey' => 'Neos.Demo', 'name' => 'Neue Seite', 'nodeTypeName' => 'Neos.Demo:Document.Homepage', 'state' => 'offline']);
+        $response = $this->post('/api/sites', $this->token('admin-machine', 'sites.create'), ['packageKey' => 'Neos.Demo', 'name' => 'Neue Seite', 'nodeTypeName' => 'Neos.Demo:Document.Homepage', 'online' => false]);
 
         self::assertSame(201, $response->getStatusCode(), (string)$response->getBody());
         $site = self::json($response);
-        self::assertSame(['neue-seite', 'Neue Seite', 'offline', 'Neos.Demo', [], null], [$site['nodeName'], $site['name'], $site['state'], $site['siteResourcesPackageKey'], $site['domains'], $site['primaryDomain']]);
+        self::assertSame(['neue-seite', 'Neue Seite', false, 'Neos.Demo', [], null], [$site['nodeName'], $site['name'], $site['online'], $site['siteResourcesPackageKey'], $site['domains'], $site['primaryDomain']]);
         self::assertSame('sites/neue-seite', $response->getHeaderLine('Location'));
 
         $this->persistenceManager->clearState();
@@ -336,7 +336,7 @@ class SitesTest extends EndpointTestCase
     {
         $token = $this->token('admin-machine', 'sites.create');
         $valid = ['packageKey' => 'Neos.Demo', 'name' => 'New Site', 'nodeTypeName' => 'Neos.Demo:Document.Homepage'];
-        foreach ([['packageKey' => 'Demo'], ['name' => ''], ['nodeTypeName' => 'Homepage'], ['nodeName' => 'New Site'], ['state' => 'hidden'], ['domains' => []]] as $change) {
+        foreach ([['packageKey' => 'Demo'], ['name' => ''], ['nodeTypeName' => 'Homepage'], ['nodeName' => 'New Site'], ['online' => 'offline'], ['domains' => []]] as $change) {
             $response = $this->post('/api/sites', $token, array_merge($valid, $change));
 
             self::assertSame(400, $response->getStatusCode(), json_encode($change) . ': ' . $response->getBody());
@@ -365,7 +365,7 @@ class SitesTest extends EndpointTestCase
         self::assertSame([['oauth2' => ['sites.delete']]], $document['paths']['/sites/{siteNodeName}']['delete']['security']);
         self::assertEqualsCanonicalizing([201, 400, 401, 409, 422], array_keys($document['paths']['/sites']['post']['responses']));
         self::assertArrayHasKey('Location', $document['paths']['/sites']['post']['responses'][201]['headers']);
-        self::assertSame(['online', 'offline'], $document['components']['schemas']['SiteState']['enum']);
+        self::assertSame('boolean', $document['components']['schemas']['Site']['properties']['online']['type']);
         self::assertArrayHasKey('SiteUpdate', $document['components']['schemas']);
         self::assertSame('Delete Neos sites with their content (privilege Neos.Api:Sites.Delete)', $document['components']['securitySchemes']['oauth2']['flows']['clientCredentials']['scopes']['sites.delete']);
     }
