@@ -57,6 +57,7 @@ class SitesTest extends EndpointTestCase
             'nodeName' => 'demo',
             'name' => 'Demo Site',
             'online' => true,
+            'contentRepositoryId' => 'default',
             'siteResourcesPackageKey' => 'Neos.Demo',
             'domains' => [
                 ['id' => $this->secondDomainId, 'hostname' => 'example.com', 'scheme' => null, 'port' => 8080, 'active' => true, 'isPrimary' => false, 'url' => 'example.com:8080'],
@@ -266,6 +267,10 @@ class SitesTest extends EndpointTestCase
         self::assertContains('Neos.Demo', $options['packages']);
         self::assertContains('Neos.Demo:Document.Homepage', array_column($options['nodeTypes'], 'name'));
         self::assertNotContains('Neos.Neos:Site', array_column($options['nodeTypes'], 'name'));
+        self::assertSame(['en', 'Accept-Language'], [$response->getHeaderLine('Content-Language'), $response->getHeaderLine('Vary')]);
+
+        $response = $this->get('/api/sites/options', $this->token('admin-machine', 'sites.create'), ['Accept-Language' => 'de-DE, en;q=0.5']);
+        self::assertSame('de', $response->getHeaderLine('Content-Language'));
     }
 
     #[Test]

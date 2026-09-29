@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Neos\Api\Endpoints\Model\Site;
 
 use Neos\Api\Domain\Site\NodeTypeName;
+use Neos\Api\I18n\Labels;
 use Neos\ContentRepository\Core\NodeType\NodeType;
 use Neos\JsonSchema\ProvidesSchema;
 use Neos\JsonSchema\Schema;
@@ -15,7 +16,7 @@ use Neos\Schematic\Discovery\AutoDiscoveringSchema;
 final readonly class SiteNodeType implements ProvidesSchema
 {
     /**
-     * @param string $label the label of the node type, which may be a translation id
+     * @param string $label the label of the node type in the requested language, its name if it has none
      */
     public function __construct(
         public NodeTypeName $name,
@@ -23,9 +24,12 @@ final readonly class SiteNodeType implements ProvidesSchema
     ) {
     }
 
-    public static function fromNodeType(NodeType $nodeType): self
+    public static function fromNodeType(NodeType $nodeType, Labels $labels): self
     {
-        return new self(NodeTypeName::fromString($nodeType->name->value), $nodeType->getLabel());
+        return new self(
+            NodeTypeName::fromString($nodeType->name->value),
+            $labels->label($nodeType->getLabel()) ?? $nodeType->name->value,
+        );
     }
 
     public static function schema(): Schema

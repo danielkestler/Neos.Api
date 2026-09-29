@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Neos\Api\Domain\Site;
 
+use Neos\Api\Domain\ContentRepository\ContentRepositoryId;
 use Neos\Flow\Persistence\PersistenceManagerInterface;
 use Neos\JsonSchema\ProvidesSchema;
 use Neos\JsonSchema\Schema;
@@ -16,6 +17,7 @@ use Neos\Schematic\Discovery\AutoDiscoveringSchema;
 final readonly class Site implements ProvidesSchema
 {
     /**
+     * @param ContentRepositoryId $contentRepositoryId the content repository with the site's content, from the site's preset
      * @param PackageKey $siteResourcesPackageKey the package with the site's Fusion, templates and resources
      * @param Domains $domains ordered by host name
      * @param bool $online whether the site is online, offline sites are left out of the backend menu and the fallback when no domain matches
@@ -25,6 +27,7 @@ final readonly class Site implements ProvidesSchema
         public SiteNodeName $nodeName,
         public SiteName $name,
         public bool $online,
+        public ContentRepositoryId $contentRepositoryId,
         public PackageKey $siteResourcesPackageKey,
         public Domains $domains,
         public string|null $primaryDomain,
@@ -40,6 +43,7 @@ final readonly class Site implements ProvidesSchema
             SiteNodeName::fromString($site->getNodeName()->value),
             SiteName::fromString($site->getName()),
             $site->isOnline(),
+            ContentRepositoryId::fromString($site->getConfiguration()->contentRepositoryId->value),
             PackageKey::fromString($site->getSiteResourcesPackageKey()),
             new Domains(...array_map(
                 static fn (NeosDomain $domain) => Domain::fromNeosDomain($domain, $persistenceManager),

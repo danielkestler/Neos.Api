@@ -43,6 +43,10 @@ class ContentRepositoriesTest extends EndpointTestCase
 
         self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
         self::assertSame('default', self::json($response)['id']);
+
+        $response = $this->get('/api/contentrepositories/default', $this->token('editor-machine', 'contentrepositories.read'), ['Accept-Language' => 'de']);
+        self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
+        self::assertSame(['de', 'Accept-Language'], [$response->getHeaderLine('Content-Language'), $response->getHeaderLine('Vary')]);
     }
 
     #[Test]
@@ -52,6 +56,8 @@ class ContentRepositoriesTest extends EndpointTestCase
 
         self::assertSame(404, $response->getStatusCode(), (string)$response->getBody());
         self::assertSame('application/problem+json', $response->getHeaderLine('Content-Type'));
+        // with the header, which is an optional parameter
+        self::assertSame(404, $this->get('/api/contentrepositories/unknown', $this->token('editor-machine', 'contentrepositories.read'), ['Accept-Language' => 'de'])->getStatusCode());
     }
 
     #[Test]

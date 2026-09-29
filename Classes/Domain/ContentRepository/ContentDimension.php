@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Neos\Api\Domain\ContentRepository;
 
+use Neos\Api\I18n\Labels;
 use Neos\ContentRepository\Core\Dimension\ContentDimension as NeosContentDimension;
 use Neos\ContentRepository\Core\Dimension\ContentDimensionValue as NeosContentDimensionValue;
 use Neos\JsonSchema\ProvidesSchema;
@@ -16,7 +17,7 @@ final readonly class ContentDimension implements ProvidesSchema
 {
     /**
      * @param string $id the dimension's key in the contentDimensions settings, e.g. language
-     * @param string|null $label the label of the configuration, null if it has none
+     * @param string|null $label the label of the configuration in the requested language, null if it has none
      * @param ContentDimensionValues $values in the order of the configuration, generalizations before their specializations
      */
     public function __construct(
@@ -26,24 +27,16 @@ final readonly class ContentDimension implements ProvidesSchema
     ) {
     }
 
-    public static function fromNeosContentDimension(NeosContentDimension $dimension): self
+    public static function fromNeosContentDimension(NeosContentDimension $dimension, Labels $labels): self
     {
         return new self(
             $dimension->id->value,
-            self::label($dimension->getConfigurationValue('label')),
+            $labels->label($dimension->getConfigurationValue('label')),
             new ContentDimensionValues(...array_map(
-                static fn (NeosContentDimensionValue $value) => ContentDimensionValue::fromNeosContentDimensionValue($value, $dimension),
+                static fn (NeosContentDimensionValue $value) => ContentDimensionValue::fromNeosContentDimensionValue($value, $dimension, $labels),
                 array_values($dimension->values->values),
             )),
         );
-    }
-
-    /**
-     * The label of a dimension's or value's configuration, which isn't validated
-     */
-    public static function label(mixed $label): string|null
-    {
-        return is_string($label) && $label !== '' ? $label : null;
     }
 
     public static function schema(): Schema

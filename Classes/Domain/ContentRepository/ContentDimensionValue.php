@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Neos\Api\Domain\ContentRepository;
 
+use Neos\Api\I18n\Labels;
 use Neos\ContentRepository\Core\Dimension\ContentDimension as NeosContentDimension;
 use Neos\ContentRepository\Core\Dimension\ContentDimensionValue as NeosContentDimensionValue;
 use Neos\JsonSchema\ProvidesSchema;
@@ -16,7 +17,7 @@ final readonly class ContentDimensionValue implements ProvidesSchema
 {
     /**
      * @param string $value e.g. en_US
-     * @param string|null $label the label of the configuration, null if it has none
+     * @param string|null $label the label of the configuration in the requested language, null if it has none
      * @param string|null $generalization the value it falls back to, null for a root value
      */
     public function __construct(
@@ -26,11 +27,11 @@ final readonly class ContentDimensionValue implements ProvidesSchema
     ) {
     }
 
-    public static function fromNeosContentDimensionValue(NeosContentDimensionValue $value, NeosContentDimension $dimension): self
+    public static function fromNeosContentDimensionValue(NeosContentDimensionValue $value, NeosContentDimension $dimension, Labels $labels): self
     {
         return new self(
             $value->value,
-            ContentDimension::label($value->getConfigurationValue('label')),
+            $labels->label($value->getConfigurationValue('label')),
             $dimension->getGeneralization($value)?->value,
         );
     }

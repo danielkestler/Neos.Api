@@ -41,9 +41,12 @@ abstract class EndpointTestCase extends FunctionalTestCase
         return json_decode((string)$response->getBody(), true, flags: JSON_THROW_ON_ERROR)['access_token'];
     }
 
-    protected function get(string $path, ?string $bearer): ResponseInterface
+    /**
+     * @param array<string, string> $headers
+     */
+    protected function get(string $path, ?string $bearer, array $headers = []): ResponseInterface
     {
-        return $this->request('GET', $path, $bearer);
+        return $this->request('GET', $path, $bearer, null, $headers);
     }
 
     /**
@@ -69,11 +72,14 @@ abstract class EndpointTestCase extends FunctionalTestCase
 
     /**
      * @param array<mixed>|null $body sent as JSON
+     * @param array<string, string> $headers
      */
-    private function request(string $method, string $path, ?string $bearer, ?array $body = null): ResponseInterface
+    private function request(string $method, string $path, ?string $bearer, ?array $body = null, array $headers = []): ResponseInterface
     {
         $this->resetAuthenticationState();
-        $headers = $bearer !== null ? ['Authorization' => 'Bearer ' . $bearer] : [];
+        if ($bearer !== null) {
+            $headers['Authorization'] = 'Bearer ' . $bearer;
+        }
         if ($body !== null) {
             $headers['Content-Type'] = 'application/json';
         }

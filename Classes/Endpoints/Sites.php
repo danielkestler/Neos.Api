@@ -9,6 +9,7 @@ use Neos\Api\Domain\Site\PackageKey;
 use Neos\Api\Domain\Site\Site;
 use Neos\Api\Domain\Site\SiteNodeName;
 use Neos\Api\Domain\Site\Sites as SiteList;
+use Neos\Api\Endpoints\Model\AcceptLanguage;
 use Neos\Api\Endpoints\Model\Site\DomainCreate;
 use Neos\Api\Endpoints\Model\Site\DomainUpdate;
 use Neos\Api\Endpoints\Model\Site\PackageKeys;
@@ -21,9 +22,12 @@ use Neos\Api\Endpoints\Response\Conflict;
 use Neos\Api\Endpoints\Response\DomainCreated;
 use Neos\Api\Endpoints\Response\NotFound;
 use Neos\Api\Endpoints\Response\SiteCreated;
+use Neos\Api\Endpoints\Response\TranslatedSiteCreationOptions;
 use Neos\Api\Endpoints\Response\UnprocessableContent;
+use Neos\Api\I18n\LabelTranslator;
 use Neos\Api\Security\ApiAuthContextProvider;
 use Neos\Api\Security\ApiScopes;
+use Neos\ContentRepository\Core\NodeType\NodeType;
 use Neos\ContentRepository\Core\NodeType\NodeTypeManager;
 use Neos\ContentRepository\Core\SharedModel\ContentRepository\ContentRepositoryId;
 use Neos\ContentRepositoryRegistry\ContentRepositoryRegistry;
@@ -37,6 +41,7 @@ use Neos\Neos\Domain\Repository\SiteRepository;
 use Neos\Neos\Domain\Service\NodeTypeNameFactory;
 use Neos\Neos\Domain\Service\SiteService;
 use Neos\OpenApi\Attributes\Operation;
+use Neos\OpenApi\Attributes\Parameter;
 use Neos\OpenApi\Attributes\RequestBody;
 
 /**
@@ -53,6 +58,7 @@ final readonly class Sites
         private PackageManager $packageManager,
         private ContentRepositoryRegistry $contentRepositoryRegistry,
         private PersistenceManagerInterface $persistenceManager,
+        private LabelTranslator $labelTranslator,
         #[Flow\InjectConfiguration(path: 'sitePresets.default.contentRepository', package: 'Neos.Neos')]
         string $defaultContentRepository,
     ) {
@@ -82,25 +88,27 @@ final readonly class Sites
         path: '/sites/options',
         method: 'GET',
         summary: 'Get the site creation options',
-        description: 'The site packages and site node types a site can be created with.',
+        description: 'The site packages and site node types a site can be created with. The labels are translated to the Accept-Language.',
         operationId: 'getSiteCreationOptions',
         security: [
             ApiAuthContextProvider::SCOPES => [ApiScopes::SITES_CREATE],
         ],
     )]
-    public function options(): SiteCreationOptions
-    {
+    public function options(
+        #[Parameter(in: 'header', name: 'Accept-Language')] AcceptLanguage|null $acceptLanguage = null,
+    ): TranslatedSiteCreationOptions {
         $nodeTypeManager = $this->nodeTypeManager($this->contentRepositoryForNewSites);
-        return new SiteCreationOptions(
+        $labels = $this->labelTranslator->forAcceptLanguage($acceptLanguage);
+        return new TranslatedSiteCreationOptions(new SiteCreationOptions(
             new PackageKeys(...array_map(
                 PackageKey::fromString(...),
                 array_keys($this->packageManager->getFilteredPackages('available', 'neos-site')),
             )),
             new SiteNodeTypes(...array_map(
-                SiteNodeType::fromNodeType(...),
+                static fn (NodeType $nodeType) => SiteNodeType::fromNodeType($nodeType, $labels),
                 array_values($nodeTypeManager->getSubNodeTypes(NodeTypeNameFactory::forSite(), false)),
             )),
-        );
+        ), $labels);
     }
 
     #[Operation(
