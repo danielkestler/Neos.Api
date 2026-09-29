@@ -22,6 +22,18 @@ privilegeTargets:
     "Neos.Api:Users.Delete":
       label: "Delete Neos users"
       matcher: "users.delete"
+    "Neos.Api:Sites.Read":
+      label: "List and read the Neos sites"
+      matcher: "sites.read"
+    "Neos.Api:Sites.Update":
+      label: "Change the Neos sites and their domains"
+      matcher: "sites.update"
+    "Neos.Api:Sites.Create":
+      label: "Create Neos sites"
+      matcher: "sites.create"
+    "Neos.Api:Sites.Delete":
+      label: "Delete Neos sites with their content"
+      matcher: "sites.delete"
 
 roles:
   "Neos.Flow:Everybody":
@@ -47,4 +59,12 @@ roles:
       - privilegeTarget: "Neos.Api:Users.Create"
         permission: GRANT
       - privilegeTarget: "Neos.Api:Users.Delete"
+        permission: GRANT
+      - privilegeTarget: "Neos.Api:Sites.Read"
+        permission: GRANT
+      - privilegeTarget: "Neos.Api:Sites.Update"
+        permission: GRANT
+      - privilegeTarget: "Neos.Api:Sites.Create"
+        permission: GRANT
+      - privilegeTarget: "Neos.Api:Sites.Delete"
         permission: GRANT

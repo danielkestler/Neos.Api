@@ -16,6 +16,7 @@ Neos:
           classes:
             'Neos\Api\Endpoints\Me': true
             'Neos\Api\Endpoints\Users': true
+            'Neos\Api\Endpoints\Sites': true
           specPath: 'openapi.json'
           # the docs are served by Neos.Api's DocsController, which lets users log in
           authContextProvider: 'Neos\Api\Security\ApiAuthContextProvider'

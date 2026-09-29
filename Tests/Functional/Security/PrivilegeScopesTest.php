@@ -25,6 +25,10 @@ class PrivilegeScopesTest extends FunctionalTestCase
             'users.update' => 'Change the Neos users',
             'users.create' => 'Create Neos users',
             'users.delete' => 'Delete Neos users',
+            'sites.read' => 'List and read the Neos sites',
+            'sites.update' => 'Change the Neos sites and their domains',
+            'sites.create' => 'Create Neos sites',
+            'sites.delete' => 'Delete Neos sites with their content',
         ], $privilegeScopes->scopes());
         self::assertSame('Neos.Api:Users.Update', $privilegeScopes->privilegeTargetOf('users.update'));
     }
@@ -38,7 +42,7 @@ class PrivilegeScopesTest extends FunctionalTestCase
         self::assertSame('Change the Neos users', $scopeRegistry->describe('users.update'));
 
         $response = $this->browser->request('http://localhost/.well-known/oauth-protected-resource/api');
-        self::assertSame(['me.read', 'users.read', 'users.update', 'users.create', 'users.delete'], json_decode((string)$response->getBody(), true, flags: JSON_THROW_ON_ERROR)['scopes_supported']);
+        self::assertSame(['me.read', 'users.read', 'users.update', 'users.create', 'users.delete', 'sites.read', 'sites.update', 'sites.create', 'sites.delete'], json_decode((string)$response->getBody(), true, flags: JSON_THROW_ON_ERROR)['scopes_supported']);
     }
 
     #[Test]
