@@ -20,4 +20,5 @@ final class ApiScopes
     public const string SITES_UPDATE = 'sites.update';
     public const string SITES_CREATE = 'sites.create';
     public const string SITES_DELETE = 'sites.delete';
+    public const string CONTENTREPOSITORIES_READ = 'contentrepositories.read';
 }
