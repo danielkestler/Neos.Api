@@ -22,7 +22,6 @@ use Neos\Api\Endpoints\Response\Conflict;
 use Neos\Api\Endpoints\Response\DomainCreated;
 use Neos\Api\Endpoints\Response\NotFound;
 use Neos\Api\Endpoints\Response\SiteCreated;
-use Neos\Api\Endpoints\Response\TranslatedSiteCreationOptions;
 use Neos\Api\Endpoints\Response\UnprocessableContent;
 use Neos\Api\I18n\LabelTranslator;
 use Neos\Api\Security\ApiAuthContextProvider;
@@ -96,10 +95,10 @@ final readonly class Sites
     )]
     public function options(
         #[Parameter(in: 'header', name: 'Accept-Language')] AcceptLanguage|null $acceptLanguage = null,
-    ): TranslatedSiteCreationOptions {
+    ): SiteCreationOptions {
         $nodeTypeManager = $this->nodeTypeManager($this->contentRepositoryForNewSites);
         $labels = $this->labelTranslator->forAcceptLanguage($acceptLanguage);
-        return new TranslatedSiteCreationOptions(new SiteCreationOptions(
+        return new SiteCreationOptions(
             new PackageKeys(...array_map(
                 PackageKey::fromString(...),
                 array_keys($this->packageManager->getFilteredPackages('available', 'neos-site')),
@@ -108,7 +107,7 @@ final readonly class Sites
                 static fn (NodeType $nodeType) => SiteNodeType::fromNodeType($nodeType, $labels),
                 array_values($nodeTypeManager->getSubNodeTypes(NodeTypeNameFactory::forSite(), false)),
             )),
-        ), $labels);
+        );
     }
 
     #[Operation(

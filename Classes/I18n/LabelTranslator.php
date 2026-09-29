@@ -13,13 +13,17 @@ use Neos\Flow\I18n\Utility;
 
 /**
  * Translates the labels of the Neos configuration to the language of a request
+ *
+ * It remembers the locale it translated to, for ApiCacheHeadersMiddleware to send it as the Content-Language
  */
 #[Flow\Scope('singleton')]
-final readonly class LabelTranslator
+final class LabelTranslator
 {
+    private Locale|null $usedLocale = null;
+
     public function __construct(
-        private LocalizationService $localizationService,
-        private Translator $translator,
+        private readonly LocalizationService $localizationService,
+        private readonly Translator $translator,
     ) {
     }
 
@@ -29,11 +33,24 @@ final readonly class LabelTranslator
     public function forAcceptLanguage(AcceptLanguage|null $acceptLanguage): Labels
     {
         $defaultLocale = $this->localizationService->getConfiguration()->getDefaultLocale();
-        return new Labels(
-            $this->translator,
-            ($acceptLanguage !== null ? $this->bestMatchingLocale($acceptLanguage) : null) ?? $defaultLocale,
-            $defaultLocale,
-        );
+        $this->usedLocale = ($acceptLanguage !== null ? $this->bestMatchingLocale($acceptLanguage) : null) ?? $defaultLocale;
+        return new Labels($this->translator, $this->usedLocale, $defaultLocale);
+    }
+
+    /**
+     * The locale labels were translated to since forget() was called, null if none were
+     */
+    public function usedLocale(): Locale|null
+    {
+        return $this->usedLocale;
+    }
+
+    /**
+     * Forgets the used locale, at the start of a request
+     */
+    public function forget(): void
+    {
+        $this->usedLocale = null;
     }
 
     /**

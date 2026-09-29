@@ -8,8 +8,6 @@ use Neos\Api\Domain\ContentRepository\ContentRepository;
 use Neos\Api\Domain\ContentRepository\ContentRepositoryId;
 use Neos\Api\Endpoints\Model\AcceptLanguage;
 use Neos\Api\Endpoints\Response\NotFound;
-use Neos\Api\Endpoints\Response\TranslatedContentRepositories;
-use Neos\Api\Endpoints\Response\TranslatedContentRepository;
 use Neos\Api\I18n\LabelTranslator;
 use Neos\Api\I18n\Labels;
 use Neos\Api\Security\ApiAuthContextProvider;
@@ -42,12 +40,12 @@ final readonly class ContentRepositories
     )]
     public function list(
         #[Parameter(in: 'header', name: 'Accept-Language')] AcceptLanguage|null $acceptLanguage = null,
-    ): TranslatedContentRepositories {
+    ): ContentRepositoryList {
         $labels = $this->labelTranslator->forAcceptLanguage($acceptLanguage);
-        return new TranslatedContentRepositories(new ContentRepositoryList(...array_map(
+        return new ContentRepositoryList(...array_map(
             fn (NeosContentRepositoryId $id) => $this->contentRepository($id, $labels),
             iterator_to_array($this->contentRepositoryRegistry->getContentRepositoryIds(), false),
-        )), $labels);
+        ));
     }
 
     #[Operation(
@@ -63,12 +61,11 @@ final readonly class ContentRepositories
     public function get(
         ContentRepositoryId $contentRepositoryId,
         #[Parameter(in: 'header', name: 'Accept-Language')] AcceptLanguage|null $acceptLanguage = null,
-    ): TranslatedContentRepository|NotFound {
+    ): ContentRepository|NotFound {
         // checked up front: the registry throws for an unknown one
         foreach ($this->contentRepositoryRegistry->getContentRepositoryIds() as $id) {
             if ($id->value === $contentRepositoryId->value) {
-                $labels = $this->labelTranslator->forAcceptLanguage($acceptLanguage);
-                return new TranslatedContentRepository($this->contentRepository($id, $labels), $labels);
+                return $this->contentRepository($id, $this->labelTranslator->forAcceptLanguage($acceptLanguage));
             }
         }
         return NotFound::because(sprintf('There is no content repository with the ID %s', $contentRepositoryId->value));

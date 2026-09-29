@@ -46,7 +46,8 @@ class ContentRepositoriesTest extends EndpointTestCase
 
         $response = $this->get('/api/contentrepositories/default', $this->token('editor-machine', 'contentrepositories.read'), ['Accept-Language' => 'de']);
         self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
-        self::assertSame(['de', 'Accept-Language'], [$response->getHeaderLine('Content-Language'), $response->getHeaderLine('Vary')]);
+        self::assertSame('de', $response->getHeaderLine('Content-Language'));
+        self::assertSame(['Authorization', 'Accept-Language'], $response->getHeader('Vary'));
     }
 
     #[Test]

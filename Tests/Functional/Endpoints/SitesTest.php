@@ -267,7 +267,8 @@ class SitesTest extends EndpointTestCase
         self::assertContains('Neos.Demo', $options['packages']);
         self::assertContains('Neos.Demo:Document.Homepage', array_column($options['nodeTypes'], 'name'));
         self::assertNotContains('Neos.Neos:Site', array_column($options['nodeTypes'], 'name'));
-        self::assertSame(['en', 'Accept-Language'], [$response->getHeaderLine('Content-Language'), $response->getHeaderLine('Vary')]);
+        self::assertSame('en', $response->getHeaderLine('Content-Language'));
+        self::assertSame(['Authorization', 'Accept-Language'], $response->getHeader('Vary'));
 
         $response = $this->get('/api/sites/options', $this->token('admin-machine', 'sites.create'), ['Accept-Language' => 'de-DE, en;q=0.5']);
         self::assertSame('de', $response->getHeaderLine('Content-Language'));

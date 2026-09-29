@@ -62,3 +62,7 @@ Neos:
         "Neos.Api:oauthChallenge":
           position: "before dispatch"
           middleware: 'Neos\Api\Http\OAuthChallengeMiddleware'
+        # around oauthChallenge, so its 401 and 403 get the headers as well
+        'Neos.Api:cacheHeaders':
+          position: 'before Neos.Api:oauthChallenge'
+          middleware: 'Neos\Api\Http\ApiCacheHeadersMiddleware'
