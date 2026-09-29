@@ -330,7 +330,7 @@ class UsersTest extends EndpointTestCase
         self::assertArrayHasKey('Location', $created[201]['headers']);
         self::assertEqualsCanonicalizing([204, 400, 401, 404, 409], array_keys($document['paths']['/users/{userId}']['delete']['responses']));
         self::assertTrue($document['components']['schemas']['Password']['writeOnly']);
-        self::assertArrayHasKey('UserPatch', $document['components']['schemas']);
+        self::assertArrayHasKey('UserUpdate', $document['components']['schemas']);
         self::assertSame('Change the Neos users (privilege Neos.Api:Users.Update)', $document['components']['securitySchemes']['oauth2']['flows']['clientCredentials']['scopes']['users.update']);
     }
 }

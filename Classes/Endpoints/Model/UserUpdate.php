@@ -7,13 +7,12 @@ use Neos\Api\Domain\EmailAddress;
 use Neos\JsonSchema\ProvidesSchema;
 use Neos\JsonSchema\Schema;
 use Neos\Neos\Domain\Model\User as NeosUser;
-use Neos\Party\Domain\Model\ElectronicAddress;
 use Neos\Schematic\Discovery\AutoDiscoveringSchema;
 
 /**
  * Changes to a Neos user: what is left out or null stays as it is
  */
-final readonly class UserPatch implements ProvidesSchema
+final readonly class UserUpdate implements ProvidesSchema
 {
     /**
      * @param EmailAddress|null $email the new primary email address
@@ -33,16 +32,7 @@ final readonly class UserPatch implements ProvidesSchema
         if ($this->lastName !== null) {
             $user->getName()->setLastName($this->lastName);
         }
-        if ($this->email !== null) {
-            $address = $user->getPrimaryElectronicAddress();
-            if ($address?->getType() !== EmailAddress::ELECTRONIC_ADDRESS_TYPE) {
-                $address = new ElectronicAddress();
-                $address->setType(EmailAddress::ELECTRONIC_ADDRESS_TYPE);
-                $user->addElectronicAddress($address);
-                $user->setPrimaryElectronicAddress($address);
-            }
-            $address->setIdentifier($this->email->value);
-        }
+        $this->email?->makePrimaryOf($user);
     }
 
     public static function schema(): Schema

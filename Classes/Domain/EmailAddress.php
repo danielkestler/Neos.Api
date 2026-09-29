@@ -7,6 +7,8 @@ use Neos\JsonSchema\ProvidesSchema;
 use Neos\JsonSchema\Schema;
 use Neos\JsonSchema\StringSchema;
 use Neos\JsonSchema\Support\StringFormat;
+use Neos\Party\Domain\Model\ElectronicAddress;
+use Neos\Party\Domain\Model\Person;
 use Neos\Schematic\Schematic;
 
 final readonly class EmailAddress implements ProvidesSchema
@@ -25,6 +27,30 @@ final readonly class EmailAddress implements ProvidesSchema
     public static function fromString(string $value): self
     {
         return Schematic::instantiate(self::class, $value)->valueOrThrow();
+    }
+
+    /**
+     * The primary electronic address of the person, null if it is none or not an email address
+     */
+    public static function primaryOf(Person $person): ?self
+    {
+        $address = $person->getPrimaryElectronicAddress();
+        return $address?->getType() === self::ELECTRONIC_ADDRESS_TYPE ? self::fromString($address->getIdentifier()) : null;
+    }
+
+    /**
+     * Makes this the primary electronic address of the person, reusing the one it has if that is an email address
+     */
+    public function makePrimaryOf(Person $person): void
+    {
+        $address = $person->getPrimaryElectronicAddress();
+        if ($address?->getType() !== self::ELECTRONIC_ADDRESS_TYPE) {
+            $address = new ElectronicAddress();
+            $address->setType(self::ELECTRONIC_ADDRESS_TYPE);
+            // adds it to the person's addresses as well
+            $person->setPrimaryElectronicAddress($address);
+        }
+        $address->setIdentifier($this->value);
     }
 
     public static function schema(): Schema

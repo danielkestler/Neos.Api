@@ -6,8 +6,8 @@ namespace Neos\Api\Endpoints;
 use Neos\Api\Domain\User;
 use Neos\Api\Domain\UserId;
 use Neos\Api\Domain\Users as UserList;
-use Neos\Api\Endpoints\Model\NewUser;
-use Neos\Api\Endpoints\Model\UserPatch;
+use Neos\Api\Endpoints\Model\UserCreate;
+use Neos\Api\Endpoints\Model\UserUpdate;
 use Neos\Api\Endpoints\Response\Conflict;
 use Neos\Api\Endpoints\Response\NotFound;
 use Neos\Api\Endpoints\Response\UnprocessableContent;
@@ -63,7 +63,7 @@ final readonly class Users
         ],
     )]
     public function create(
-        #[RequestBody(description: 'The user and its account')] NewUser $newUser,
+        #[RequestBody(description: 'The user and its account')] UserCreate $newUser,
     ): UserCreated|Conflict|UnprocessableContent {
         if ($this->userService->getUser($newUser->username->value) !== null) {
             return Conflict::because(sprintf('There is an account with the username %s already', $newUser->username->value));
@@ -110,7 +110,7 @@ final readonly class Users
     )]
     public function update(
         UserId $userId,
-        #[RequestBody(description: 'The properties to change')] UserPatch $patch,
+        #[RequestBody(description: 'The properties to change')] UserUpdate $patch,
     ): User|NotFound {
         $user = $this->findUser($userId);
         if ($user === null) {

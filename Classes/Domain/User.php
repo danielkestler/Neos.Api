@@ -30,13 +30,12 @@ final readonly class User implements ProvidesSchema
 
     public static function fromNeosUser(NeosUser $user): self
     {
-        $address = $user->getPrimaryElectronicAddress();
         return new self(
             UserId::fromString($user->getId()->value),
             $user->getLabel(),
             $user->getName()->getFirstName(),
             $user->getName()->getLastName(),
-            $address?->getType() === EmailAddress::ELECTRONIC_ADDRESS_TYPE ? EmailAddress::fromString($address->getIdentifier()) : null,
+            EmailAddress::primaryOf($user),
             $user->isActive(),
             new Accounts(...array_map(
                 Account::fromFlowAccount(...),

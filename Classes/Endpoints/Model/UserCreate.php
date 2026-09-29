@@ -5,18 +5,18 @@ namespace Neos\Api\Endpoints\Model;
 
 use Neos\Api\Domain\AccountIdentifier;
 use Neos\Api\Domain\EmailAddress;
+use Neos\Api\Domain\Password;
 use Neos\Api\Domain\RoleIdentifiers;
 use Neos\JsonSchema\ProvidesSchema;
 use Neos\JsonSchema\Schema;
 use Neos\Neos\Domain\Model\User as NeosUser;
-use Neos\Party\Domain\Model\ElectronicAddress;
 use Neos\Party\Domain\Model\PersonName;
 use Neos\Schematic\Discovery\AutoDiscoveringSchema;
 
 /**
  * A Neos user to create, with a backend account to log in with
  */
-final readonly class NewUser implements ProvidesSchema
+final readonly class UserCreate implements ProvidesSchema
 {
     /**
      * @param AccountIdentifier $username the identifier of the backend account, unique among them
@@ -40,13 +40,7 @@ final readonly class NewUser implements ProvidesSchema
     {
         $user = new NeosUser();
         $user->setName(new PersonName('', $this->firstName, '', $this->lastName, '', $this->username->value));
-        if ($this->email !== null) {
-            $address = new ElectronicAddress();
-            $address->setType(EmailAddress::ELECTRONIC_ADDRESS_TYPE);
-            $address->setIdentifier($this->email->value);
-            $user->addElectronicAddress($address);
-            $user->setPrimaryElectronicAddress($address);
-        }
+        $this->email?->makePrimaryOf($user);
         return $user;
     }
 
