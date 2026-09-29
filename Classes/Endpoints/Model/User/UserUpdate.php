@@ -1,9 +1,9 @@
 <?php
 declare(strict_types=1);
 
-namespace Neos\Api\Endpoints\Model;
+namespace Neos\Api\Endpoints\Model\User;
 
-use Neos\Api\Domain\EmailAddress;
+use Neos\Api\Domain\User\EmailAddress;
 use Neos\JsonSchema\ProvidesSchema;
 use Neos\JsonSchema\Schema;
 use Neos\Neos\Domain\Model\User as NeosUser;

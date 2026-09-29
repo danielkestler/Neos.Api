@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-namespace Neos\Api\Domain;
+namespace Neos\Api\Domain\User;
 
 use Neos\Flow\Security\Account as FlowAccount;
 use Neos\Flow\Security\Policy\Role;

@@ -1,27 +1,27 @@
 <?php
 declare(strict_types=1);
 
-namespace Neos\Api\Domain;
+namespace Neos\Api\Domain\User;
 
 use Neos\JsonSchema\ProvidesSchema;
 use Neos\JsonSchema\Schema;
 use Neos\Schematic\Discovery\AutoDiscoveringSchema;
 
 /**
- * The accounts of a Neos user
+ * The roles assigned to an account
  *
- * @implements \IteratorAggregate<Account>
+ * @implements \IteratorAggregate<RoleIdentifier>
  */
-final readonly class Accounts implements ProvidesSchema, \IteratorAggregate
+final readonly class RoleIdentifiers implements ProvidesSchema, \IteratorAggregate
 {
     /**
-     * @var list<Account>
+     * @var list<RoleIdentifier>
      */
-    public array $accounts;
+    public array $roles;
 
-    public function __construct(Account ...$accounts)
+    public function __construct(RoleIdentifier ...$roles)
     {
-        $this->accounts = array_values($accounts);
+        $this->roles = array_values($roles);
     }
 
     public static function schema(): Schema
@@ -32,6 +32,6 @@ final readonly class Accounts implements ProvidesSchema, \IteratorAggregate
 
     public function getIterator(): \Traversable
     {
-        yield from $this->accounts;
+        yield from $this->roles;
     }
 }

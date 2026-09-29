@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Neos\Api\Tests\Functional\Endpoints;
 
 use Doctrine\ORM\EntityManagerInterface;
-use Neos\Api\Domain\EmailAddress;
+use Neos\Api\Domain\User\EmailAddress;
 use Neos\Neos\Domain\Service\UserService;
 use Neos\Party\Domain\Model\ElectronicAddress;
 use PHPUnit\Framework\Attributes\Test;

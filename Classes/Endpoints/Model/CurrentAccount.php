@@ -3,8 +3,8 @@ declare(strict_types=1);
 
 namespace Neos\Api\Endpoints\Model;
 
-use Neos\Api\Domain\Account;
-use Neos\Api\Domain\User;
+use Neos\Api\Domain\User\Account;
+use Neos\Api\Domain\User\User;
 use Neos\JsonSchema\ProvidesSchema;
 use Neos\JsonSchema\Schema;
 use Neos\Schematic\Discovery\AutoDiscoveringSchema;

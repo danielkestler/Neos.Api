@@ -1,12 +1,12 @@
 <?php
 declare(strict_types=1);
 
-namespace Neos\Api\Endpoints\Model;
+namespace Neos\Api\Endpoints\Model\User;
 
-use Neos\Api\Domain\AccountIdentifier;
-use Neos\Api\Domain\EmailAddress;
-use Neos\Api\Domain\Password;
-use Neos\Api\Domain\RoleIdentifiers;
+use Neos\Api\Domain\User\AccountIdentifier;
+use Neos\Api\Domain\User\EmailAddress;
+use Neos\Api\Domain\User\Password;
+use Neos\Api\Domain\User\RoleIdentifiers;
 use Neos\JsonSchema\ProvidesSchema;
 use Neos\JsonSchema\Schema;
 use Neos\Neos\Domain\Model\User as NeosUser;

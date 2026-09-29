@@ -3,11 +3,11 @@ declare(strict_types=1);
 
 namespace Neos\Api\Endpoints;
 
-use Neos\Api\Domain\User;
-use Neos\Api\Domain\UserId;
-use Neos\Api\Domain\Users as UserList;
-use Neos\Api\Endpoints\Model\UserCreate;
-use Neos\Api\Endpoints\Model\UserUpdate;
+use Neos\Api\Domain\User\User;
+use Neos\Api\Domain\User\UserId;
+use Neos\Api\Domain\User\Users as UserList;
+use Neos\Api\Endpoints\Model\User\UserCreate;
+use Neos\Api\Endpoints\Model\User\UserUpdate;
 use Neos\Api\Endpoints\Response\Conflict;
 use Neos\Api\Endpoints\Response\NotFound;
 use Neos\Api\Endpoints\Response\UnprocessableContent;

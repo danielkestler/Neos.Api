@@ -3,8 +3,8 @@ declare(strict_types=1);
 
 namespace Neos\Api\Endpoints;
 
-use Neos\Api\Domain\Account;
-use Neos\Api\Domain\User;
+use Neos\Api\Domain\User\Account;
+use Neos\Api\Domain\User\User;
 use Neos\Api\Endpoints\Model\AccessTokenGrant;
 use Neos\Api\Endpoints\Model\ClientIdentifier;
 use Neos\Api\Endpoints\Model\CurrentAccount;
