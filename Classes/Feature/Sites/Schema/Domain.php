@@ -1,0 +1,53 @@
+<?php
+declare(strict_types=1);
+
+namespace Neos\Api\Feature\Sites\Schema;
+
+use Neos\Flow\Persistence\PersistenceManagerInterface;
+use Neos\JsonSchema\ProvidesSchema;
+use Neos\JsonSchema\Schema;
+use Neos\Neos\Domain\Model\Domain as NeosDomain;
+use Neos\Schematic\Discovery\AutoDiscoveringSchema;
+
+/**
+ * A domain a site is reachable with
+ */
+final readonly class Domain implements ProvidesSchema
+{
+    /**
+     * @param UriScheme|null $scheme null if the domain works with the scheme of the request
+     * @param Port|null $port null if the domain works with the port of the request
+     * @param bool $isPrimary whether it is the site's explicit primary domain
+     * @param string $url the domain as a URL, e.g. https://www.example.com
+     */
+    public function __construct(
+        public DomainId $id,
+        public Hostname $hostname,
+        public UriScheme|null $scheme,
+        public Port|null $port,
+        public bool $active,
+        public bool $isPrimary,
+        public string $url,
+    ) {
+    }
+
+    public static function fromNeosDomain(NeosDomain $domain, PersistenceManagerInterface $persistenceManager): self
+    {
+        $site = $domain->getSite();
+        return new self(
+            DomainId::fromString($persistenceManager->getIdentifierByObject($domain)),
+            Hostname::fromString($domain->getHostname()),
+            $domain->getScheme() !== null ? UriScheme::from($domain->getScheme()) : null,
+            $domain->getPort() !== null ? Port::fromInteger($domain->getPort()) : null,
+            (bool)$domain->getActive(),
+            $site->getPrimaryDomain(false) === $domain,
+            (string)$domain,
+        );
+    }
+
+    public static function schema(): Schema
+    {
+        static $schema = null;
+        return $schema ??= AutoDiscoveringSchema::analyze(self::class);
+    }
+}

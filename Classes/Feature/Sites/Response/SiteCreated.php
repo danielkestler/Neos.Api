@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 namespace Neos\Api\Feature\Sites\Response;
 
-use Neos\Api\Feature\Sites\Model\Site;
+use Neos\Api\Feature\Sites\Schema\Site;
 use Neos\OpenApi\Binding\BuiltinType;
 use Neos\OpenApi\Binding\TypeReference;
 use Neos\OpenApi\Response\ApiResponseWithHeaders;

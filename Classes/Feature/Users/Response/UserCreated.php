@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 namespace Neos\Api\Feature\Users\Response;
 
-use Neos\Api\Feature\Users\Model\User;
+use Neos\Api\Feature\Users\Schema\User;
 use Neos\OpenApi\Binding\BuiltinType;
 use Neos\OpenApi\Binding\TypeReference;
 use Neos\OpenApi\Response\ApiResponseWithHeaders;

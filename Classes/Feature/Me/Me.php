@@ -3,9 +3,9 @@ declare(strict_types=1);
 
 namespace Neos\Api\Feature\Me;
 
-use Neos\Api\Feature\Me\Model\CurrentAccount;
-use Neos\Api\Feature\Users\Model\Account;
-use Neos\Api\Feature\Users\Model\User;
+use Neos\Api\Feature\Me\Schema\CurrentAccount;
+use Neos\Api\Feature\Users\Schema\Account;
+use Neos\Api\Feature\Users\Schema\User;
 use Neos\Api\Security\ApiAuthContextProvider;
 use Neos\Api\Security\ApiCaller;
 use Neos\Api\Security\ApiScopes;

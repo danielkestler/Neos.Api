@@ -3,9 +3,9 @@ declare(strict_types=1);
 
 namespace Neos\Api\Feature\ContentRepositories;
 
-use Neos\Api\Feature\ContentRepositories\Model\ContentRepositories as ContentRepositoryList;
-use Neos\Api\Feature\ContentRepositories\Model\ContentRepository;
-use Neos\Api\Feature\ContentRepositories\Model\ContentRepositoryId;
+use Neos\Api\Feature\ContentRepositories\Schema\ContentRepositories as ContentRepositoryList;
+use Neos\Api\Feature\ContentRepositories\Schema\ContentRepository;
+use Neos\Api\Feature\ContentRepositories\Schema\ContentRepositoryId;
 use Neos\Api\Infrastructure\I18n\Labels;
 use Neos\Api\Infrastructure\I18n\LabelTranslator;
 use Neos\Api\Security\ApiAuthContextProvider;

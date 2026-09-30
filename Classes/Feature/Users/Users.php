@@ -3,11 +3,11 @@ declare(strict_types=1);
 
 namespace Neos\Api\Feature\Users;
 
-use Neos\Api\Feature\Users\Dto\UserCreate;
-use Neos\Api\Feature\Users\Dto\UserUpdate;
-use Neos\Api\Feature\Users\Model\User;
-use Neos\Api\Feature\Users\Model\UserId;
-use Neos\Api\Feature\Users\Model\Users as UserList;
+use Neos\Api\Feature\Users\Payload\UserCreate;
+use Neos\Api\Feature\Users\Payload\UserUpdate;
+use Neos\Api\Feature\Users\Schema\User;
+use Neos\Api\Feature\Users\Schema\UserId;
+use Neos\Api\Feature\Users\Schema\Users as UserList;
 use Neos\Api\Feature\Users\Response\UserCreated;
 use Neos\Api\Security\ApiAuthContextProvider;
 use Neos\Api\Security\ApiCaller;
