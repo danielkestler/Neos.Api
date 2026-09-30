@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Neos\Api\Tests\Functional\Infrastructure\I18n;
 
 use Neos\Api\Infrastructure\I18n\LabelTranslator;
-use Neos\Api\SharedModel\AcceptLanguage;
+use Neos\Api\Shared\Schema\AcceptLanguage;
 use Neos\Flow\Tests\FunctionalTestCase;
 use PHPUnit\Framework\Attributes\Test;
 

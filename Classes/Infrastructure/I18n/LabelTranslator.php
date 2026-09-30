@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 namespace Neos\Api\Infrastructure\I18n;
 
-use Neos\Api\SharedModel\AcceptLanguage;
+use Neos\Api\Shared\Schema\AcceptLanguage;
 use Neos\Flow\Annotations as Flow;
 use Neos\Flow\I18n\Exception\InvalidLocaleIdentifierException;
 use Neos\Flow\I18n\Locale;

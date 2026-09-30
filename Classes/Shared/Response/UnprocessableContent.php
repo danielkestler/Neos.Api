@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-namespace Neos\Api\SharedModel\Response;
+namespace Neos\Api\Shared\Response;
 
 use Neos\OpenApi\Binding\TypeReference;
 use Neos\OpenApi\Problem\ProblemDocument;

@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-namespace Neos\Api\SharedModel\Response;
+namespace Neos\Api\Shared\Response;
 
 use Neos\OpenApi\Binding\TypeReference;
 use Neos\OpenApi\Problem\ProblemDocument;
@@ -10,9 +10,9 @@ use Neos\OpenApi\Support\HttpStatusCode;
 use Neos\OpenApi\Support\MediaTypeRange;
 
 /**
- * The resource an operation addresses doesn't exist
+ * The request conflicts with the current state of the resource, e.g. a name that is taken already
  */
-final readonly class NotFound implements ApiResponse
+final readonly class Conflict implements ApiResponse
 {
     private function __construct(
         private ProblemDocument $problem,
@@ -21,17 +21,17 @@ final readonly class NotFound implements ApiResponse
 
     public static function because(string $detail): self
     {
-        return new self(ProblemDocument::create(self::statusCode(), 'Not found', $detail));
+        return new self(ProblemDocument::create(self::statusCode(), 'Conflict', $detail));
     }
 
     public static function statusCode(): HttpStatusCode
     {
-        return HttpStatusCode::fromInteger(404);
+        return HttpStatusCode::fromInteger(409);
     }
 
     public static function description(): string
     {
-        return 'The resource doesn\'t exist';
+        return 'The request conflicts with the current state';
     }
 
     public static function bodyType(): TypeReference

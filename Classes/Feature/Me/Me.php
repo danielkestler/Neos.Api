@@ -9,7 +9,7 @@ use Neos\Api\Feature\Users\Schema\User;
 use Neos\Api\Security\ApiAuthContextProvider;
 use Neos\Api\Security\ApiCaller;
 use Neos\Api\Security\ApiScopes;
-use Neos\Api\SharedModel\AccessTokenGrant;
+use Neos\Api\Shared\Schema\AccessTokenGrant;
 use Neos\Neos\Domain\Model\User as NeosUser;
 use Neos\OpenApi\Attributes\AuthContext;
 use Neos\OpenApi\Attributes\Operation;

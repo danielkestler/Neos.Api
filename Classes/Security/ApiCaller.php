@@ -3,9 +3,9 @@ declare(strict_types=1);
 
 namespace Neos\Api\Security;
 
-use Neos\Api\SharedModel\ClientIdentifier;
-use Neos\Api\SharedModel\Scope;
-use Neos\Api\SharedModel\Scopes;
+use Neos\Api\Shared\Schema\ClientIdentifier;
+use Neos\Api\Shared\Schema\Scope;
+use Neos\Api\Shared\Schema\Scopes;
 use Neos\Flow\Annotations as Flow;
 use Neos\Flow\Security\Account;
 use Neos\OAuth\Security\AuthenticatedGrant;
