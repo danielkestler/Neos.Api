@@ -5,7 +5,7 @@ namespace Neos\Api\Feature\Users\Schema;
 
 use Neos\JsonSchema\ProvidesSchema;
 use Neos\JsonSchema\Schema;
-use Neos\Neos\Domain\Model\User as NeosUser;
+use Neos\Neos\Domain\Model;
 use Neos\Schematic\Discovery\AutoDiscoveringSchema;
 
 /**
@@ -28,7 +28,7 @@ final readonly class User implements ProvidesSchema
     ) {
     }
 
-    public static function fromNeosUser(NeosUser $user): self
+    public static function from(Model\User $user): self
     {
         return new self(
             UserId::fromString($user->getId()->value),
@@ -38,7 +38,7 @@ final readonly class User implements ProvidesSchema
             EmailAddress::primaryOf($user),
             $user->isActive(),
             new Accounts(...array_map(
-                Account::fromFlowAccount(...),
+                Account::from(...),
                 array_values($user->getAccounts()->toArray()),
             )),
         );

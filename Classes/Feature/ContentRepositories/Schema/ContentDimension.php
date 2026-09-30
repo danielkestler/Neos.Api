@@ -4,8 +4,7 @@ declare(strict_types=1);
 namespace Neos\Api\Feature\ContentRepositories\Schema;
 
 use Neos\Api\Infrastructure\I18n\Labels;
-use Neos\ContentRepository\Core\Dimension\ContentDimension as NeosContentDimension;
-use Neos\ContentRepository\Core\Dimension\ContentDimensionValue as NeosContentDimensionValue;
+use Neos\ContentRepository\Core\Dimension;
 use Neos\JsonSchema\ProvidesSchema;
 use Neos\JsonSchema\Schema;
 use Neos\Schematic\Discovery\AutoDiscoveringSchema;
@@ -27,13 +26,13 @@ final readonly class ContentDimension implements ProvidesSchema
     ) {
     }
 
-    public static function fromNeosContentDimension(NeosContentDimension $dimension, Labels $labels): self
+    public static function from(Dimension\ContentDimension $dimension, Labels $labels): self
     {
         return new self(
             $dimension->id->value,
             $labels->label($dimension->getConfigurationValue('label')),
             new ContentDimensionValues(...array_map(
-                static fn (NeosContentDimensionValue $value) => ContentDimensionValue::fromNeosContentDimensionValue($value, $dimension, $labels),
+                static fn (Dimension\ContentDimensionValue $value) => ContentDimensionValue::from($value, $dimension, $labels),
                 array_values($dimension->values->values),
             )),
         );

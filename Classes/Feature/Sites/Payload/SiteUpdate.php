@@ -7,7 +7,7 @@ use Neos\Api\Feature\Sites\Schema\DomainId;
 use Neos\Api\Feature\Sites\Schema\SiteName;
 use Neos\JsonSchema\ProvidesSchema;
 use Neos\JsonSchema\Schema;
-use Neos\Neos\Domain\Model\Site as NeosSite;
+use Neos\Neos\Domain\Model;
 use Neos\Schematic\Discovery\AutoDiscoveringSchema;
 
 /**
@@ -28,13 +28,13 @@ final readonly class SiteUpdate implements ProvidesSchema
     /**
      * Applies the name and online state, the primary domain is looked up by the caller
      */
-    public function applyTo(NeosSite $site): void
+    public function applyTo(Model\Site $site): void
     {
         if ($this->name !== null) {
             $site->setName($this->name->value);
         }
         if ($this->online !== null) {
-            $site->setState($this->online ? NeosSite::STATE_ONLINE : NeosSite::STATE_OFFLINE);
+            $site->setState($this->online ? Model\Site::STATE_ONLINE : Model\Site::STATE_OFFLINE);
         }
     }
 

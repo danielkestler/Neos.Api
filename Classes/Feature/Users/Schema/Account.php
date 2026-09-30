@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 namespace Neos\Api\Feature\Users\Schema;
 
-use Neos\Flow\Security\Account as FlowAccount;
+use Neos\Flow\Security;
 use Neos\Flow\Security\Policy\Role;
 use Neos\JsonSchema\ProvidesSchema;
 use Neos\JsonSchema\Schema;
@@ -20,7 +20,7 @@ final readonly class Account implements ProvidesSchema
     ) {
     }
 
-    public static function fromFlowAccount(FlowAccount $account): self
+    public static function from(Security\Account $account): self
     {
         return new self(
             AccountIdentifier::fromString($account->getAccountIdentifier()),

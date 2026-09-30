@@ -16,8 +16,7 @@ use Neos\Api\Shared\Response\Conflict;
 use Neos\Api\Shared\Response\NotFound;
 use Neos\Api\Shared\Response\UnprocessableContent;
 use Neos\Flow\Security\Policy\PolicyService;
-use Neos\Neos\Domain\Model\User as NeosUser;
-use Neos\Neos\Domain\Model\UserId as NeosUserId;
+use Neos\Neos\Domain\Model;
 use Neos\Neos\Domain\Service\UserService;
 use Neos\OpenApi\Attributes\AuthContext;
 use Neos\OpenApi\Attributes\Operation;
@@ -47,7 +46,7 @@ final readonly class Users
     public function list(): UserList
     {
         return new UserList(...array_map(
-            User::fromNeosUser(...),
+            User::from(...),
             $this->userService->getUsers()->toArray(),
         ));
     }
@@ -74,13 +73,15 @@ final readonly class Users
                 return UnprocessableContent::because(sprintf('There is no role %s that can be assigned to an account', $role->value));
             }
         }
-        $user = $this->userService->addUser(
+        $user = new Model\User();
+        $newUser->applyTo($user);
+        $this->userService->addUser(
             $newUser->username->value,
             $newUser->password->value,
-            $newUser->toNeosUser(),
+            $user,
             $newUser->roleIdentifiers(),
         );
-        return new UserCreated(User::fromNeosUser($user));
+        return new UserCreated(User::from($user));
     }
 
     #[Operation(
@@ -95,7 +96,7 @@ final readonly class Users
     public function get(UserId $userId): User|NotFound
     {
         $user = $this->findUser($userId);
-        return $user !== null ? User::fromNeosUser($user) : self::notFound($userId);
+        return $user !== null ? User::from($user) : self::notFound($userId);
     }
 
     #[Operation(
@@ -118,7 +119,7 @@ final readonly class Users
         }
         $patch->applyTo($user);
         $this->userService->updateUser($user);
-        return User::fromNeosUser($user);
+        return User::from($user);
     }
 
     #[Operation(
@@ -144,11 +145,11 @@ final readonly class Users
         return null;
     }
 
-    private function findUser(UserId $userId): ?NeosUser
+    private function findUser(UserId $userId): ?Model\User
     {
         // the party repository finds any party, not only Neos users
-        $user = $this->userService->findUserById(NeosUserId::fromString($userId->value));
-        return $user instanceof NeosUser ? $user : null;
+        $user = $this->userService->findUserById(Model\UserId::fromString($userId->value));
+        return $user instanceof Model\User ? $user : null;
     }
 
     private static function notFound(UserId $userId): NotFound

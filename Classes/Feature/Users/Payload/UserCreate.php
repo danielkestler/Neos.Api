@@ -9,7 +9,7 @@ use Neos\Api\Feature\Users\Schema\Password;
 use Neos\Api\Feature\Users\Schema\RoleIdentifiers;
 use Neos\JsonSchema\ProvidesSchema;
 use Neos\JsonSchema\Schema;
-use Neos\Neos\Domain\Model\User as NeosUser;
+use Neos\Neos\Domain\Model;
 use Neos\Party\Domain\Model\PersonName;
 use Neos\Schematic\Discovery\AutoDiscoveringSchema;
 
@@ -34,14 +34,12 @@ final readonly class UserCreate implements ProvidesSchema
     }
 
     /**
-     * The user without an account, see UserService::addUser()
+     * Applies the name and email address, the account is added by UserService::addUser()
      */
-    public function toNeosUser(): NeosUser
+    public function applyTo(Model\User $user): void
     {
-        $user = new NeosUser();
         $user->setName(new PersonName('', $this->firstName, '', $this->lastName, '', $this->username->value));
         $this->email?->makePrimaryOf($user);
-        return $user;
     }
 
     /**

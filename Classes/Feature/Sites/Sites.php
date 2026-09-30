@@ -33,8 +33,7 @@ use Neos\ContentRepositoryRegistry\ContentRepositoryRegistry;
 use Neos\Flow\Annotations as Flow;
 use Neos\Flow\Package\PackageManager;
 use Neos\Flow\Persistence\PersistenceManagerInterface;
-use Neos\Neos\Domain\Model\Domain as NeosDomain;
-use Neos\Neos\Domain\Model\Site as NeosSite;
+use Neos\Neos\Domain\Model;
 use Neos\Neos\Domain\Repository\DomainRepository;
 use Neos\Neos\Domain\Repository\SiteRepository;
 use Neos\Neos\Domain\Service\NodeTypeNameFactory;
@@ -104,7 +103,7 @@ final readonly class Sites
                 array_keys($this->packageManager->getFilteredPackages('available', 'neos-site')),
             )),
             new SiteNodeTypes(...array_map(
-                static fn (NodeType $nodeType) => SiteNodeType::fromNodeType($nodeType, $labels),
+                static fn (NodeType $nodeType) => SiteNodeType::from($nodeType, $labels),
                 array_values($nodeTypeManager->getSubNodeTypes(NodeTypeNameFactory::forSite(), false)),
             )),
         );
@@ -131,7 +130,7 @@ final readonly class Sites
             return UnprocessableContent::because(sprintf('There is no package %s', $newSite->packageKey->value));
         }
         // checked up front: SiteService::createSite() adds the site before it checks the node type
-        $unsavedSite = new NeosSite($nodeName->value);
+        $unsavedSite = new Model\Site($nodeName->value);
         $nodeType = $this->nodeTypeManager($unsavedSite->getConfiguration()->contentRepositoryId)->getNodeType($newSite->nodeTypeName->value);
         if ($nodeType === null || $nodeType->isAbstract() || !$nodeType->isOfType(NodeTypeNameFactory::NAME_SITE)) {
             return UnprocessableContent::because(sprintf('There is no node type %s that a site node can have', $newSite->nodeTypeName->value));
@@ -234,7 +233,12 @@ final readonly class Sites
         if ($this->hostnameIsTaken($newDomain->hostname)) {
             return self::hostnameTaken($newDomain->hostname);
         }
-        $this->domainRepository->add($newDomain->toNeosDomain($site));
+        $domain = new Model\Domain();
+        $newDomain->applyTo($domain);
+        $domain->setSite($site);
+        // the inverse side, which Site::getPrimaryDomain() falls back to
+        $site->getDomains()->add($domain);
+        $this->domainRepository->add($domain);
         return new DomainCreated($this->site($site));
     }
 
@@ -298,9 +302,9 @@ final readonly class Sites
         return $this->site($site);
     }
 
-    private function site(NeosSite $site): Site
+    private function site(Model\Site $site): Site
     {
-        return Site::fromNeosSite($site, $this->persistenceManager);
+        return Site::from($site, $this->persistenceManager);
     }
 
     private function nodeTypeManager(ContentRepositoryId $contentRepositoryId): NodeTypeManager
@@ -311,10 +315,10 @@ final readonly class Sites
     /**
      * The domain of the site with the ID, null if there is none, or it belongs to another site
      */
-    private function findDomain(NeosSite $site, DomainId $domainId): ?NeosDomain
+    private function findDomain(Model\Site $site, DomainId $domainId): ?Model\Domain
     {
         $domain = $this->domainRepository->findByIdentifier($domainId->value);
-        return $domain instanceof NeosDomain && $domain->getSite() === $site ? $domain : null;
+        return $domain instanceof Model\Domain && $domain->getSite() === $site ? $domain : null;
     }
 
     private function hostnameIsTaken(Hostname $hostname): bool

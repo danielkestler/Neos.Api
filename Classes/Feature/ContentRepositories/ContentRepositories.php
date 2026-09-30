@@ -12,7 +12,7 @@ use Neos\Api\Security\ApiAuthContextProvider;
 use Neos\Api\Security\ApiScopes;
 use Neos\Api\Shared\Response\NotFound;
 use Neos\Api\Shared\Schema\AcceptLanguage;
-use Neos\ContentRepository\Core\SharedModel\ContentRepository\ContentRepositoryId as NeosContentRepositoryId;
+use Neos\ContentRepository\Core\SharedModel;
 use Neos\ContentRepositoryRegistry\ContentRepositoryRegistry;
 use Neos\OpenApi\Attributes\Operation;
 use Neos\OpenApi\Attributes\Parameter;
@@ -43,7 +43,7 @@ final readonly class ContentRepositories
     ): ContentRepositoryList {
         $labels = $this->labelTranslator->forAcceptLanguage($acceptLanguage);
         return new ContentRepositoryList(...array_map(
-            fn (NeosContentRepositoryId $id) => $this->contentRepository($id, $labels),
+            fn (SharedModel\ContentRepository\ContentRepositoryId $id) => $this->contentRepository($id, $labels),
             iterator_to_array($this->contentRepositoryRegistry->getContentRepositoryIds(), false),
         ));
     }
@@ -71,8 +71,8 @@ final readonly class ContentRepositories
         return NotFound::because(sprintf('There is no content repository with the ID %s', $contentRepositoryId->value));
     }
 
-    private function contentRepository(NeosContentRepositoryId $contentRepositoryId, Labels $labels): ContentRepository
+    private function contentRepository(SharedModel\ContentRepository\ContentRepositoryId $contentRepositoryId, Labels $labels): ContentRepository
     {
-        return ContentRepository::fromNeosContentRepository($this->contentRepositoryRegistry->get($contentRepositoryId), $labels);
+        return ContentRepository::from($this->contentRepositoryRegistry->get($contentRepositoryId), $labels);
     }
 }

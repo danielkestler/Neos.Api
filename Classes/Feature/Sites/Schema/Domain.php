@@ -6,7 +6,7 @@ namespace Neos\Api\Feature\Sites\Schema;
 use Neos\Flow\Persistence\PersistenceManagerInterface;
 use Neos\JsonSchema\ProvidesSchema;
 use Neos\JsonSchema\Schema;
-use Neos\Neos\Domain\Model\Domain as NeosDomain;
+use Neos\Neos\Domain\Model;
 use Neos\Schematic\Discovery\AutoDiscoveringSchema;
 
 /**
@@ -31,7 +31,7 @@ final readonly class Domain implements ProvidesSchema
     ) {
     }
 
-    public static function fromNeosDomain(NeosDomain $domain, PersistenceManagerInterface $persistenceManager): self
+    public static function from(Model\Domain $domain, PersistenceManagerInterface $persistenceManager): self
     {
         $site = $domain->getSite();
         return new self(

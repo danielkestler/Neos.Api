@@ -23,7 +23,7 @@ final readonly class SiteNodeType implements ProvidesSchema
     ) {
     }
 
-    public static function fromNodeType(NodeType $nodeType, Labels $labels): self
+    public static function from(NodeType $nodeType, Labels $labels): self
     {
         return new self(
             NodeTypeName::fromString($nodeType->name->value),

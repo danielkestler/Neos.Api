@@ -6,7 +6,7 @@ namespace Neos\Api\Feature\Users\Payload;
 use Neos\Api\Feature\Users\Schema\EmailAddress;
 use Neos\JsonSchema\ProvidesSchema;
 use Neos\JsonSchema\Schema;
-use Neos\Neos\Domain\Model\User as NeosUser;
+use Neos\Neos\Domain\Model;
 use Neos\Schematic\Discovery\AutoDiscoveringSchema;
 
 /**
@@ -24,7 +24,7 @@ final readonly class UserUpdate implements ProvidesSchema
     ) {
     }
 
-    public function applyTo(NeosUser $user): void
+    public function applyTo(Model\User $user): void
     {
         if ($this->firstName !== null) {
             $user->getName()->setFirstName($this->firstName);

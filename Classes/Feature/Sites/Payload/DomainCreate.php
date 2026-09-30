@@ -8,8 +8,7 @@ use Neos\Api\Feature\Sites\Schema\Port;
 use Neos\Api\Feature\Sites\Schema\UriScheme;
 use Neos\JsonSchema\ProvidesSchema;
 use Neos\JsonSchema\Schema;
-use Neos\Neos\Domain\Model\Domain as NeosDomain;
-use Neos\Neos\Domain\Model\Site as NeosSite;
+use Neos\Neos\Domain\Model;
 use Neos\Schematic\Discovery\AutoDiscoveringSchema;
 
 /**
@@ -32,19 +31,14 @@ final readonly class DomainCreate implements ProvidesSchema
     }
 
     /**
-     * The domain, added to the site's domains
+     * Applies the hostname, scheme, port and active state, the site is set by the caller
      */
-    public function toNeosDomain(NeosSite $site): NeosDomain
+    public function applyTo(Model\Domain $domain): void
     {
-        $domain = new NeosDomain();
         $domain->setHostname($this->hostname->value);
         $domain->setScheme($this->scheme?->value);
         $domain->setPort($this->port?->value);
         $domain->setActive($this->active ?? true);
-        $domain->setSite($site);
-        // the inverse side, which Site::getPrimaryDomain() falls back to
-        $site->getDomains()->add($domain);
-        return $domain;
     }
 
     public static function schema(): Schema

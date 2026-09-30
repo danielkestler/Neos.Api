@@ -10,7 +10,7 @@ use Neos\Api\Security\ApiAuthContextProvider;
 use Neos\Api\Security\ApiCaller;
 use Neos\Api\Security\ApiScopes;
 use Neos\Api\Shared\Schema\AccessTokenGrant;
-use Neos\Neos\Domain\Model\User as NeosUser;
+use Neos\Neos\Domain\Model;
 use Neos\OpenApi\Attributes\AuthContext;
 use Neos\OpenApi\Attributes\Operation;
 use Neos\Party\Domain\Service\PartyService;
@@ -40,8 +40,8 @@ final readonly class Me
         // not UserService::getUser(), which fails for accounts without a party
         $user = $this->partyService->getAssignedPartyOfAccount($caller->account);
         return new CurrentAccount(
-            Account::fromFlowAccount($caller->account),
-            $user instanceof NeosUser ? User::fromNeosUser($user) : null,
+            Account::from($caller->account),
+            $user instanceof Model\User ? User::from($user) : null,
             new AccessTokenGrant($caller->clientIdentifier, $caller->scopes),
         );
     }

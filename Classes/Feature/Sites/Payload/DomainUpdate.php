@@ -8,7 +8,7 @@ use Neos\Api\Feature\Sites\Schema\Port;
 use Neos\Api\Feature\Sites\Schema\UriScheme;
 use Neos\JsonSchema\ProvidesSchema;
 use Neos\JsonSchema\Schema;
-use Neos\Neos\Domain\Model\Domain as NeosDomain;
+use Neos\Neos\Domain\Model;
 use Neos\Schematic\Discovery\AutoDiscoveringSchema;
 
 /**
@@ -27,7 +27,7 @@ final readonly class DomainUpdate implements ProvidesSchema
     ) {
     }
 
-    public function applyTo(NeosDomain $domain): void
+    public function applyTo(Model\Domain $domain): void
     {
         if ($this->hostname !== null) {
             $domain->setHostname($this->hostname->value);

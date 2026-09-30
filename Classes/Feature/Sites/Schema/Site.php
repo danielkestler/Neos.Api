@@ -7,8 +7,7 @@ use Neos\Api\Feature\ContentRepositories\Schema\ContentRepositoryId;
 use Neos\Flow\Persistence\PersistenceManagerInterface;
 use Neos\JsonSchema\ProvidesSchema;
 use Neos\JsonSchema\Schema;
-use Neos\Neos\Domain\Model\Domain as NeosDomain;
-use Neos\Neos\Domain\Model\Site as NeosSite;
+use Neos\Neos\Domain\Model;
 use Neos\Schematic\Discovery\AutoDiscoveringSchema;
 
 /**
@@ -34,10 +33,10 @@ final readonly class Site implements ProvidesSchema
     ) {
     }
 
-    public static function fromNeosSite(NeosSite $site, PersistenceManagerInterface $persistenceManager): self
+    public static function from(Model\Site $site, PersistenceManagerInterface $persistenceManager): self
     {
         $domains = $site->getDomains()->toArray();
-        usort($domains, static fn (NeosDomain $a, NeosDomain $b) => strcmp($a->getHostname(), $b->getHostname()));
+        usort($domains, static fn (Model\Domain $a, Model\Domain $b) => strcmp($a->getHostname(), $b->getHostname()));
         $primaryDomain = $site->getPrimaryDomain();
         return new self(
             SiteNodeName::fromString($site->getNodeName()->value),
@@ -46,7 +45,7 @@ final readonly class Site implements ProvidesSchema
             ContentRepositoryId::fromString($site->getConfiguration()->contentRepositoryId->value),
             PackageKey::fromString($site->getSiteResourcesPackageKey()),
             new Domains(...array_map(
-                static fn (NeosDomain $domain) => Domain::fromNeosDomain($domain, $persistenceManager),
+                static fn (Model\Domain $domain) => Domain::from($domain, $persistenceManager),
                 $domains,
             )),
             $primaryDomain !== null ? (string)$primaryDomain : null,
