@@ -8,11 +8,15 @@ use Neos\Api\Shared\Schema\AcceptLanguage;
 use Neos\ContentRepository\Core\NodeType\NodeType;
 use Neos\ContentRepository\Core\Projection\ContentGraph\Filter\CountChildNodesFilter;
 use Neos\ContentRepository\Core\Projection\ContentGraph\Filter\FindChildNodesFilter;
+use Neos\ContentRepository\Core\Projection\ContentGraph\Filter\FindReferencesFilter;
 use Neos\ContentRepository\Core\Projection\ContentGraph\Node;
 use Neos\ContentRepositoryRegistry\ContentRepositoryRegistry;
 use Neos\Eel\ProtectedContextAwareInterface;
 use Neos\Flow\Annotations as Flow;
 use Neos\Flow\Mvc\ActionRequest;
+use Neos\Flow\Persistence\PersistenceManagerInterface;
+use Neos\Flow\ResourceManagement\ResourceManager;
+use Neos\Media\Domain\Model\AssetInterface;
 use Neos\Neos\Domain\NodeLabel\NodeLabelGeneratorInterface;
 use Neos\Neos\Domain\SubtreeTagging\NeosSubtreeTag;
 use Neos\Neos\Service\IconNameMappingService;
@@ -36,6 +40,12 @@ final class NodeHelper implements ProtectedContextAwareInterface
 
     #[Flow\Inject]
     protected LabelTranslator $labelTranslator;
+
+    #[Flow\Inject]
+    protected ResourceManager $resourceManager;
+
+    #[Flow\Inject]
+    protected PersistenceManagerInterface $persistenceManager;
 
     /**
      * The child nodes of the node types in their order, unlike FlowQuery's children() with several filters, which
@@ -67,12 +77,30 @@ final class NodeHelper implements ProtectedContextAwareInterface
 
     /**
      * The properties in their serialized form, as the content repository stores them, so they are JSON-safe: e.g. a
-     * date as ISO 8601 string, an asset as {"__flow_object_type": "…", "__identifier": "…"}. An object, so a node
-     * without properties encodes as {}, not []
+     * date as ISO 8601 string. Assets, also in a list, are {"id": "…", "url": "…"} instead, null if the asset is gone.
+     * An object, so a node without properties encodes as {}, not []
      */
     public function properties(Node $node): \stdClass
     {
-        return (object)$node->properties->serialized()->getPlainValues();
+        $properties = [];
+        foreach ($node->properties->serialized()->getPlainValues() as $name => $value) {
+            // only arrays can be serialized assets, the others need no deserializing
+            $properties[$name] = is_array($value) ? $this->assetsIn($node->getProperty($name), $value) : $value;
+        }
+        return (object)$properties;
+    }
+
+    /**
+     * The references the node type declares, each with the aggregate ids of the referenced nodes in their order,
+     * an empty list if there are none. An object, so a node without references encodes as {}, not []
+     */
+    public function references(Node $node): \stdClass
+    {
+        $references = array_fill_keys(array_keys($this->nodeType($node)?->getReferences() ?? []), []);
+        foreach ($this->contentRepositoryRegistry->subgraphForNode($node)->findReferences($node->aggregateId, FindReferencesFilter::create()) as $reference) {
+            $references[$reference->name->value][] = $reference->node->aggregateId->value;
+        }
+        return (object)$references;
     }
 
     /**
@@ -155,6 +183,36 @@ final class NodeHelper implements ProtectedContextAwareInterface
     public function allowsCallOfMethod($methodName): bool
     {
         return true;
+    }
+
+    /**
+     * @param mixed $value the deserialized property value
+     * @param array<mixed> $serialized the serialized one, returned if the value holds no asset
+     * @return array<mixed>|null
+     */
+    private function assetsIn(mixed $value, array $serialized): ?array
+    {
+        if ($value instanceof AssetInterface) {
+            return $this->asset($value);
+        }
+        if (is_array($value) && $value !== [] && array_is_list($value) && array_filter($value, static fn (mixed $item) => !$item instanceof AssetInterface) === []) {
+            return array_map($this->asset(...), $value);
+        }
+        // a single asset that is gone deserializes to null
+        return $value === null && isset($serialized['__flow_object_type']) && is_a($serialized['__flow_object_type'], AssetInterface::class, true) ? null : $serialized;
+    }
+
+    /**
+     * @return array{id: string, url: string|null}
+     */
+    private function asset(AssetInterface $asset): array
+    {
+        $resource = $asset->getResource();
+        $url = $resource !== null ? $this->resourceManager->getPublicPersistentResourceUri($resource) : null;
+        return [
+            'id' => $this->persistenceManager->getIdentifierByObject($asset),
+            'url' => is_string($url) ? $url : null,
+        ];
     }
 
     private function nodeType(Node $node): ?NodeType

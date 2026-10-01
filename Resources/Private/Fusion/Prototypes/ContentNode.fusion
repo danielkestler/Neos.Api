@@ -1,6 +1,6 @@
 ##
-# A content node with its properties and all its child content nodes and content collections, nested: the whole
-# content below a node, e.g. of a document
+# A content node with its properties, its references and all its child content nodes and content collections, nested:
+# the whole content below a node, e.g. of a document
 #
 prototype(Neos.Api:ContentNode) < prototype(Neos.Api:NodeItem) {
     # the children are included, so a tree doesn't need to load them
@@ -9,6 +9,7 @@ prototype(Neos.Api:ContentNode) < prototype(Neos.Api:NodeItem) {
     renderer {
         hasChildren >
         properties = ${Neos.Api.Node.properties(props.node)}
+        references = ${Neos.Api.Node.references(props.node)}
         children = Neos.Fusion:Map {
             items = ${Neos.Api.Node.childNodes(props.node, props.childNodeTypes)}
             itemRenderer = Neos.Api:ContentNode {

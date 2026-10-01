@@ -1,8 +1,8 @@
 ##
-# The document node of the node with its properties and its whole content: all child content nodes and content
-# collections with their properties, nested. Child documents are not included, hasChildren says whether there are any
+# The document node of the node with its properties, references and its whole content: all child content nodes and
+# content collections with theirs, nested. Child documents are not included, hasChildren says whether there are any
 #
-#   {"node": {…the document node…, "properties": {…}, "children": [{…a content collection…, "children": […]}, …]}}
+#   {"node": {…the document node…, "properties": {…}, "references": {…}, "children": [{…a content collection…, "children": […]}, …]}}
 #
 prototype(Neos.Api:View.Document) < prototype(Neos.Api:View) {
     node = Neos.Api:DocumentNodeItem {
@@ -10,6 +10,7 @@ prototype(Neos.Api:View.Document) < prototype(Neos.Api:View) {
 
         renderer {
             properties = ${Neos.Api.Node.properties(props.node)}
+            references = ${Neos.Api.Node.references(props.node)}
             children = Neos.Fusion:Map {
                 items = ${Neos.Api.Node.childNodes(props.node, '!Neos.Neos:Document')}
                 itemRenderer = Neos.Api:ContentNode {
