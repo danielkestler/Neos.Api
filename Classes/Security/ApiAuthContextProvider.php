@@ -4,10 +4,6 @@ declare(strict_types=1);
 namespace Neos\Api\Security;
 
 use Neos\Flow\Annotations as Flow;
-use Neos\Flow\Security\Account;
-use Neos\Flow\Security\Authorization\PrivilegeManagerInterface;
-use Neos\Flow\Security\Policy\PolicyService;
-use Neos\Flow\Security\Policy\Role;
 use Neos\OAuth\Security\AuthorizationServerMetadata;
 use Neos\OAuth\Security\OAuthContext;
 use Neos\OpenApi\FlowAdapter\AuthContextProviderWithSchemes;
@@ -35,8 +31,7 @@ final class ApiAuthContextProvider implements AuthContextProviderWithSchemes
         private readonly OAuthContext $oauthContext,
         private readonly PrivilegeScopes $privilegeScopes,
         private readonly AuthorizationServerMetadata $authorizationServer,
-        private readonly PolicyService $policyService,
-        private readonly PrivilegeManagerInterface $privilegeManager,
+        private readonly AccountPrivileges $accountPrivileges,
     ) {
     }
 
@@ -81,10 +76,9 @@ final class ApiAuthContextProvider implements AuthContextProviderWithSchemes
                 $requiredScopes ??= $alternative[self::SCOPES];
                 continue;
             }
-            $roles = $this->rolesOf($grant->account);
             $missing = array_values(array_filter(
                 array_map($this->privilegeScopes->privilegeTargetOf(...), $alternative[self::SCOPES]),
-                fn (string $privilegeTarget) => !$this->privilegeManager->isPrivilegeTargetGrantedForRoles($roles, $privilegeTarget),
+                fn (string $privilegeTarget) => !$this->accountPrivileges->isGranted($grant->account, $privilegeTarget),
             ));
             if ($missing === []) {
                 return ApiCaller::fromGrant($grant);
@@ -101,24 +95,5 @@ final class ApiAuthContextProvider implements AuthContextProviderWithSchemes
             throw new InsufficientScope($requiredScopes);
         }
         return null;
-    }
-
-    /**
-     * What Flow's security context would hold for the account alone, i.e. not the roles of other tokens, e.g. of a
-     * backend session
-     *
-     * @return array<string, Role>
-     */
-    private function rolesOf(Account $account): array
-    {
-        $roles = [];
-        foreach (['Neos.Flow:Everybody', 'Neos.Flow:AuthenticatedUser'] as $identifier) {
-            $roles[$identifier] = $this->policyService->getRole($identifier);
-        }
-        foreach ($account->getRoles() as $role) {
-            $roles[$role->getIdentifier()] = $role;
-            $roles += $role->getAllParentRoles();
-        }
-        return $roles;
     }
 }

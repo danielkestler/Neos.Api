@@ -1,3 +1,9 @@
 Neos:
   OAuth:
     issuer: 'http://localhost'
+  Api:
+    views:
+      navigation:
+        prototype: 'Neos.Api:View'
+        description: 'A test view'
+      removed: ~

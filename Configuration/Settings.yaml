@@ -5,6 +5,13 @@ Neos:
       clientId: "neos-api-docs"
       swaggerUiVersion: "5.33.0"
 
+    # The views GET /views/{viewName}?nodeAddress={nodeAddress} renders, only these are exposed. The prototype inherits from
+    # Neos.Api:View and is looked up in the Fusion of the node's site, e.g.
+    #   mainNavigation:
+    #     prototype: 'Vendor.Site:Api.MainNavigation'
+    #     description: 'The main navigation with grouping folders'
+    views: {}
+
   OpenApi:
     FlowAdapter:
       apis:
@@ -18,9 +25,16 @@ Neos:
             'Neos\Api\Endpoint\Users\Users': true
             'Neos\Api\Endpoint\ContentRepositories\ContentRepositories': true
             'Neos\Api\Endpoint\Sites\Sites': true
+            'Neos\Api\Endpoint\Views\Views': true
           specPath: "openapi.json"
           # the docs are served by Neos.Api's DocsController, which lets users log in
           authContextProvider: 'Neos\Api\Security\ApiAuthContextProvider'
+
+  Neos:
+    fusion:
+      autoInclude:
+        # Neos.Api:View
+        "Neos.Api": true
 
   OAuth:
     # the scopes are the ApiPrivilege targets of Policy.yaml

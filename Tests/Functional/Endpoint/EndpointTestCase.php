@@ -83,7 +83,10 @@ abstract class EndpointTestCase extends FunctionalTestCase
         if ($body !== null) {
             $headers['Content-Type'] = 'application/json';
         }
-        return $this->browser->sendRequest(new ServerRequest($method, 'http://localhost' . $path, $headers, $body !== null ? json_encode($body, JSON_THROW_ON_ERROR) : null));
+        $request = new ServerRequest($method, 'http://localhost' . $path, $headers, $body !== null ? json_encode($body, JSON_THROW_ON_ERROR) : null);
+        // as PHP does for a real request, Guzzle leaves them empty
+        parse_str($request->getUri()->getQuery(), $queryParams);
+        return $this->browser->sendRequest($request->withQueryParams($queryParams));
     }
 
     /**
