@@ -40,6 +40,9 @@ privilegeTargets:
     "Neos.Api:Views.Read":
       label: "Render views of the nodes you can read"
       matcher: "views.read"
+    "Neos.Api:Nodes.Read":
+      label: "Read the nodes you can read"
+      matcher: "nodes.read"
 
 roles:
   "Neos.Flow:Everybody":
@@ -53,6 +56,9 @@ roles:
         permission: GRANT
       # which nodes a view shows is up to the account's node privileges
       - privilegeTarget: "Neos.Api:Views.Read"
+        permission: GRANT
+      # which nodes are found is up to the account's node privileges
+      - privilegeTarget: "Neos.Api:Nodes.Read"
         permission: GRANT
 
   "Neos.Neos:Editor":

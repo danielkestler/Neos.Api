@@ -9,6 +9,7 @@ use Neos\Api\Endpoint\Views\Schema\RenderingModeName;
 use Neos\Api\Endpoint\Views\Schema\View;
 use Neos\Api\Endpoint\Views\Schema\ViewName;
 use Neos\Api\Endpoint\Views\Schema\Views as ViewList;
+use Neos\Api\Infrastructure\ContentRepository\ContentSubgraphs;
 use Neos\Api\Infrastructure\Fusion\ViewRenderer;
 use Neos\Api\Security\AccountPrivileges;
 use Neos\Api\Security\ApiAuthContextProvider;
@@ -18,22 +19,16 @@ use Neos\Api\Shared\Response\BadRequest;
 use Neos\Api\Shared\Response\Forbidden;
 use Neos\Api\Shared\Response\NotFound;
 use Neos\ContentRepository\Core\DimensionSpace\DimensionSpacePoint;
-use Neos\ContentRepository\Core\Feature\Security\Exception\AccessDenied;
 use Neos\ContentRepository\Core\Projection\ContentGraph\ContentSubgraphInterface;
 use Neos\ContentRepository\Core\Projection\ContentGraph\Filter\FindClosestNodeFilter;
 use Neos\ContentRepository\Core\Projection\ContentGraph\Node;
 use Neos\ContentRepository\Core\SharedModel;
-use Neos\ContentRepository\Core\SharedModel\Exception\WorkspaceDoesNotExist;
 use Neos\ContentRepository\Core\SharedModel\Workspace\WorkspaceName;
-use Neos\ContentRepositoryRegistry\ContentRepositoryRegistry;
 use Neos\Flow\Annotations as Flow;
-use Neos\Flow\Security\Context;
 use Neos\Neos\Domain\Model\RenderingMode;
 use Neos\Neos\Domain\Repository\SiteRepository;
 use Neos\Neos\Domain\Service\RenderingModeService;
 use Neos\Neos\Domain\Service\NodeTypeNameFactory;
-use Neos\Neos\Domain\SubtreeTagging\NeosVisibilityConstraints;
-use Neos\Neos\Security\Authorization\ContentRepositoryAuthorizationService;
 use Neos\OpenApi\Attributes\AuthContext;
 use Neos\OpenApi\Attributes\Operation;
 use Neos\OpenApi\Attributes\Parameter;
@@ -68,9 +63,7 @@ final readonly class Views
      * @param array<string, mixed> $editPreviewModes
      */
     public function __construct(
-        private ContentRepositoryRegistry $contentRepositoryRegistry,
-        private ContentRepositoryAuthorizationService $contentRepositoryAuthorizationService,
-        private Context $securityContext,
+        private ContentSubgraphs $contentSubgraphs,
         private SiteRepository $siteRepository,
         private RenderingModeService $renderingModeService,
         private AccountPrivileges $accountPrivileges,
@@ -199,29 +192,12 @@ final readonly class Views
     }
 
     /**
-     * The subgraph as the frontend (frontend rendering mode in live) or the preview of the Neos backend (otherwise)
-     * sees it, null if the content repository or workspace doesn't exist or the account may not read it: both are a
-     * 404, so workspaces can't be probed
+     * The subgraph as the frontend (frontend rendering mode in live: never with disabled nodes) or the preview of the
+     * Neos backend (otherwise) sees it, null if there is none the account may read
      */
     private function subgraph(SharedModel\ContentRepository\ContentRepositoryId $contentRepositoryId, WorkspaceName $workspaceName, DimensionSpacePoint $dimensionSpacePoint, RenderingMode $renderingMode): ?ContentSubgraphInterface
     {
-        if (!$this->contentRepositoryExists($contentRepositoryId)) {
-            return null;
-        }
-        $contentRepository = $this->contentRepositoryRegistry->get($contentRepositoryId);
-        try {
-            if (!$workspaceName->isLive() || $renderingMode->name !== RenderingMode::FRONTEND) {
-                // as Neos\Neos\Controller\Frontend\NodeController::previewAction()
-                return $contentRepository->getContentSubgraph($workspaceName, $dimensionSpacePoint);
-            }
-            // as Neos\Neos\Controller\Frontend\NodeController::showAction(): disabled nodes are never shown, even if the account may see them
-            $visibilityConstraints = $this->contentRepositoryAuthorizationService
-                ->getVisibilityConstraints($contentRepository->id, $this->securityContext->getRoles())
-                ->merge(NeosVisibilityConstraints::excludeDisabled());
-            return $contentRepository->getContentGraph($workspaceName)->getSubgraph($dimensionSpacePoint, $visibilityConstraints);
-        } catch (WorkspaceDoesNotExist | AccessDenied) {
-            return null;
-        }
+        return $this->contentSubgraphs->find($contentRepositoryId, $workspaceName, $dimensionSpacePoint, $workspaceName->isLive() && $renderingMode->name === RenderingMode::FRONTEND);
     }
 
     /**
@@ -234,16 +210,5 @@ final readonly class Views
         }
         // checked up front: the service throws for an unknown one
         return in_array($name->value, $this->renderingModeNames, true) ? $this->renderingModeService->findByName($name->value) : null;
-    }
-
-    private function contentRepositoryExists(SharedModel\ContentRepository\ContentRepositoryId $contentRepositoryId): bool
-    {
-        // checked up front: the registry throws for an unknown one
-        foreach ($this->contentRepositoryRegistry->getContentRepositoryIds() as $id) {
-            if ($id->equals($contentRepositoryId)) {
-                return true;
-            }
-        }
-        return false;
     }
 }

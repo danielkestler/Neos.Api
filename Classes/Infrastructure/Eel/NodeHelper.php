@@ -3,21 +3,18 @@ declare(strict_types=1);
 
 namespace Neos\Api\Infrastructure\Eel;
 
+use Neos\Api\Infrastructure\ContentRepository\NodeSerializer;
 use Neos\Api\Infrastructure\I18n\LabelTranslator;
 use Neos\Api\Shared\Schema\AcceptLanguage;
 use Neos\ContentRepository\Core\NodeType\NodeType;
 use Neos\ContentRepository\Core\Projection\ContentGraph\Filter\CountChildNodesFilter;
 use Neos\ContentRepository\Core\Projection\ContentGraph\Filter\FindChildNodesFilter;
-use Neos\ContentRepository\Core\Projection\ContentGraph\Filter\FindReferencesFilter;
 use Neos\ContentRepository\Core\Projection\ContentGraph\Node;
+use Neos\ContentRepository\Core\Projection\ContentGraph\Reference;
 use Neos\ContentRepositoryRegistry\ContentRepositoryRegistry;
 use Neos\Eel\ProtectedContextAwareInterface;
 use Neos\Flow\Annotations as Flow;
 use Neos\Flow\Mvc\ActionRequest;
-use Neos\Flow\Persistence\PersistenceManagerInterface;
-use Neos\Flow\ResourceManagement\ResourceManager;
-use Neos\Media\Domain\Model\AssetInterface;
-use Neos\Neos\Domain\NodeLabel\NodeLabelGeneratorInterface;
 use Neos\Neos\Domain\SubtreeTagging\NeosSubtreeTag;
 use Neos\Neos\Service\IconNameMappingService;
 
@@ -33,19 +30,13 @@ final class NodeHelper implements ProtectedContextAwareInterface
     protected ContentRepositoryRegistry $contentRepositoryRegistry;
 
     #[Flow\Inject]
-    protected NodeLabelGeneratorInterface $nodeLabelGenerator;
+    protected NodeSerializer $nodeSerializer;
 
     #[Flow\Inject]
     protected IconNameMappingService $iconNameMappingService;
 
     #[Flow\Inject]
     protected LabelTranslator $labelTranslator;
-
-    #[Flow\Inject]
-    protected ResourceManager $resourceManager;
-
-    #[Flow\Inject]
-    protected PersistenceManagerInterface $persistenceManager;
 
     /**
      * The child nodes of the node types in their order, unlike FlowQuery's children() with several filters, which
@@ -82,12 +73,7 @@ final class NodeHelper implements ProtectedContextAwareInterface
      */
     public function properties(Node $node): \stdClass
     {
-        $properties = [];
-        foreach ($node->properties->serialized()->getPlainValues() as $name => $value) {
-            // only arrays can be serialized assets, the others need no deserializing
-            $properties[$name] = is_array($value) ? $this->assetsIn($node->getProperty($name), $value) : $value;
-        }
-        return (object)$properties;
+        return (object)$this->nodeSerializer->properties($node->properties);
     }
 
     /**
@@ -96,11 +82,10 @@ final class NodeHelper implements ProtectedContextAwareInterface
      */
     public function references(Node $node): \stdClass
     {
-        $references = array_fill_keys(array_keys($this->nodeType($node)?->getReferences() ?? []), []);
-        foreach ($this->contentRepositoryRegistry->subgraphForNode($node)->findReferences($node->aggregateId, FindReferencesFilter::create()) as $reference) {
-            $references[$reference->name->value][] = $reference->node->aggregateId->value;
-        }
-        return (object)$references;
+        return (object)array_map(
+            static fn (array $references) => array_map(static fn (Reference $reference) => $reference->node->aggregateId->value, $references),
+            $this->nodeSerializer->references($node),
+        );
     }
 
     /**
@@ -108,7 +93,7 @@ final class NodeHelper implements ProtectedContextAwareInterface
      */
     public function label(Node $node): string
     {
-        return trim(html_entity_decode(strip_tags($this->nodeLabelGenerator->getLabel($node)), ENT_QUOTES | ENT_HTML5));
+        return $this->nodeSerializer->label($node);
     }
 
     /**
@@ -183,36 +168,6 @@ final class NodeHelper implements ProtectedContextAwareInterface
     public function allowsCallOfMethod($methodName): bool
     {
         return true;
-    }
-
-    /**
-     * @param mixed $value the deserialized property value
-     * @param array<mixed> $serialized the serialized one, returned if the value holds no asset
-     * @return array<mixed>|null
-     */
-    private function assetsIn(mixed $value, array $serialized): ?array
-    {
-        if ($value instanceof AssetInterface) {
-            return $this->asset($value);
-        }
-        if (is_array($value) && $value !== [] && array_is_list($value) && array_filter($value, static fn (mixed $item) => !$item instanceof AssetInterface) === []) {
-            return array_map($this->asset(...), $value);
-        }
-        // a single asset that is gone deserializes to null
-        return $value === null && isset($serialized['__flow_object_type']) && is_a($serialized['__flow_object_type'], AssetInterface::class, true) ? null : $serialized;
-    }
-
-    /**
-     * @return array{id: string, url: string|null}
-     */
-    private function asset(AssetInterface $asset): array
-    {
-        $resource = $asset->getResource();
-        $url = $resource !== null ? $this->resourceManager->getPublicPersistentResourceUri($resource) : null;
-        return [
-            'id' => $this->persistenceManager->getIdentifierByObject($asset),
-            'url' => is_string($url) ? $url : null,
-        ];
     }
 
     private function nodeType(Node $node): ?NodeType

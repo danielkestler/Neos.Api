@@ -13,14 +13,14 @@ Neos:
     # A view is removed by setting it to ~
     views:
       documentNodesTree:
-        prototype: 'Neos.Api:View.DocumentNodesTree'
-        description: 'The document node of the node with its child document nodes, as items of a tree that loads level by level'
+        prototype: "Neos.Api:View.DocumentNodesTree"
+        description: "The document node of the node with its child document nodes, as items of a tree that loads level by level"
       contentNodesTree:
-        prototype: 'Neos.Api:View.ContentNodesTree'
-        description: 'The node with its child content nodes and content collections, as items of a tree that loads level by level'
+        prototype: "Neos.Api:View.ContentNodesTree"
+        description: "The node with its child content nodes and content collections, as items of a tree that loads level by level"
       document:
-        prototype: 'Neos.Api:View.Document'
-        description: 'The document node of the node with its properties, references and its whole content: all child content nodes and content collections with theirs, nested'
+        prototype: "Neos.Api:View.Document"
+        description: "The document node of the node with its properties, references and its whole content: all child content nodes and content collections with theirs, nested"
 
   OpenApi:
     FlowAdapter:
@@ -35,6 +35,7 @@ Neos:
             'Neos\Api\Endpoint\Users\Users': true
             'Neos\Api\Endpoint\ContentRepositories\ContentRepositories': true
             'Neos\Api\Endpoint\Sites\Sites': true
+            'Neos\Api\Endpoint\Nodes\Nodes': true
             'Neos\Api\Endpoint\Views\Views': true
           specPath: "openapi.json"
           # the docs are served by Neos.Api's DocsController, which lets users log in
@@ -91,6 +92,6 @@ Neos:
           position: "before dispatch"
           middleware: 'Neos\Api\Infrastructure\Http\OAuthChallengeMiddleware'
         # around oauthChallenge, so its 401 and 403 get the headers as well
-        'Neos.Api:cacheHeaders':
-          position: 'before Neos.Api:oauthChallenge'
+        "Neos.Api:cacheHeaders":
+          position: "before Neos.Api:oauthChallenge"
           middleware: 'Neos\Api\Infrastructure\Http\ApiCacheHeadersMiddleware'

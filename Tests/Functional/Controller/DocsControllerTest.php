@@ -18,7 +18,7 @@ class DocsControllerTest extends FunctionalTestCase
         self::assertStringContainsString('"clientId":"neos-api-docs"', $html);
         self::assertStringContainsString('"specUrl":"/api/openapi.json"', $html);
         self::assertStringContainsString('"redirectPath":"/api/docs/oauth2-redirect"', $html);
-        self::assertStringContainsString('"scopes":["me.read","users.read","users.update","users.create","users.delete","sites.read","sites.update","sites.create","sites.delete","contentrepositories.read","views.read"]', $html);
+        self::assertStringContainsString('"scopes":["me.read","users.read","users.update","users.create","users.delete","sites.read","sites.update","sites.create","sites.delete","contentrepositories.read","views.read","nodes.read"]', $html);
         self::assertStringContainsString('usePkceWithAuthorizationCodeGrant: true', $html);
     }
 
