@@ -10,7 +10,14 @@ Neos:
     #   mainNavigation:
     #     prototype: 'Vendor.Site:Api.MainNavigation'
     #     description: 'The main navigation with grouping folders'
-    views: {}
+    # A view is removed by setting it to ~
+    views:
+      documentNodesTree:
+        prototype: 'Neos.Api:View.DocumentNodesTree'
+        description: 'The document node of the node with its child document nodes, as items of a tree that loads level by level'
+      contentNodesTree:
+        prototype: 'Neos.Api:View.ContentNodesTree'
+        description: 'The node with its child content nodes and content collections, as items of a tree that loads level by level'
 
   OpenApi:
     FlowAdapter:
@@ -33,8 +40,12 @@ Neos:
   Neos:
     fusion:
       autoInclude:
-        # Neos.Api:View
+        # Neos.Api:View and the views above
         "Neos.Api": true
+
+  Fusion:
+    defaultContext:
+      "Neos.Api.Node": 'Neos\Api\Infrastructure\Eel\NodeHelper'
 
   OAuth:
     # the scopes are the ApiPrivilege targets of Policy.yaml

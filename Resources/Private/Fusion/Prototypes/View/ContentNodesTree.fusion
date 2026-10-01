@@ -1,0 +1,22 @@
+##
+# The node with its child content nodes and content collections, e.g. for a content tree that loads level by level.
+# For a document node, the children are its content collections (main, …), for a collection the content in it
+#
+#   {"node": {…the node…}, "children": [{…a child content node…}, …]}
+#
+prototype(Neos.Api:View.ContentNodesTree) < prototype(Neos.Api:View) {
+    # collections are no Neos.Neos:Content, so both are listed
+    @context.contentNodeTypes = 'Neos.Neos:Content,Neos.Neos:ContentCollection'
+
+    node = Neos.Api:NodeItem {
+        node = ${node}
+        childNodeTypes = ${contentNodeTypes}
+    }
+    children = Neos.Fusion:Map {
+        items = ${Neos.Api.Node.childNodes(node, contentNodeTypes)}
+        itemRenderer = Neos.Api:NodeItem {
+            node = ${item}
+            childNodeTypes = ${contentNodeTypes}
+        }
+    }
+}

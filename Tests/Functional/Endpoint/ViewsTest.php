@@ -31,8 +31,9 @@ class ViewsTest extends EndpointTestCase
         $response = $this->get('/api/views', $this->token('editor-machine', 'views.read'));
 
         self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
-        // the removed one is left out
-        self::assertSame([['name' => 'navigation', 'description' => 'A test view']], self::json($response));
+        // the package's own first, the removed one is left out
+        self::assertSame(['documentNodesTree', 'contentNodesTree', 'navigation'], array_column(self::json($response), 'name'));
+        self::assertSame(['name' => 'navigation', 'description' => 'A test view'], self::json($response)[2]);
     }
 
     #[Test]

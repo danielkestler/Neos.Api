@@ -1,0 +1,17 @@
+##
+# The document node of the node with its child document nodes, e.g. for a document tree that loads level by level:
+# render it again for a child's nodeAddress to get the next level
+#
+#   {"node": {…the document node…}, "children": [{…a child document node…}, …]}
+#
+prototype(Neos.Api:View.DocumentNodesTree) < prototype(Neos.Api:View) {
+    node = Neos.Api:DocumentNodeItem {
+        node = ${documentNode}
+    }
+    children = Neos.Fusion:Map {
+        items = ${Neos.Api.Node.childNodes(documentNode, 'Neos.Neos:Document')}
+        itemRenderer = Neos.Api:DocumentNodeItem {
+            node = ${item}
+        }
+    }
+}

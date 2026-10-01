@@ -1,0 +1,42 @@
+##
+# A node as an item of a tree, with what an editing UI needs to show it: who it is, how it looks and its state.
+# Its children are not included, hasChildren says whether there are any, so a tree can load them level by level
+#
+prototype(Neos.Api:NodeItem) < prototype(Neos.Fusion:Component) {
+    node = null
+    # the node types hasChildren looks for, a node type filter as for Neos.Api.Node.childNodes()
+    childNodeTypes = ''
+
+    renderer = Neos.Fusion:DataStructure {
+        nodeAddress = ${Neos.Node.serializedNodeAddress(props.node)}
+        aggregateId = ${props.node.aggregateId.value}
+        # null for nodes without a name
+        name = ${props.node.name.value}
+        nodeType = ${props.node.nodeTypeName.value}
+        nodeTypeLabel = ${Neos.Api.Node.nodeTypeLabel(props.node, request)}
+        icon = ${Neos.Api.Node.nodeTypeIcon(props.node)}
+        label = ${Neos.Api.Node.label(props.node)}
+        # regular, tethered (created with its parent, can't be removed or moved) or root
+        classification = ${props.node.classification.value}
+        isHidden = ${Neos.Api.Node.isHidden(props.node)}
+        isHiddenByAncestor = ${Neos.Api.Node.isHiddenByAncestor(props.node)}
+        isRemoved = ${Neos.Api.Node.isRemoved(props.node)}
+        isShineThrough = ${Neos.Api.Node.isShineThrough(props.node)}
+        hasChildren = ${Neos.Api.Node.hasChildNodes(props.node, props.childNodeTypes)}
+        timestamps = ${Neos.Api.Node.timestamps(props.node)}
+    }
+}
+
+##
+# A document node as an item of a tree, with its URI and whether it is hidden in menus
+#
+prototype(Neos.Api:DocumentNodeItem) < prototype(Neos.Api:NodeItem) {
+    childNodeTypes = 'Neos.Neos:Document'
+
+    renderer {
+        hiddenInMenu = ${props.node.properties.hiddenInMenu == true}
+        uri = Neos.Neos:NodeUri {
+            node = ${props.node}
+        }
+    }
+}
