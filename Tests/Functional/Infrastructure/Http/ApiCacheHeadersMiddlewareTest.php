@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 namespace Neos\Api\Tests\Functional\Infrastructure\Http;
 
-use Neos\Api\Tests\Functional\Feature\EndpointTestCase;
+use Neos\Api\Tests\Functional\Endpoint\EndpointTestCase;
 use Neos\Neos\Domain\Service\UserService;
 use PHPUnit\Framework\Attributes\Test;
 

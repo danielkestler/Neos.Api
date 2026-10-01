@@ -14,10 +14,10 @@ Neos:
             title: "Neos API"
             version: "1.0.0"
           classes:
-            'Neos\Api\Feature\Me\Me': true
-            'Neos\Api\Feature\Users\Users': true
-            'Neos\Api\Feature\ContentRepositories\ContentRepositories': true
-            'Neos\Api\Feature\Sites\Sites': true
+            'Neos\Api\Endpoint\Me\Me': true
+            'Neos\Api\Endpoint\Users\Users': true
+            'Neos\Api\Endpoint\ContentRepositories\ContentRepositories': true
+            'Neos\Api\Endpoint\Sites\Sites': true
           specPath: "openapi.json"
           # the docs are served by Neos.Api's DocsController, which lets users log in
           authContextProvider: 'Neos\Api\Security\ApiAuthContextProvider'
