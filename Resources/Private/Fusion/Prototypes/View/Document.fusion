@@ -1,0 +1,21 @@
+##
+# The document node of the node with its properties and its whole content: all child content nodes and content
+# collections with their properties, nested. Child documents are not included, hasChildren says whether there are any
+#
+#   {"node": {…the document node…, "properties": {…}, "children": [{…a content collection…, "children": […]}, …]}}
+#
+prototype(Neos.Api:View.Document) < prototype(Neos.Api:View) {
+    node = Neos.Api:DocumentNodeItem {
+        node = ${documentNode}
+
+        renderer {
+            properties = ${Neos.Api.Node.properties(props.node)}
+            children = Neos.Fusion:Map {
+                items = ${Neos.Api.Node.childNodes(props.node, '!Neos.Neos:Document')}
+                itemRenderer = Neos.Api:ContentNode {
+                    node = ${item}
+                }
+            }
+        }
+    }
+}

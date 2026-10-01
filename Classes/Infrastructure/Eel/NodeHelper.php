@@ -66,6 +66,16 @@ final class NodeHelper implements ProtectedContextAwareInterface
     }
 
     /**
+     * The properties in their serialized form, as the content repository stores them, so they are JSON-safe: e.g. a
+     * date as ISO 8601 string, an asset as {"__flow_object_type": "…", "__identifier": "…"}. An object, so a node
+     * without properties encodes as {}, not []
+     */
+    public function properties(Node $node): \stdClass
+    {
+        return (object)$node->properties->serialized()->getPlainValues();
+    }
+
+    /**
      * The label as plain text: the label generator may return markup, e.g. of a text property
      */
     public function label(Node $node): string

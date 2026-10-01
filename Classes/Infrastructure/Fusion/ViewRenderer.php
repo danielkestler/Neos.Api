@@ -50,10 +50,23 @@ final readonly class ViewRenderer
         if ($json === '[]') {
             return [];
         }
-        $data = str_starts_with($json, '{') ? json_decode($json, true) : null;
-        if (!is_array($data)) {
+        $data = str_starts_with($json, '{') ? json_decode($json) : null;
+        if (!$data instanceof \stdClass) {
             throw new \RuntimeException(sprintf('The Fusion prototype %s must render a JSON object, e.g. by inheriting from Neos.Api:View', $prototypeName), 1790838157);
         }
-        return $data;
+        return array_map(self::decoded(...), get_object_vars($data));
+    }
+
+    /**
+     * A decoded JSON value as arrays, but an empty object stays an object: as an array it would be encoded as [] again.
+     * Non-empty objects can't stay objects, the serializer of the response only keeps the properties a class declares
+     */
+    private static function decoded(mixed $value): mixed
+    {
+        if ($value instanceof \stdClass) {
+            $value = get_object_vars($value);
+            return $value === [] ? new \stdClass() : array_map(self::decoded(...), $value);
+        }
+        return is_array($value) ? array_map(self::decoded(...), $value) : $value;
     }
 }

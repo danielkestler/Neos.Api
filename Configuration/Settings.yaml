@@ -18,6 +18,9 @@ Neos:
       contentNodesTree:
         prototype: 'Neos.Api:View.ContentNodesTree'
         description: 'The node with its child content nodes and content collections, as items of a tree that loads level by level'
+      document:
+        prototype: 'Neos.Api:View.Document'
+        description: 'The document node of the node with its properties and its whole content: all child content nodes and content collections with their properties, nested'
 
   OpenApi:
     FlowAdapter:
