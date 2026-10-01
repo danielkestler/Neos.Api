@@ -37,6 +37,9 @@ privilegeTargets:
     "Neos.Api:ContentRepositories.Read":
       label: "List and read the content repositories and their dimensions"
       matcher: "contentrepositories.read"
+    "Neos.Api:NodeTypes.Read":
+      label: "List and read the node types and their configuration"
+      matcher: "nodetypes.read"
     "Neos.Api:Views.Read":
       label: "Render views of the nodes you can read"
       matcher: "views.read"
@@ -66,6 +69,8 @@ roles:
       - privilegeTarget: "Neos.Api:Users.Read"
         permission: GRANT
       - privilegeTarget: "Neos.Api:ContentRepositories.Read"
+        permission: GRANT
+      - privilegeTarget: "Neos.Api:NodeTypes.Read"
         permission: GRANT
 
   "Neos.Neos:Administrator":
