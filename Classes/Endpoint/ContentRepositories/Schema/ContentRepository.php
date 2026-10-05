@@ -16,11 +16,11 @@ use Neos\Schematic\Discovery\AutoDiscoveringSchema;
 final readonly class ContentRepository implements ProvidesSchema
 {
     /**
-     * @param ContentDimensions $dimensions ordered by priority, empty if the content repository has none
+     * @param ContentDimensionList $dimensions ordered by priority, empty if the content repository has none
      */
     public function __construct(
         public ContentRepositoryId $id,
-        public ContentDimensions $dimensions,
+        public ContentDimensionList $dimensions,
     ) {
     }
 
@@ -28,7 +28,7 @@ final readonly class ContentRepository implements ProvidesSchema
     {
         return new self(
             ContentRepositoryId::fromString($contentRepository->id->value),
-            new ContentDimensions(...array_map(
+            new ContentDimensionList(...array_map(
                 static fn (Dimension\ContentDimension $dimension) => ContentDimension::from($dimension, $labels),
                 array_values($contentRepository->getContentDimensionSource()->getContentDimensionsOrderedByPriority()),
             )),

@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 namespace Neos\Api\Endpoint\ContentRepositories;
 
-use Neos\Api\Endpoint\ContentRepositories\Schema\ContentRepositories as ContentRepositoryList;
+use Neos\Api\Endpoint\ContentRepositories\Schema\ContentRepositoryList;
 use Neos\Api\Endpoint\ContentRepositories\Schema\ContentRepository;
 use Neos\Api\Endpoint\ContentRepositories\Schema\ContentRepositoryId;
 use Neos\Api\Infrastructure\I18n\Labels;

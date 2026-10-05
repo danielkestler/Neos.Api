@@ -1,27 +1,27 @@
 <?php
 declare(strict_types=1);
 
-namespace Neos\Api\Endpoint\NodeTypes\Schema;
+namespace Neos\Api\Endpoint\Views\Schema;
 
 use Neos\JsonSchema\ProvidesSchema;
 use Neos\JsonSchema\Schema;
 use Neos\Schematic\Discovery\AutoDiscoveringSchema;
 
 /**
- * Names of content repository node types
+ * A list of views
  *
- * @implements \IteratorAggregate<NodeTypeName>
+ * @implements \IteratorAggregate<View>
  */
-final readonly class NodeTypeNames implements ProvidesSchema, \IteratorAggregate
+final readonly class ViewList implements ProvidesSchema, \IteratorAggregate
 {
     /**
-     * @var list<NodeTypeName>
+     * @var list<View>
      */
-    public array $names;
+    public array $views;
 
-    public function __construct(NodeTypeName ...$names)
+    public function __construct(View ...$views)
     {
-        $this->names = array_values($names);
+        $this->views = array_values($views);
     }
 
     public static function schema(): Schema
@@ -32,6 +32,6 @@ final readonly class NodeTypeNames implements ProvidesSchema, \IteratorAggregate
 
     public function getIterator(): \Traversable
     {
-        yield from $this->names;
+        yield from $this->views;
     }
 }

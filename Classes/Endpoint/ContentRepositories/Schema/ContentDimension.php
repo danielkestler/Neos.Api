@@ -17,12 +17,12 @@ final readonly class ContentDimension implements ProvidesSchema
     /**
      * @param string $id the dimension's key in the contentDimensions settings, e.g. language
      * @param string|null $label the label of the configuration in the requested language, null if it has none
-     * @param ContentDimensionValues $values in the order of the configuration, generalizations before their specializations
+     * @param ContentDimensionValueList $values in the order of the configuration, generalizations before their specializations
      */
     public function __construct(
         public string $id,
         public string|null $label,
-        public ContentDimensionValues $values,
+        public ContentDimensionValueList $values,
     ) {
     }
 
@@ -31,7 +31,7 @@ final readonly class ContentDimension implements ProvidesSchema
         return new self(
             $dimension->id->value,
             $labels->label($dimension->getConfigurationValue('label')),
-            new ContentDimensionValues(...array_map(
+            new ContentDimensionValueList(...array_map(
                 static fn (Dimension\ContentDimensionValue $value) => ContentDimensionValue::from($value, $dimension, $labels),
                 array_values($dimension->values->values),
             )),

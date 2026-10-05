@@ -24,7 +24,7 @@ final readonly class User implements ProvidesSchema
         public string $lastName,
         public EmailAddress|null $email,
         public bool $active,
-        public Accounts $accounts,
+        public AccountList $accounts,
     ) {
     }
 
@@ -37,7 +37,7 @@ final readonly class User implements ProvidesSchema
             $user->getName()->getLastName(),
             EmailAddress::primaryOf($user),
             $user->isActive(),
-            new Accounts(...array_map(
+            new AccountList(...array_map(
                 Account::from(...),
                 array_values($user->getAccounts()->toArray()),
             )),

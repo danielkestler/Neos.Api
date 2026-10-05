@@ -6,7 +6,7 @@ namespace Neos\Api\Endpoint\NodeTypes;
 use Neos\Api\Endpoint\ContentRepositories\Schema\ContentRepositoryId;
 use Neos\Api\Endpoint\NodeTypes\Schema\NodeType;
 use Neos\Api\Endpoint\NodeTypes\Schema\NodeTypeName;
-use Neos\Api\Endpoint\NodeTypes\Schema\NodeTypes as NodeTypeList;
+use Neos\Api\Endpoint\NodeTypes\Schema\NodeTypeList;
 use Neos\Api\Infrastructure\I18n\LabelTranslator;
 use Neos\Api\Security\ApiAuthContextProvider;
 use Neos\Api\Security\ApiScopes;

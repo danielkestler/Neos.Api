@@ -18,7 +18,7 @@ final readonly class Site implements ProvidesSchema
     /**
      * @param ContentRepositoryId $contentRepositoryId the content repository with the site's content, from the site's preset
      * @param PackageKey $siteResourcesPackageKey the package with the site's Fusion, templates and resources
-     * @param Domains $domains ordered by host name
+     * @param DomainList $domains ordered by host name
      * @param bool $online whether the site is online, offline sites are left out of the backend menu and the fallback when no domain matches
      * @param string|null $primaryDomain the URL of the domain the site is linked with: the primary domain if it is active, else the first active one, null if there is none
      */
@@ -28,7 +28,7 @@ final readonly class Site implements ProvidesSchema
         public bool $online,
         public ContentRepositoryId $contentRepositoryId,
         public PackageKey $siteResourcesPackageKey,
-        public Domains $domains,
+        public DomainList $domains,
         public string|null $primaryDomain,
     ) {
     }
@@ -44,7 +44,7 @@ final readonly class Site implements ProvidesSchema
             $site->isOnline(),
             ContentRepositoryId::fromString($site->getConfiguration()->contentRepositoryId->value),
             PackageKey::fromString($site->getSiteResourcesPackageKey()),
-            new Domains(...array_map(
+            new DomainList(...array_map(
                 static fn (Model\Domain $domain) => Domain::from($domain, $persistenceManager),
                 $domains,
             )),

@@ -1,27 +1,27 @@
 <?php
 declare(strict_types=1);
 
-namespace Neos\Api\Endpoint\Users\Schema;
+namespace Neos\Api\Endpoint\Sites\Schema;
 
 use Neos\JsonSchema\ProvidesSchema;
 use Neos\JsonSchema\Schema;
 use Neos\Schematic\Discovery\AutoDiscoveringSchema;
 
 /**
- * A list of Neos users
+ * The domains of a site
  *
- * @implements \IteratorAggregate<User>
+ * @implements \IteratorAggregate<Domain>
  */
-final readonly class Users implements ProvidesSchema, \IteratorAggregate
+final readonly class DomainList implements ProvidesSchema, \IteratorAggregate
 {
     /**
-     * @var list<User>
+     * @var list<Domain>
      */
-    public array $users;
+    public array $domains;
 
-    public function __construct(User ...$users)
+    public function __construct(Domain ...$domains)
     {
-        $this->users = array_values($users);
+        $this->domains = array_values($domains);
     }
 
     public static function schema(): Schema
@@ -32,6 +32,6 @@ final readonly class Users implements ProvidesSchema, \IteratorAggregate
 
     public function getIterator(): \Traversable
     {
-        yield from $this->users;
+        yield from $this->domains;
     }
 }

@@ -6,7 +6,7 @@ namespace Neos\Api\Endpoint\Users\Payload;
 use Neos\Api\Endpoint\Users\Schema\AccountIdentifier;
 use Neos\Api\Endpoint\Users\Schema\EmailAddress;
 use Neos\Api\Endpoint\Users\Schema\Password;
-use Neos\Api\Endpoint\Users\Schema\RoleIdentifiers;
+use Neos\Api\Endpoint\Users\Schema\RoleIdentifierList;
 use Neos\JsonSchema\ProvidesSchema;
 use Neos\JsonSchema\Schema;
 use Neos\Neos\Domain\Model;
@@ -21,7 +21,7 @@ final readonly class UserCreate implements ProvidesSchema
     /**
      * @param AccountIdentifier $username the identifier of the backend account, unique among them
      * @param EmailAddress|null $email the primary email address
-     * @param RoleIdentifiers|null $roles the roles of the account, Neos.Neos:Editor if left out
+     * @param RoleIdentifierList|null $roles the roles of the account, Neos.Neos:Editor if left out
      */
     public function __construct(
         public AccountIdentifier $username,
@@ -29,7 +29,7 @@ final readonly class UserCreate implements ProvidesSchema
         public string $firstName,
         public string $lastName,
         public EmailAddress|null $email = null,
-        public RoleIdentifiers|null $roles = null,
+        public RoleIdentifierList|null $roles = null,
     ) {
     }
 

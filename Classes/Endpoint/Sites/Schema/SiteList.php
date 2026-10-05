@@ -8,20 +8,20 @@ use Neos\JsonSchema\Schema;
 use Neos\Schematic\Discovery\AutoDiscoveringSchema;
 
 /**
- * The node types a site node can have
+ * A list of Neos sites
  *
- * @implements \IteratorAggregate<SiteNodeType>
+ * @implements \IteratorAggregate<Site>
  */
-final readonly class SiteNodeTypes implements ProvidesSchema, \IteratorAggregate
+final readonly class SiteList implements ProvidesSchema, \IteratorAggregate
 {
     /**
-     * @var list<SiteNodeType>
+     * @var list<Site>
      */
-    public array $nodeTypes;
+    public array $sites;
 
-    public function __construct(SiteNodeType ...$nodeTypes)
+    public function __construct(Site ...$sites)
     {
-        $this->nodeTypes = array_values($nodeTypes);
+        $this->sites = array_values($sites);
     }
 
     public static function schema(): Schema
@@ -32,6 +32,6 @@ final readonly class SiteNodeTypes implements ProvidesSchema, \IteratorAggregate
 
     public function getIterator(): \Traversable
     {
-        yield from $this->nodeTypes;
+        yield from $this->sites;
     }
 }

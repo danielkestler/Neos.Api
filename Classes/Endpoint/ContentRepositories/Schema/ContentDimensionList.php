@@ -8,20 +8,20 @@ use Neos\JsonSchema\Schema;
 use Neos\Schematic\Discovery\AutoDiscoveringSchema;
 
 /**
- * A list of content repositories
+ * The content dimensions of a content repository
  *
- * @implements \IteratorAggregate<ContentRepository>
+ * @implements \IteratorAggregate<ContentDimension>
  */
-final readonly class ContentRepositories implements ProvidesSchema, \IteratorAggregate
+final readonly class ContentDimensionList implements ProvidesSchema, \IteratorAggregate
 {
     /**
-     * @var list<ContentRepository>
+     * @var list<ContentDimension>
      */
-    public array $contentRepositories;
+    public array $dimensions;
 
-    public function __construct(ContentRepository ...$contentRepositories)
+    public function __construct(ContentDimension ...$dimensions)
     {
-        $this->contentRepositories = array_values($contentRepositories);
+        $this->dimensions = array_values($dimensions);
     }
 
     public static function schema(): Schema
@@ -32,6 +32,6 @@ final readonly class ContentRepositories implements ProvidesSchema, \IteratorAgg
 
     public function getIterator(): \Traversable
     {
-        yield from $this->contentRepositories;
+        yield from $this->dimensions;
     }
 }

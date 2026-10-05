@@ -5,7 +5,7 @@ namespace Neos\Api\Security;
 
 use Neos\Api\Shared\Schema\ClientIdentifier;
 use Neos\Api\Shared\Schema\Scope;
-use Neos\Api\Shared\Schema\Scopes;
+use Neos\Api\Shared\Schema\ScopeList;
 use Neos\Flow\Annotations as Flow;
 use Neos\Flow\Security\Account;
 use Neos\OAuth\Security\AuthenticatedGrant;
@@ -21,7 +21,7 @@ final readonly class ApiCaller
     private function __construct(
         public Account $account,
         public ClientIdentifier $clientIdentifier,
-        public Scopes $scopes,
+        public ScopeList $scopes,
     ) {
     }
 
@@ -30,7 +30,7 @@ final readonly class ApiCaller
         return new self(
             $grant->account,
             ClientIdentifier::fromString($grant->clientIdentifier),
-            Scopes::fromStrings(...$grant->scopes),
+            ScopeList::fromStrings(...$grant->scopes),
         );
     }
 

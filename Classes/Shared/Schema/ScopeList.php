@@ -12,7 +12,7 @@ use Neos\Schematic\Discovery\AutoDiscoveringSchema;
  *
  * @implements \IteratorAggregate<Scope>
  */
-final readonly class Scopes implements ProvidesSchema, \IteratorAggregate
+final readonly class ScopeList implements ProvidesSchema, \IteratorAggregate
 {
     /**
      * @var list<Scope>

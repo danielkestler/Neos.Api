@@ -16,7 +16,7 @@ final readonly class Account implements ProvidesSchema
 {
     public function __construct(
         public AccountIdentifier $identifier,
-        public RoleIdentifiers $roles,
+        public RoleIdentifierList $roles,
     ) {
     }
 
@@ -24,7 +24,7 @@ final readonly class Account implements ProvidesSchema
     {
         return new self(
             AccountIdentifier::fromString($account->getAccountIdentifier()),
-            new RoleIdentifiers(...array_map(
+            new RoleIdentifierList(...array_map(
                 static fn (Role $role) => RoleIdentifier::fromString($role->getIdentifier()),
                 array_values($account->getRoles()),
             )),

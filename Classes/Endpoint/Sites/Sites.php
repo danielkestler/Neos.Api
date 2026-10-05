@@ -10,13 +10,13 @@ use Neos\Api\Endpoint\Sites\Payload\SiteUpdate;
 use Neos\Api\Endpoint\Sites\Schema\DomainId;
 use Neos\Api\Endpoint\Sites\Schema\Hostname;
 use Neos\Api\Endpoint\Sites\Schema\PackageKey;
-use Neos\Api\Endpoint\Sites\Schema\PackageKeys;
+use Neos\Api\Endpoint\Sites\Schema\PackageKeyList;
 use Neos\Api\Endpoint\Sites\Schema\Site;
 use Neos\Api\Endpoint\Sites\Schema\SiteCreationOptions;
+use Neos\Api\Endpoint\Sites\Schema\SiteList;
 use Neos\Api\Endpoint\Sites\Schema\SiteNodeName;
 use Neos\Api\Endpoint\Sites\Schema\SiteNodeType;
-use Neos\Api\Endpoint\Sites\Schema\SiteNodeTypes;
-use Neos\Api\Endpoint\Sites\Schema\Sites as SiteList;
+use Neos\Api\Endpoint\Sites\Schema\SiteNodeTypeList;
 use Neos\Api\Endpoint\Sites\Response\DomainCreated;
 use Neos\Api\Endpoint\Sites\Response\SiteCreated;
 use Neos\Api\Infrastructure\I18n\LabelTranslator;
@@ -98,11 +98,11 @@ final readonly class Sites
         $nodeTypeManager = $this->nodeTypeManager($this->contentRepositoryForNewSites);
         $labels = $this->labelTranslator->forAcceptLanguage($acceptLanguage);
         return new SiteCreationOptions(
-            new PackageKeys(...array_map(
+            new PackageKeyList(...array_map(
                 PackageKey::fromString(...),
                 array_keys($this->packageManager->getFilteredPackages('available', 'neos-site')),
             )),
-            new SiteNodeTypes(...array_map(
+            new SiteNodeTypeList(...array_map(
                 static fn (NodeType $nodeType) => SiteNodeType::from($nodeType, $labels),
                 array_values($nodeTypeManager->getSubNodeTypes(NodeTypeNameFactory::forSite(), false)),
             )),

@@ -7,7 +7,7 @@ use Neos\Api\Endpoint\Users\Payload\UserCreate;
 use Neos\Api\Endpoint\Users\Payload\UserUpdate;
 use Neos\Api\Endpoint\Users\Schema\User;
 use Neos\Api\Endpoint\Users\Schema\UserId;
-use Neos\Api\Endpoint\Users\Schema\Users as UserList;
+use Neos\Api\Endpoint\Users\Schema\UserList;
 use Neos\Api\Endpoint\Users\Response\UserCreated;
 use Neos\Api\Security\ApiAuthContextProvider;
 use Neos\Api\Security\ApiCaller;

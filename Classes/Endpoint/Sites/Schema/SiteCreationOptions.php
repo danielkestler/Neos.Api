@@ -13,12 +13,12 @@ use Neos\Schematic\Discovery\AutoDiscoveringSchema;
 final readonly class SiteCreationOptions implements ProvidesSchema
 {
     /**
-     * @param PackageKeys $packages the installed site packages (of type neos-site)
-     * @param SiteNodeTypes $nodeTypes the non-abstract subtypes of Neos.Neos:Site
+     * @param PackageKeyList $packages the installed site packages (of type neos-site)
+     * @param SiteNodeTypeList $nodeTypes the non-abstract subtypes of Neos.Neos:Site
      */
     public function __construct(
-        public PackageKeys $packages,
-        public SiteNodeTypes $nodeTypes,
+        public PackageKeyList $packages,
+        public SiteNodeTypeList $nodeTypes,
     ) {
     }
 

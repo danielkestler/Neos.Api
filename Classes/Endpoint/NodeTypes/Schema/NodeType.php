@@ -34,7 +34,7 @@ final readonly class NodeType implements ProvidesSchema
         public string|null $icon,
         public bool $isAbstract,
         public bool $isFinal,
-        public NodeTypeNames $superTypes,
+        public NodeTypeNameList $superTypes,
         public string|null $group,
         public int|string|null $position,
         public array|\stdClass|null $configuration,
@@ -52,7 +52,7 @@ final readonly class NodeType implements ProvidesSchema
             self::icon($nodeType->getConfiguration('ui.icon'), $iconNameMappingService),
             $nodeType->isAbstract(),
             $nodeType->isFinal(),
-            new NodeTypeNames(...array_map(
+            new NodeTypeNameList(...array_map(
                 static fn (string $name) => NodeTypeName::fromString($name),
                 array_keys($nodeType->getDeclaredSuperTypes()),
             )),
@@ -77,7 +77,7 @@ final readonly class NodeType implements ProvidesSchema
                 )),
                 isAbstract: BooleanSchema::create(description: 'Whether the node type only serves as a super type, nodes can\'t have it'),
                 isFinal: BooleanSchema::create(description: 'Whether no other node type may inherit from it'),
-                superTypes: NodeTypeNames::schema(),
+                superTypes: NodeTypeNameList::schema(),
                 group: Nullable::wrap(StringSchema::create(
                     description: 'The group (ui.group) the Neos UI offers it in for creation, a key of the Neos.Neos.nodeTypes.groups settings. Node types without a group aren\'t offered',
                     examples: ['general'],

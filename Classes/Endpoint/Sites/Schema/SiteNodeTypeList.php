@@ -1,25 +1,25 @@
 <?php
 declare(strict_types=1);
 
-namespace Neos\Api\Endpoint\NodeTypes\Schema;
+namespace Neos\Api\Endpoint\Sites\Schema;
 
 use Neos\JsonSchema\ProvidesSchema;
 use Neos\JsonSchema\Schema;
 use Neos\Schematic\Discovery\AutoDiscoveringSchema;
 
 /**
- * The node types of a content repository
+ * The node types a site node can have
  *
- * @implements \IteratorAggregate<NodeType>
+ * @implements \IteratorAggregate<SiteNodeType>
  */
-final readonly class NodeTypes implements ProvidesSchema, \IteratorAggregate
+final readonly class SiteNodeTypeList implements ProvidesSchema, \IteratorAggregate
 {
     /**
-     * @var list<NodeType>
+     * @var list<SiteNodeType>
      */
     public array $nodeTypes;
 
-    public function __construct(NodeType ...$nodeTypes)
+    public function __construct(SiteNodeType ...$nodeTypes)
     {
         $this->nodeTypes = array_values($nodeTypes);
     }

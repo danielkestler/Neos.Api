@@ -14,7 +14,7 @@ final readonly class AccessTokenGrant implements ProvidesSchema
 {
     public function __construct(
         public ClientIdentifier $client,
-        public Scopes $scopes,
+        public ScopeList $scopes,
     ) {
     }
 

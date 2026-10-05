@@ -8,20 +8,20 @@ use Neos\JsonSchema\Schema;
 use Neos\Schematic\Discovery\AutoDiscoveringSchema;
 
 /**
- * A list of Neos sites
+ * A list of Flow package keys
  *
- * @implements \IteratorAggregate<Site>
+ * @implements \IteratorAggregate<PackageKey>
  */
-final readonly class Sites implements ProvidesSchema, \IteratorAggregate
+final readonly class PackageKeyList implements ProvidesSchema, \IteratorAggregate
 {
     /**
-     * @var list<Site>
+     * @var list<PackageKey>
      */
-    public array $sites;
+    public array $packageKeys;
 
-    public function __construct(Site ...$sites)
+    public function __construct(PackageKey ...$packageKeys)
     {
-        $this->sites = array_values($sites);
+        $this->packageKeys = array_values($packageKeys);
     }
 
     public static function schema(): Schema
@@ -32,6 +32,6 @@ final readonly class Sites implements ProvidesSchema, \IteratorAggregate
 
     public function getIterator(): \Traversable
     {
-        yield from $this->sites;
+        yield from $this->packageKeys;
     }
 }

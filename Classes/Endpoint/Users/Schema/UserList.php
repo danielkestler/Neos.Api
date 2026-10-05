@@ -8,20 +8,20 @@ use Neos\JsonSchema\Schema;
 use Neos\Schematic\Discovery\AutoDiscoveringSchema;
 
 /**
- * The roles assigned to an account
+ * A list of Neos users
  *
- * @implements \IteratorAggregate<RoleIdentifier>
+ * @implements \IteratorAggregate<User>
  */
-final readonly class RoleIdentifiers implements ProvidesSchema, \IteratorAggregate
+final readonly class UserList implements ProvidesSchema, \IteratorAggregate
 {
     /**
-     * @var list<RoleIdentifier>
+     * @var list<User>
      */
-    public array $roles;
+    public array $users;
 
-    public function __construct(RoleIdentifier ...$roles)
+    public function __construct(User ...$users)
     {
-        $this->roles = array_values($roles);
+        $this->users = array_values($users);
     }
 
     public static function schema(): Schema
@@ -32,6 +32,6 @@ final readonly class RoleIdentifiers implements ProvidesSchema, \IteratorAggrega
 
     public function getIterator(): \Traversable
     {
-        yield from $this->roles;
+        yield from $this->users;
     }
 }

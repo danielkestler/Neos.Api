@@ -8,7 +8,7 @@ use Neos\Api\Endpoint\Views\Response\RenderedView;
 use Neos\Api\Endpoint\Views\Schema\RenderingModeName;
 use Neos\Api\Endpoint\Views\Schema\View;
 use Neos\Api\Endpoint\Views\Schema\ViewName;
-use Neos\Api\Endpoint\Views\Schema\Views as ViewList;
+use Neos\Api\Endpoint\Views\Schema\ViewList;
 use Neos\Api\Infrastructure\ContentRepository\ContentSubgraphs;
 use Neos\Api\Infrastructure\Fusion\ViewRenderer;
 use Neos\Api\Security\AccountPrivileges;

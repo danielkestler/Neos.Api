@@ -1,27 +1,27 @@
 <?php
 declare(strict_types=1);
 
-namespace Neos\Api\Endpoint\Sites\Schema;
+namespace Neos\Api\Endpoint\NodeTypes\Schema;
 
 use Neos\JsonSchema\ProvidesSchema;
 use Neos\JsonSchema\Schema;
 use Neos\Schematic\Discovery\AutoDiscoveringSchema;
 
 /**
- * A list of Flow package keys
+ * The node types of a content repository
  *
- * @implements \IteratorAggregate<PackageKey>
+ * @implements \IteratorAggregate<NodeType>
  */
-final readonly class PackageKeys implements ProvidesSchema, \IteratorAggregate
+final readonly class NodeTypeList implements ProvidesSchema, \IteratorAggregate
 {
     /**
-     * @var list<PackageKey>
+     * @var list<NodeType>
      */
-    public array $packageKeys;
+    public array $nodeTypes;
 
-    public function __construct(PackageKey ...$packageKeys)
+    public function __construct(NodeType ...$nodeTypes)
     {
-        $this->packageKeys = array_values($packageKeys);
+        $this->nodeTypes = array_values($nodeTypes);
     }
 
     public static function schema(): Schema
@@ -32,6 +32,6 @@ final readonly class PackageKeys implements ProvidesSchema, \IteratorAggregate
 
     public function getIterator(): \Traversable
     {
-        yield from $this->packageKeys;
+        yield from $this->nodeTypes;
     }
 }
