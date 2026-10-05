@@ -36,12 +36,53 @@ class NodeTypesTest extends EndpointTestCase
 
         $document = $nodeTypes['Neos.Neos:Document'];
         self::assertTrue($document['isAbstract']);
+        self::assertNull($document['properties']);
+        self::assertNull($document['references']);
         self::assertNull($document['configuration']);
         self::assertContains('Neos.Neos:Node', $nodeTypes['Neos.Neos:Document']['superTypes']);
     }
 
     #[Test]
-    public function getsANodeTypeWithItsConfiguration(): void
+    public function includesPropertiesReferencesAndConfigurationInTheList(): void
+    {
+        $this->requireContentRepository();
+        $response = $this->get('/api/nodetypes?include=properties,references,configuration', $this->token('editor-machine', 'nodetypes.read'));
+
+        self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
+        $document = array_column(self::json($response), null, 'name')['Neos.Neos:Document'];
+        $properties = array_column($document['properties'], null, 'name');
+        self::assertSame('string', $properties['title']['type']);
+        self::assertArrayNotHasKey('_hidden', $properties);
+        self::assertIsArray($document['references']);
+        self::assertArrayHasKey('title', $document['configuration']['properties']);
+    }
+
+    #[Test]
+    public function rejectsUnknownIncludes(): void
+    {
+        $response = $this->get('/api/nodetypes?include=properties,children', $this->token('editor-machine', 'nodetypes.read'));
+
+        self::assertSame(400, $response->getStatusCode(), (string)$response->getBody());
+        self::assertStringContainsString('children', self::json($response)['detail']);
+    }
+
+    #[Test]
+    public function filtersBySuperType(): void
+    {
+        $this->requireContentRepository();
+        $response = $this->get('/api/nodetypes?superType=Neos.Neos:Document', $this->token('editor-machine', 'nodetypes.read'));
+
+        self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
+        $names = array_column(self::json($response), 'name');
+        self::assertContains('Neos.Neos:Document', $names);
+        self::assertContains('Neos.Neos:Shortcut', $names);
+        self::assertNotContains('Neos.Neos:Content', $names);
+
+        self::assertSame(400, $this->get('/api/nodetypes?superType=Vendor.Unknown:Type', $this->token('editor-machine', 'nodetypes.read'))->getStatusCode());
+    }
+
+    #[Test]
+    public function getsANodeTypeWithEverything(): void
     {
         $this->requireContentRepository();
         $response = $this->get('/api/nodetypes/Neos.Neos:Document', $this->token('editor-machine', 'nodetypes.read'), ['Accept-Language' => 'de']);
@@ -49,8 +90,22 @@ class NodeTypesTest extends EndpointTestCase
         self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
         $nodeType = self::json($response);
         self::assertSame('Neos.Neos:Document', $nodeType['name']);
-        self::assertArrayHasKey('title', $nodeType['configuration']['properties']);
+        self::assertContains('title', array_column($nodeType['properties'], 'name'));
+        self::assertIsArray($nodeType['references']);
         self::assertSame('de', $response->getHeaderLine('Content-Language'));
+        // translated, not the translation ID Neos.Neos:NodeTypes.Document:properties.title
+        self::assertSame('Titel', $nodeType['configuration']['properties']['title']['ui']['label']);
+    }
+
+    #[Test]
+    public function listsTheGroupsInTheOrderOfTheirPositions(): void
+    {
+        $response = $this->get('/api/nodetypes/groups', $this->token('editor-machine', 'nodetypes.read'), ['Accept-Language' => 'en']);
+
+        self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
+        $groups = self::json($response);
+        self::assertSame(['general', 'structure', 'plugins'], array_slice(array_column($groups, 'name'), 0, 3));
+        self::assertSame(['name' => 'plugins', 'label' => 'Plugins', 'collapsed' => true], $groups[2]);
     }
 
     #[Test]

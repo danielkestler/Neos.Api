@@ -18,13 +18,21 @@ use Neos\JsonSchema\Support\ObjectProperties;
 use Neos\Neos\Service\IconNameMappingService;
 
 /**
- * A node type with what trees and creation UIs need and, if requested, its whole configuration
+ * A node type with what trees and creation UIs need and, if requested, its properties, references and whole
+ * configuration
  *
  * The schema is written out: position is an integer or a string, and the configuration a map, which schematic can't
  * discover
  */
 final readonly class NodeType implements ProvidesSchema
 {
+    /**
+     * The keys whose string values in the configuration are labels, as the Neos UI translates them: ui.label,
+     * ui.help.message, editorOptions.placeholder, and the labels of inspector tabs, groups and views, select box values
+     * and creation dialog elements
+     */
+    private const array LABEL_KEYS = ['label', 'message', 'placeholder'];
+
     /**
      * @param array<string, mixed>|\stdClass|null $configuration
      */
@@ -37,15 +45,23 @@ final readonly class NodeType implements ProvidesSchema
         public NodeTypeNameList $superTypes,
         public string|null $group,
         public int|string|null $position,
+        public NodeTypePropertyList|null $properties,
+        public NodeTypeReferenceList|null $references,
         public array|\stdClass|null $configuration,
     ) {
     }
 
-    public static function from(Core\NodeType\NodeType $nodeType, Labels $labels, IconNameMappingService $iconNameMappingService, bool $withConfiguration): self
-    {
+    public static function from(
+        Core\NodeType\NodeType $nodeType,
+        Labels $labels,
+        IconNameMappingService $iconNameMappingService,
+        bool $withProperties,
+        bool $withReferences,
+        bool $withConfiguration,
+    ): self {
         $group = $nodeType->getConfiguration('ui.group');
         $position = $nodeType->getConfiguration('ui.position');
-        $configuration = $nodeType->getFullConfiguration();
+        $configuration = self::translateLabels($nodeType->getFullConfiguration(), $labels);
         return new self(
             NodeTypeName::fromString($nodeType->name->value),
             $labels->label($nodeType->getLabel()) ?? $nodeType->name->value,
@@ -58,6 +74,8 @@ final readonly class NodeType implements ProvidesSchema
             )),
             is_string($group) && $group !== '' ? $group : null,
             is_int($position) || is_string($position) ? $position : null,
+            $withProperties ? self::properties($nodeType, $labels) : null,
+            $withReferences ? self::references($nodeType, $labels) : null,
             // an object where it is empty: the serializer can't tell an empty map from an empty list
             $withConfiguration ? ($configuration === [] ? new \stdClass() : $configuration) : null,
         );
@@ -87,14 +105,54 @@ final readonly class NodeType implements ProvidesSchema
                     StringSchema::create(description: 'The position (ui.position) within its group as a position string', examples: ['before Neos.Demo:Content.Text', 'end']),
                     NullSchema::create(),
                 ),
+                properties: Nullable::wrap(NodeTypePropertyList::schema()),
+                references: Nullable::wrap(NodeTypeReferenceList::schema()),
                 configuration: Nullable::wrap(ObjectSchema::create(
-                    description: 'Only from GET /nodetypes/{nodeTypeName}, else null: the whole configuration, merged with the super types\', as NodeTypes.yaml declares it. Labels in it are not translated',
+                    description: 'The whole configuration, merged with the super types\', as NodeTypes.yaml declares it. Its labels (label, help message and placeholder values that are translation IDs) are translated to the requested language. In the list only with include=configuration, else null',
                     additionalProperties: true,
                 )),
             ),
             additionalProperties: false,
-            required: ['name', 'label', 'icon', 'isAbstract', 'isFinal', 'superTypes', 'group', 'position', 'configuration'],
+            required: ['name', 'label', 'icon', 'isAbstract', 'isFinal', 'superTypes', 'group', 'position', 'properties', 'references', 'configuration'],
         );
+    }
+
+    private static function properties(Core\NodeType\NodeType $nodeType, Labels $labels): NodeTypePropertyList
+    {
+        $properties = [];
+        foreach ($nodeType->getProperties() as $name => $configuration) {
+            // internal plumbing like _hidden, not content
+            if (str_starts_with((string)$name, '_')) {
+                continue;
+            }
+            $properties[] = NodeTypeProperty::from((string)$name, is_array($configuration) ? $configuration : [], $labels);
+        }
+        return new NodeTypePropertyList(...$properties);
+    }
+
+    private static function references(Core\NodeType\NodeType $nodeType, Labels $labels): NodeTypeReferenceList
+    {
+        $references = [];
+        foreach ($nodeType->getReferences() as $name => $configuration) {
+            $references[] = NodeTypeReference::from((string)$name, is_array($configuration) ? $configuration : [], $labels);
+        }
+        return new NodeTypeReferenceList(...$references);
+    }
+
+    /**
+     * @param array<mixed> $configuration
+     * @return array<mixed>
+     */
+    private static function translateLabels(array $configuration, Labels $labels): array
+    {
+        foreach ($configuration as $key => $value) {
+            if (is_array($value)) {
+                $configuration[$key] = self::translateLabels($value, $labels);
+            } elseif (is_string($value) && in_array($key, self::LABEL_KEYS, true)) {
+                $configuration[$key] = $labels->label($value) ?? $value;
+            }
+        }
+        return $configuration;
     }
 
     /**

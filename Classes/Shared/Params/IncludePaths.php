@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-namespace Neos\Api\Endpoint\Nodes\Schema;
+namespace Neos\Api\Shared\Params;
 
 use Neos\JsonSchema\ProvidesSchema;
 use Neos\JsonSchema\Schema;
@@ -9,9 +9,9 @@ use Neos\JsonSchema\StringSchema;
 use Neos\Schematic\Schematic;
 
 /**
- * What to include in a node beyond its own fields: a comma-separated list of paths
+ * What to include in a resource beyond its own fields: a comma-separated list of paths
  */
-final readonly class NodeInclude implements ProvidesSchema
+final readonly class IncludePaths implements ProvidesSchema
 {
     private function __construct(
         public string $value,
@@ -35,7 +35,7 @@ final readonly class NodeInclude implements ProvidesSchema
     {
         static $schema = null;
         return $schema ??= StringSchema::create(
-            description: 'What to include beyond the node\'s own fields, comma-separated include parameter',
+            description: 'What to include beyond the resource\'s own fields, comma-separated, a path like children.references includes the ones it goes through',
             examples: ['references'],
             pattern: '^[a-zA-Z][a-zA-Z0-9.]*(,[a-zA-Z][a-zA-Z0-9.]*)*$',
         );

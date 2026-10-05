@@ -5,12 +5,12 @@ namespace Neos\Api\Endpoint\Nodes;
 
 use Neos\Api\Endpoint\Nodes\Schema\Node;
 use Neos\Api\Endpoint\Nodes\Schema\NodeAddress;
-use Neos\Api\Endpoint\Nodes\Schema\NodeInclude;
 use Neos\Api\Endpoint\Nodes\Schema\NodeList;
 use Neos\Api\Infrastructure\ContentRepository\ContentSubgraphs;
 use Neos\Api\Infrastructure\ContentRepository\NodeSerializer;
 use Neos\Api\Security\ApiAuthContextProvider;
 use Neos\Api\Security\ApiScopes;
+use Neos\Api\Shared\Params;
 use Neos\Api\Shared\Response\BadRequest;
 use Neos\Api\Shared\Response\NotFound;
 use Neos\ContentRepository\Core\DimensionSpace\OriginDimensionSpacePoint;
@@ -51,7 +51,7 @@ final readonly class Nodes
     public function get(
         NodeAddress $nodeAddress,
         #[Parameter(in: 'query', description: 'What to include beyond the node\'s own fields, comma-separated: references, children, children.references, variants, variants.references')]
-        NodeInclude|null $include = null,
+        Params\IncludePaths|null $include = null,
     ): Node|NotFound|BadRequest {
         $includePaths = $include?->paths() ?? [];
         $unknown = array_diff($includePaths, self::INCLUDE_PATHS);
