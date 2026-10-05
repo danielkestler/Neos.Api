@@ -15,7 +15,7 @@ use Neos\JsonSchema\Support\ObjectProperties;
  *
  * The schema is written out and data typed iterable, as Node's children, see NodeList
  */
-final readonly class NodeListing implements ProvidesSchema
+final readonly class PaginatedNodeListing implements ProvidesSchema
 {
     /**
      * @param NodeList $data typed iterable, not NodeList, see there

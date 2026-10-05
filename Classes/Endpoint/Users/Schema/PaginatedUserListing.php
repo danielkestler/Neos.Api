@@ -12,7 +12,7 @@ use Neos\Schematic\Discovery\AutoDiscoveringSchema;
 /**
  * A page of users, as JSON:API's top level: the users in data, the total in meta, the other pages in links
  */
-final readonly class UserListing implements ProvidesSchema
+final readonly class PaginatedUserListing implements ProvidesSchema
 {
     public function __construct(
         public UserList $data,

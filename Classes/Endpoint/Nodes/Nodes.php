@@ -7,7 +7,7 @@ use Neos\Api\Endpoint\Nodes\Params\NodeFilter;
 use Neos\Api\Endpoint\Nodes\Schema\Node;
 use Neos\Api\Endpoint\Nodes\Schema\NodeAddress;
 use Neos\Api\Endpoint\Nodes\Schema\NodeList;
-use Neos\Api\Endpoint\Nodes\Schema\NodeListing;
+use Neos\Api\Endpoint\Nodes\Schema\PaginatedNodeListing;
 use Neos\Api\Infrastructure\ContentRepository\ContentSubgraphs;
 use Neos\Api\Infrastructure\ContentRepository\NodeSerializer;
 use Neos\Api\Security\ApiAuthContextProvider;
@@ -75,7 +75,7 @@ final readonly class Nodes
         Params\Page|null $page = null,
         #[Parameter(in: 'query', description: 'What to include beyond each node\'s own fields, comma-separated: references, children, children.references, variants, variants.references')]
         Params\IncludePaths|null $include = null,
-    ): NodeListing|NotFound|BadRequest {
+    ): PaginatedNodeListing|NotFound|BadRequest {
         $page ??= new Params\Page();
         $includePaths = $include?->paths() ?? [];
         $entryPoints = $filter?->entryPoints() ?? [];
@@ -139,7 +139,7 @@ final readonly class Nodes
             );
             $total = $subgraph->countBackReferences($address->aggregateId, Filter\CountBackReferencesFilter::fromFindBackReferencesFilter($backReferencesFilter));
         }
-        return new NodeListing(
+        return new PaginatedNodeListing(
             new NodeList(...array_map(fn (ContentGraph\Node $node) => $this->node($node, $subgraph, $includePaths), $nodes)),
             new ListingMeta($total),
             ListingLinks::for($request, $page, $total),

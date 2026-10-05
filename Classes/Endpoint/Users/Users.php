@@ -5,10 +5,10 @@ namespace Neos\Api\Endpoint\Users;
 
 use Neos\Api\Endpoint\Users\Payload\UserCreate;
 use Neos\Api\Endpoint\Users\Payload\UserUpdate;
+use Neos\Api\Endpoint\Users\Schema\PaginatedUserListing;
 use Neos\Api\Endpoint\Users\Schema\User;
 use Neos\Api\Endpoint\Users\Schema\UserId;
 use Neos\Api\Endpoint\Users\Schema\UserList;
-use Neos\Api\Endpoint\Users\Schema\UserListing;
 use Neos\Api\Endpoint\Users\Response\UserCreated;
 use Neos\Api\Security\ApiAuthContextProvider;
 use Neos\Api\Security\ApiCaller;
@@ -53,13 +53,13 @@ final readonly class Users
         ServerRequestInterface $request,
         #[Parameter(in: 'query', description: 'Which page: page[offset] and page[limit]')]
         Params\Page|null $page = null,
-    ): UserListing {
+    ): PaginatedUserListing {
         $page ??= new Params\Page();
         $users = $this->userService->getUsers();
         $total = $users->count();
         // a copy of the query, paged in the database
         $query = $users->getQuery()->setOffset($page->offset)->setLimit($page->limit);
-        return new UserListing(
+        return new PaginatedUserListing(
             new UserList(...array_map(User::from(...), $query->execute()->toArray())),
             new ListingMeta($total),
             ListingLinks::for($request, $page, $total),
