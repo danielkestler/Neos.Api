@@ -51,15 +51,15 @@ class NodesTest extends EndpointTestCase
     }
 
     #[Test]
-    public function includesOnlyReferences(): void
+    public function includesTheReferencesChildrenAndVariants(): void
     {
         $token = $this->token('nobody-machine', 'nodes.read');
 
-        self::assertSame(404, $this->get(self::nodePath(self::NODE_ADDRESS) . '?include=references', $token)->getStatusCode());
+        self::assertSame(404, $this->get(self::nodePath(self::NODE_ADDRESS) . '?include=references,children.references,variants,variants.references', $token)->getStatusCode());
 
-        $response = $this->get(self::nodePath(self::NODE_ADDRESS) . '?include=references,children,parent.children', $token);
+        $response = $this->get(self::nodePath(self::NODE_ADDRESS) . '?include=references,parent,children.children', $token);
         self::assertSame(400, $response->getStatusCode(), (string)$response->getBody());
-        self::assertSame('Can\'t include children, parent.children, only: references', self::json($response)['detail']);
+        self::assertSame('Can\'t include parent, children.children, only: references, children, children.references, variants, variants.references', self::json($response)['detail']);
 
         // not a list of paths, its schema rejects it
         self::assertSame(400, $this->get(self::nodePath(self::NODE_ADDRESS) . '?include=references,', $token)->getStatusCode());

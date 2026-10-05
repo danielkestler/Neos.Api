@@ -17,15 +17,18 @@ use Neos\JsonSchema\Support\ObjectProperties;
 use Neos\Neos\Domain\SubtreeTagging\NeosSubtreeTag;
 
 /**
- * A node with its properties and, if included, its references
+ * A node with its properties and, if included, its references, children and variants
  *
- * The schema is written out: properties and references are maps, which schematic can't discover from an array
+ * The schema is written out: properties and references are maps, which schematic can't discover from an array, and
+ * children and variants contain Node itself, see NodeList
  */
 final readonly class Node implements ProvidesSchema
 {
     /**
      * @param array<string, mixed> $properties
      * @param array<string, list<array{aggregateId: string, properties: array<string, mixed>|\stdClass}>>|\stdClass|null $references
+     * @param NodeList|null $children typed iterable, not NodeList, see there
+     * @param NodeList|null $variants as $children
      */
     public function __construct(
         public NodeAddress $nodeAddress,
@@ -40,10 +43,12 @@ final readonly class Node implements ProvidesSchema
         public NodeTimestamps $timestamps,
         public array $properties,
         public array|\stdClass|null $references,
+        public iterable|null $children,
+        public iterable|null $variants,
     ) {
     }
 
-    public static function from(ContentGraph\Node $node, NodeSerializer $nodeSerializer, bool $includeReferences): self
+    public static function from(ContentGraph\Node $node, NodeSerializer $nodeSerializer, bool $includeReferences, NodeList|null $children = null, NodeList|null $variants = null): self
     {
         return new self(
             NodeAddress::from(SharedModel\Node\NodeAddress::fromNode($node)),
@@ -58,6 +63,8 @@ final readonly class Node implements ProvidesSchema
             NodeTimestamps::from($node->timestamps),
             $nodeSerializer->properties($node->properties),
             $includeReferences ? self::references($nodeSerializer->references($node), $nodeSerializer) : null,
+            $children,
+            $variants,
         );
     }
 
@@ -83,13 +90,16 @@ final readonly class Node implements ProvidesSchema
                     additionalProperties: true,
                 ),
                 references: Nullable::wrap(ObjectSchema::create(
-                    description: 'Only with include=references, else null: the references the node type declares, each with the referenced nodes in their order (an empty list if there are none) as {"aggregateId": "…", "properties": {…}}, the properties of the reference serialized as the node\'s',
+                    description: 'Only if included (e.g. include=references or children.references), else null: the references the node type declares, each with the referenced nodes in their order (an empty list if there are none) as {"aggregateId": "…", "properties": {…}}, the properties of the reference serialized as the node\'s',
                     examples: [['relatedPages' => [['aggregateId' => 'a3474e1d-dd60-4a84-82b1-18d2f21891a3', 'properties' => new \stdClass()]]]],
                     additionalProperties: true,
                 )),
+                // the very schema of NodeList, a copy with another description would be no branch the serializer knows
+                children: Nullable::wrap(NodeList::schema()),
+                variants: Nullable::wrap(NodeList::schema()),
             ),
             additionalProperties: false,
-            required: ['nodeAddress', 'aggregateId', 'name', 'nodeType', 'label', 'classification', 'isHidden', 'isHiddenByAncestor', 'isShineThrough', 'timestamps', 'properties', 'references'],
+            required: ['nodeAddress', 'aggregateId', 'name', 'nodeType', 'label', 'classification', 'isHidden', 'isHiddenByAncestor', 'isShineThrough', 'timestamps', 'properties', 'references', 'children', 'variants'],
         );
     }
 
