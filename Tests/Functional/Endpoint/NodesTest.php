@@ -66,18 +66,98 @@ class NodesTest extends EndpointTestCase
     }
 
     #[Test]
+    public function listsFromExactlyOneNode(): void
+    {
+        $token = $this->token('nobody-machine', 'nodes.read');
+
+        foreach (['/api/nodes', self::listPath(['filter' => ['nodeType' => 'Neos.Neos:Document']]), self::listPath(['filter' => ['parent' => self::NODE_ADDRESS, 'ancestor' => self::NODE_ADDRESS]])] as $path) {
+            $response = $this->get($path, $token);
+            self::assertSame(400, $response->getStatusCode(), $path . ': ' . $response->getBody());
+            self::assertSame('Exactly one of filter[parent], filter[ancestor] and filter[referencing] is required', self::json($response)['detail']);
+        }
+        foreach (['parent', 'ancestor', 'referencing'] as $entryPoint) {
+            $response = $this->get(self::listPath(['filter' => [$entryPoint => self::NODE_ADDRESS]]), $token);
+            self::assertSame(404, $response->getStatusCode(), $entryPoint . ': ' . $response->getBody());
+            self::assertStringStartsWith('There is no node {"contentRepositoryId":"unknown"', self::json($response)['detail']);
+        }
+
+        $response = $this->get(self::listPath(['filter' => ['parent' => self::NODE_ADDRESS, 'referenceName' => 'relatedPages']]), $token);
+        self::assertSame(400, $response->getStatusCode(), (string)$response->getBody());
+        self::assertSame('filter[referenceName] needs filter[referencing]', self::json($response)['detail']);
+
+        $response = $this->get(self::listPath(['filter' => ['parent' => '{not json}']]), $token);
+        self::assertSame(400, $response->getStatusCode(), (string)$response->getBody());
+        self::assertStringStartsWith('The node address is invalid', self::json($response)['detail']);
+
+        // unknown filter members, its schema rejects them
+        self::assertSame(400, $this->get(self::listPath(['filter' => ['parent' => self::NODE_ADDRESS, 'unknown' => 'x']]), $token)->getStatusCode());
+    }
+
+    #[Test]
+    public function rejectsInvalidFiltersSortsAndPages(): void
+    {
+        $token = $this->token('nobody-machine', 'nodes.read');
+        $filter = ['parent' => self::NODE_ADDRESS];
+
+        $response = $this->get(self::listPath(['filter' => $filter + ['property' => 'title = ']]), $token);
+        self::assertSame(400, $response->getStatusCode(), (string)$response->getBody());
+        self::assertStringStartsWith('filter[property] is invalid', self::json($response)['detail']);
+        self::assertSame(404, $this->get(self::listPath(['filter' => $filter + ['property' => 'title *= \'Neos\' AND NOT (hideInMenu = true)']]), $token)->getStatusCode());
+
+        $response = $this->get(self::listPath(['filter' => $filter, 'sort' => '-timestamps.lastModified,properties.title,label']), $token);
+        self::assertSame(400, $response->getStatusCode(), (string)$response->getBody());
+        self::assertSame('Can\'t sort by label, only by properties.<name> and timestamps.created, timestamps.lastModified, timestamps.originalCreated, timestamps.originalLastModified', self::json($response)['detail']);
+        self::assertSame(404, $this->get(self::listPath(['filter' => $filter, 'sort' => '-timestamps.lastModified,properties.title']), $token)->getStatusCode());
+        // not a list of fields, its schema rejects it
+        self::assertSame(400, $this->get(self::listPath(['filter' => $filter, 'sort' => 'title,']), $token)->getStatusCode());
+
+        $response = $this->get(self::listPath(['filter' => $filter, 'include' => 'children,parent']), $token);
+        self::assertSame(400, $response->getStatusCode(), (string)$response->getBody());
+        self::assertStringStartsWith('Can\'t include parent', self::json($response)['detail']);
+
+        self::assertSame(404, $this->get(self::listPath(['filter' => $filter, 'page' => ['offset' => '50', 'limit' => '100']]), $token)->getStatusCode());
+        foreach ([['limit' => '101'], ['limit' => '0'], ['offset' => '-1'], ['size' => '10']] as $page) {
+            $response = $this->get(self::listPath(['filter' => $filter, 'page' => $page]), $token);
+            self::assertSame(400, $response->getStatusCode(), json_encode($page) . ': ' . $response->getBody());
+        }
+    }
+
+    #[Test]
+    public function documentsFiltersAndPagesAsDeepObjects(): void
+    {
+        $parameters = array_column(self::json($this->get('/api/openapi.json', null))['paths']['/nodes']['get']['parameters'], null, 'name');
+
+        foreach (['filter', 'page'] as $name) {
+            self::assertSame('deepObject', $parameters[$name]['style'] ?? null, $name);
+            self::assertTrue($parameters[$name]['explode'] ?? null, $name);
+        }
+        self::assertArrayNotHasKey('style', $parameters['sort']);
+    }
+
+    #[Test]
     public function requiresTheScope(): void
     {
-        $response = $this->get(self::nodePath(self::NODE_ADDRESS), $this->token('nobody-machine', 'me.read'));
+        foreach ([self::nodePath(self::NODE_ADDRESS), self::listPath(['filter' => ['parent' => self::NODE_ADDRESS]])] as $path) {
+            $response = $this->get($path, $this->token('nobody-machine', 'me.read'));
 
-        self::assertSame(403, $response->getStatusCode(), (string)$response->getBody());
-        self::assertStringContainsString('nodes.read', self::json($response)['detail']);
+            self::assertSame(403, $response->getStatusCode(), (string)$response->getBody());
+            self::assertStringContainsString('nodes.read', self::json($response)['detail']);
+        }
     }
 
     #[Test]
     public function requiresAToken(): void
     {
         self::assertSame(401, $this->get(self::nodePath(self::NODE_ADDRESS), null)->getStatusCode());
+        self::assertSame(401, $this->get('/api/nodes', null)->getStatusCode());
+    }
+
+    /**
+     * @param array<string, mixed> $query
+     */
+    private static function listPath(array $query): string
+    {
+        return '/api/nodes?' . http_build_query($query, '', '&', PHP_QUERY_RFC3986);
     }
 
     private static function nodePath(string $nodeAddress): string
