@@ -70,7 +70,7 @@ class NodeTypesTest extends EndpointTestCase
     public function filtersBySuperType(): void
     {
         $this->requireContentRepository();
-        $response = $this->get('/api/nodetypes?superType=Neos.Neos:Document', $this->token('editor-machine', 'nodetypes.read'));
+        $response = $this->get('/api/nodetypes?filter[superType]=Neos.Neos:Document', $this->token('editor-machine', 'nodetypes.read'));
 
         self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
         $names = array_column(self::json($response)['data'], 'name');
@@ -78,7 +78,18 @@ class NodeTypesTest extends EndpointTestCase
         self::assertContains('Neos.Neos:Shortcut', $names);
         self::assertNotContains('Neos.Neos:Content', $names);
 
-        self::assertSame(400, $this->get('/api/nodetypes?superType=Vendor.Unknown:Type', $this->token('editor-machine', 'nodetypes.read'))->getStatusCode());
+        self::assertSame(400, $this->get('/api/nodetypes?filter[superType]=Vendor.Unknown:Type', $this->token('editor-machine', 'nodetypes.read'))->getStatusCode());
+    }
+
+    #[Test]
+    public function documentsTheFilterAsDeepObject(): void
+    {
+        $parameters = array_column(self::json($this->get('/api/openapi.json', null))['paths']['/nodetypes']['get']['parameters'], null, 'name');
+        self::assertSame('deepObject', $parameters['filter']['style'] ?? null);
+        self::assertArrayNotHasKey('superType', $parameters);
+
+        // unknown filter members, its schema rejects them before any content repository is asked
+        self::assertSame(400, $this->get('/api/nodetypes?filter[nodeType]=Neos.Neos:Document', $this->token('editor-machine', 'nodetypes.read'))->getStatusCode());
     }
 
     #[Test]

@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Neos\Api\Endpoint\NodeTypes;
 
 use Neos\Api\Endpoint\ContentRepositories\Schema\ContentRepositoryId;
+use Neos\Api\Endpoint\NodeTypes\Params\NodeTypeFilter;
 use Neos\Api\Endpoint\NodeTypes\Schema\NodeType;
 use Neos\Api\Endpoint\NodeTypes\Schema\NodeTypeName;
 use Neos\Api\Endpoint\NodeTypes\Schema\NodeTypeList;
@@ -41,7 +42,7 @@ final readonly class NodeTypes
         path: '/nodetypes',
         method: 'GET',
         summary: 'List the node types',
-        description: 'All node types of a content repository, abstract ones included, sorted by name, or with superType only the ones of that type. Their properties, references and configuration are null unless included, getNodeType has them all. The labels are translated to the Accept-Language.',
+        description: 'All node types of a content repository, abstract ones included, sorted by name, or with filter[superType] only the ones of that type. Their properties, references and configuration are null unless included, getNodeType has them all. The labels are translated to the Accept-Language.',
         operationId: 'listNodeTypes',
         security: [
             ApiAuthContextProvider::SCOPES => [ApiScopes::NODETYPES_READ],
@@ -50,8 +51,8 @@ final readonly class NodeTypes
     public function list(
         #[Parameter(in: 'query', description: 'The content repository, default if omitted')]
         ContentRepositoryId|null $contentRepositoryId = null,
-        #[Parameter(in: 'query', description: 'Only the node types of this type: it and the ones inheriting from it, directly or not')]
-        NodeTypeName|null $superType = null,
+        #[Parameter(in: 'query', description: 'Which node types: with filter[superType] only the ones of this type, it and the ones inheriting from it, directly or not')]
+        NodeTypeFilter|null $filter = null,
         #[Parameter(in: 'query', description: 'What to include beyond the node types\' own fields, comma-separated: properties, references, configuration')]
         Params\IncludePaths|null $include = null,
         #[Parameter(in: 'header', name: 'Accept-Language')] AcceptLanguage|null $acceptLanguage = null,
@@ -65,6 +66,7 @@ final readonly class NodeTypes
         if ($nodeTypeManager === null) {
             return $this->contentRepositoryNotFound($contentRepositoryId);
         }
+        $superType = $filter?->superType;
         if ($superType !== null && !$nodeTypeManager->hasNodeType($superType->value)) {
             return BadRequest::because(sprintf('There is no node type %s', $superType->value));
         }
