@@ -28,7 +28,7 @@ class NodeTypesTest extends EndpointTestCase
         $response = $this->get('/api/nodetypes', $this->token('editor-machine', 'nodetypes.read'));
 
         self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
-        $nodeTypes = array_column(self::json($response), null, 'name');
+        $nodeTypes = array_column(self::json($response)['data'], null, 'name');
         $names = array_keys($nodeTypes);
         $sorted = $names;
         sort($sorted);
@@ -49,7 +49,7 @@ class NodeTypesTest extends EndpointTestCase
         $response = $this->get('/api/nodetypes?include=properties,references,configuration', $this->token('editor-machine', 'nodetypes.read'));
 
         self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
-        $document = array_column(self::json($response), null, 'name')['Neos.Neos:Document'];
+        $document = array_column(self::json($response)['data'], null, 'name')['Neos.Neos:Document'];
         $properties = array_column($document['properties'], null, 'name');
         self::assertSame('string', $properties['title']['type']);
         self::assertArrayNotHasKey('_hidden', $properties);
@@ -73,7 +73,7 @@ class NodeTypesTest extends EndpointTestCase
         $response = $this->get('/api/nodetypes?superType=Neos.Neos:Document', $this->token('editor-machine', 'nodetypes.read'));
 
         self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
-        $names = array_column(self::json($response), 'name');
+        $names = array_column(self::json($response)['data'], 'name');
         self::assertContains('Neos.Neos:Document', $names);
         self::assertContains('Neos.Neos:Shortcut', $names);
         self::assertNotContains('Neos.Neos:Content', $names);

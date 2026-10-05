@@ -9,6 +9,7 @@ use Neos\Api\Endpoint\Views\Schema\RenderingModeName;
 use Neos\Api\Endpoint\Views\Schema\View;
 use Neos\Api\Endpoint\Views\Schema\ViewName;
 use Neos\Api\Endpoint\Views\Schema\ViewList;
+use Neos\Api\Endpoint\Views\Schema\ViewListing;
 use Neos\Api\Infrastructure\ContentRepository\ContentSubgraphs;
 use Neos\Api\Infrastructure\Fusion\ViewRenderer;
 use Neos\Api\Security\AccountPrivileges;
@@ -88,13 +89,13 @@ final readonly class Views
             ApiAuthContextProvider::SCOPES => [ApiScopes::VIEWS_READ],
         ],
     )]
-    public function list(): ViewList
+    public function list(): ViewListing
     {
         $views = [];
         foreach ($this->views as $name => $view) {
             $views[] = new View(ViewName::fromString((string)$name), $view['description'] ?? null);
         }
-        return new ViewList(...$views);
+        return ViewListing::of(new ViewList(...$views));
     }
 
     #[Operation(

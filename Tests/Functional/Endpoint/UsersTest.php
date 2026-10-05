@@ -45,7 +45,8 @@ class UsersTest extends EndpointTestCase
         $response = $this->get('/api/users', $this->token('editor-machine', 'users.read'));
 
         self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
-        $users = self::json($response);
+        $users = self::json($response)['data'];
+        self::assertSame(['total' => 3], self::json($response)['meta']);
         self::assertSame(['Ada Admin', 'Edith Editor', 'Manu Manager'], array_column($users, 'label'));
         self::assertSame([
             'id' => $this->adminId,
@@ -57,6 +58,33 @@ class UsersTest extends EndpointTestCase
             'accounts' => [['identifier' => 'admin', 'roles' => ['Neos.Neos:Administrator']]],
         ], $users[0]);
         self::assertNull($users[1]['email']);
+    }
+
+    #[Test]
+    public function pagesTheUsers(): void
+    {
+        $token = $this->token('editor-machine', 'users.read');
+
+        $response = $this->get('/api/users?page[offset]=1&page[limit]=1', $token);
+        self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
+        self::assertSame(['Edith Editor'], array_column(self::json($response)['data'], 'label'));
+        self::assertSame(['total' => 3], self::json($response)['meta']);
+        $links = array_map(static fn (?string $link) => $link !== null ? urldecode(parse_url($link, PHP_URL_QUERY)) : null, self::json($response)['links']);
+        self::assertSame([
+            'self' => 'page[offset]=1&page[limit]=1',
+            'first' => 'page[offset]=0&page[limit]=1',
+            'prev' => 'page[offset]=0&page[limit]=1',
+            'next' => 'page[offset]=2&page[limit]=1',
+            'last' => 'page[offset]=2&page[limit]=1',
+        ], $links);
+
+        $response = $this->get('/api/users', $token);
+        self::assertNull(self::json($response)['links']['prev']);
+        self::assertNull(self::json($response)['links']['next']);
+
+        foreach (['page[limit]=101', 'page[limit]=0', 'page[offset]=-1', 'page[size]=10'] as $query) {
+            self::assertSame(400, $this->get('/api/users?' . $query, $token)->getStatusCode(), $query);
+        }
     }
 
     #[Test]

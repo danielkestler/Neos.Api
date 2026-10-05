@@ -28,7 +28,8 @@ class ContentRepositoriesTest extends EndpointTestCase
         $response = $this->get('/api/contentrepositories', $this->token('editor-machine', 'contentrepositories.read'));
 
         self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
-        $contentRepositories = self::json($response);
+        $contentRepositories = self::json($response)['data'];
+        self::assertSame(count($contentRepositories), self::json($response)['meta']['total']);
         self::assertContains('default', array_column($contentRepositories, 'id'));
         foreach ($contentRepositories as $contentRepository) {
             self::assertIsArray($contentRepository['dimensions']);

@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Neos\Api\Endpoint\ContentRepositories;
 
 use Neos\Api\Endpoint\ContentRepositories\Schema\ContentRepositoryList;
+use Neos\Api\Endpoint\ContentRepositories\Schema\ContentRepositoryListing;
 use Neos\Api\Endpoint\ContentRepositories\Schema\ContentRepository;
 use Neos\Api\Endpoint\ContentRepositories\Schema\ContentRepositoryId;
 use Neos\Api\Infrastructure\I18n\Labels;
@@ -40,12 +41,12 @@ final readonly class ContentRepositories
     )]
     public function list(
         #[Parameter(in: 'header', name: 'Accept-Language')] AcceptLanguage|null $acceptLanguage = null,
-    ): ContentRepositoryList {
+    ): ContentRepositoryListing {
         $labels = $this->labelTranslator->forAcceptLanguage($acceptLanguage);
-        return new ContentRepositoryList(...array_map(
+        return ContentRepositoryListing::of(new ContentRepositoryList(...array_map(
             fn (SharedModel\ContentRepository\ContentRepositoryId $id) => $this->contentRepository($id, $labels),
             iterator_to_array($this->contentRepositoryRegistry->getContentRepositoryIds(), false),
-        ));
+        )));
     }
 
     #[Operation(

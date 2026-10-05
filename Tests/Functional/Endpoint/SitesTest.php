@@ -51,7 +51,10 @@ class SitesTest extends EndpointTestCase
         $response = $this->get('/api/sites', $this->token('admin-machine', 'sites.read'));
 
         self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
-        $sites = self::json($response);
+        // not paged, so no links
+        self::assertSame(['data', 'meta'], array_keys(self::json($response)));
+        self::assertSame(['total' => 2], self::json($response)['meta']);
+        $sites = self::json($response)['data'];
         self::assertSame(['Another Site', 'Demo Site'], array_column($sites, 'name'));
         self::assertSame([
             'nodeName' => 'demo',

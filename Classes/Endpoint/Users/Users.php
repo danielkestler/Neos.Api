@@ -8,19 +8,25 @@ use Neos\Api\Endpoint\Users\Payload\UserUpdate;
 use Neos\Api\Endpoint\Users\Schema\User;
 use Neos\Api\Endpoint\Users\Schema\UserId;
 use Neos\Api\Endpoint\Users\Schema\UserList;
+use Neos\Api\Endpoint\Users\Schema\UserListing;
 use Neos\Api\Endpoint\Users\Response\UserCreated;
 use Neos\Api\Security\ApiAuthContextProvider;
 use Neos\Api\Security\ApiCaller;
 use Neos\Api\Security\ApiScopes;
+use Neos\Api\Shared\Params;
 use Neos\Api\Shared\Response\Conflict;
 use Neos\Api\Shared\Response\NotFound;
 use Neos\Api\Shared\Response\UnprocessableContent;
+use Neos\Api\Shared\Schema\ListingLinks;
+use Neos\Api\Shared\Schema\ListingMeta;
 use Neos\Flow\Security\Policy\PolicyService;
 use Neos\Neos\Domain\Model;
 use Neos\Neos\Domain\Service\UserService;
 use Neos\OpenApi\Attributes\AuthContext;
 use Neos\OpenApi\Attributes\Operation;
+use Neos\OpenApi\Attributes\Parameter;
 use Neos\OpenApi\Attributes\RequestBody;
+use Psr\Http\Message\ServerRequestInterface;
 
 /**
  * The Neos users
@@ -36,19 +42,28 @@ final readonly class Users
     #[Operation(
         path: '/users',
         method: 'GET',
-        summary: 'List all users',
-        description: 'All Neos users with their accounts, ordered by account identifier.',
+        summary: 'List the users',
+        description: 'A page of the Neos users with their accounts, ordered by account identifier. page[offset] and page[limit] (25 by default, 100 at most) choose the page, meta.total and links tell about the others.',
         operationId: 'listUsers',
         security: [
             ApiAuthContextProvider::SCOPES => [ApiScopes::USERS_READ],
         ],
     )]
-    public function list(): UserList
-    {
-        return new UserList(...array_map(
-            User::from(...),
-            $this->userService->getUsers()->toArray(),
-        ));
+    public function list(
+        ServerRequestInterface $request,
+        #[Parameter(in: 'query', description: 'Which page: page[offset] and page[limit]')]
+        Params\Page|null $page = null,
+    ): UserListing {
+        $page ??= new Params\Page();
+        $users = $this->userService->getUsers();
+        $total = $users->count();
+        // a copy of the query, paged in the database
+        $query = $users->getQuery()->setOffset($page->offset)->setLimit($page->limit);
+        return new UserListing(
+            new UserList(...array_map(User::from(...), $query->execute()->toArray())),
+            new ListingMeta($total),
+            ListingLinks::for($request, $page, $total),
+        );
     }
 
     #[Operation(

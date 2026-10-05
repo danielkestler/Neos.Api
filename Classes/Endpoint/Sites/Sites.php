@@ -14,6 +14,7 @@ use Neos\Api\Endpoint\Sites\Schema\PackageKeyList;
 use Neos\Api\Endpoint\Sites\Schema\Site;
 use Neos\Api\Endpoint\Sites\Schema\SiteCreationOptions;
 use Neos\Api\Endpoint\Sites\Schema\SiteList;
+use Neos\Api\Endpoint\Sites\Schema\SiteListing;
 use Neos\Api\Endpoint\Sites\Schema\SiteNodeName;
 use Neos\Api\Endpoint\Sites\Schema\SiteNodeType;
 use Neos\Api\Endpoint\Sites\Schema\SiteNodeTypeList;
@@ -74,12 +75,12 @@ final readonly class Sites
             ApiAuthContextProvider::SCOPES => [ApiScopes::SITES_READ],
         ],
     )]
-    public function list(): SiteList
+    public function list(): SiteListing
     {
-        return new SiteList(...array_map(
+        return SiteListing::of(new SiteList(...array_map(
             $this->site(...),
             $this->siteRepository->findAll()->toArray(),
-        ));
+        )));
     }
 
     #[Operation(

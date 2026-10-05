@@ -7,6 +7,7 @@ use Neos\Api\Endpoint\ContentRepositories\Schema\ContentRepositoryId;
 use Neos\Api\Endpoint\NodeTypes\Schema\NodeType;
 use Neos\Api\Endpoint\NodeTypes\Schema\NodeTypeName;
 use Neos\Api\Endpoint\NodeTypes\Schema\NodeTypeList;
+use Neos\Api\Endpoint\NodeTypes\Schema\NodeTypeListing;
 use Neos\Api\Infrastructure\I18n\LabelTranslator;
 use Neos\Api\Security\ApiAuthContextProvider;
 use Neos\Api\Security\ApiScopes;
@@ -54,7 +55,7 @@ final readonly class NodeTypes
         #[Parameter(in: 'query', description: 'What to include beyond the node types\' own fields, comma-separated: properties, references, configuration')]
         Params\IncludePaths|null $include = null,
         #[Parameter(in: 'header', name: 'Accept-Language')] AcceptLanguage|null $acceptLanguage = null,
-    ): NodeTypeList|NotFound|BadRequest {
+    ): NodeTypeListing|NotFound|BadRequest {
         $includePaths = $include?->paths() ?? [];
         $unknown = array_diff($includePaths, self::INCLUDE_PATHS);
         if ($unknown !== []) {
@@ -73,7 +74,7 @@ final readonly class NodeTypes
             $nodeTypes = array_filter($nodeTypes, static fn (Core\NodeType\NodeType $nodeType) => $nodeType->isOfType($superType->value));
         }
         ksort($nodeTypes);
-        return new NodeTypeList(...array_map(
+        return NodeTypeListing::of(new NodeTypeList(...array_map(
             fn (Core\NodeType\NodeType $nodeType) => NodeType::from(
                 $nodeType,
                 $labels,
@@ -83,7 +84,7 @@ final readonly class NodeTypes
                 withConfiguration: in_array('configuration', $includePaths, true),
             ),
             array_values($nodeTypes),
-        ));
+        )));
     }
 
     #[Operation(
