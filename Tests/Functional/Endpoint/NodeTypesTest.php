@@ -98,17 +98,6 @@ class NodeTypesTest extends EndpointTestCase
     }
 
     #[Test]
-    public function listsTheGroupsInTheOrderOfTheirPositions(): void
-    {
-        $response = $this->get('/api/nodetypes/groups', $this->token('editor-machine', 'nodetypes.read'), ['Accept-Language' => 'en']);
-
-        self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
-        $groups = self::json($response);
-        self::assertSame(['general', 'structure', 'plugins'], array_slice(array_column($groups, 'name'), 0, 3));
-        self::assertSame(['name' => 'plugins', 'label' => 'Plugins', 'collapsed' => true], $groups[2]);
-    }
-
-    #[Test]
     public function unknownNodeTypesAreNotFound(): void
     {
         $this->requireContentRepository();

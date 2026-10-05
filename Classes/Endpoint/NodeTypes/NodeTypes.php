@@ -5,8 +5,6 @@ namespace Neos\Api\Endpoint\NodeTypes;
 
 use Neos\Api\Endpoint\ContentRepositories\Schema\ContentRepositoryId;
 use Neos\Api\Endpoint\NodeTypes\Schema\NodeType;
-use Neos\Api\Endpoint\NodeTypes\Schema\NodeTypeGroup;
-use Neos\Api\Endpoint\NodeTypes\Schema\NodeTypeGroupList;
 use Neos\Api\Endpoint\NodeTypes\Schema\NodeTypeName;
 use Neos\Api\Endpoint\NodeTypes\Schema\NodeTypeList;
 use Neos\Api\Infrastructure\I18n\LabelTranslator;
@@ -18,8 +16,6 @@ use Neos\Api\Shared\Response\NotFound;
 use Neos\Api\Shared\Schema\AcceptLanguage;
 use Neos\ContentRepository\Core;
 use Neos\ContentRepositoryRegistry\ContentRepositoryRegistry;
-use Neos\Flow\Annotations as Flow;
-use Neos\Utility\PositionalArraySorter;
 use Neos\Neos\Service\IconNameMappingService;
 use Neos\OpenApi\Attributes\Operation;
 use Neos\OpenApi\Attributes\Parameter;
@@ -33,25 +29,11 @@ final readonly class NodeTypes
 
     private const array INCLUDE_PATHS = ['properties', 'references', 'configuration'];
 
-    /**
-     * The Neos.Neos.nodeTypes.groups settings in the order of their positions
-     *
-     * @var array<string, array<string, mixed>>
-     */
-    private array $groups;
-
-    /**
-     * @param array<string, array<string, mixed>|null> $groups
-     */
     public function __construct(
         private ContentRepositoryRegistry $contentRepositoryRegistry,
         private LabelTranslator $labelTranslator,
         private IconNameMappingService $iconNameMappingService,
-        #[Flow\InjectConfiguration(path: 'nodeTypes.groups', package: 'Neos.Neos')]
-        array $groups,
     ) {
-        // a group is removed by setting it to ~
-        $this->groups = (new PositionalArraySorter(array_filter($groups, is_array(...))))->toArray();
     }
 
     #[Operation(
@@ -101,27 +83,6 @@ final readonly class NodeTypes
                 withConfiguration: in_array('configuration', $includePaths, true),
             ),
             array_values($nodeTypes),
-        ));
-    }
-
-    #[Operation(
-        path: '/nodetypes/groups',
-        method: 'GET',
-        summary: 'List the node type groups',
-        description: 'The groups the Neos UI offers node types in for creation (a node type\'s group is its ui.group), from the Neos.Neos.nodeTypes.groups settings, in the order of their positions. The labels are translated to the Accept-Language.',
-        operationId: 'listNodeTypeGroups',
-        security: [
-            ApiAuthContextProvider::SCOPES => [ApiScopes::NODETYPES_READ],
-        ],
-    )]
-    public function listGroups(
-        #[Parameter(in: 'header', name: 'Accept-Language')] AcceptLanguage|null $acceptLanguage = null,
-    ): NodeTypeGroupList {
-        $labels = $this->labelTranslator->forAcceptLanguage($acceptLanguage);
-        return new NodeTypeGroupList(...array_map(
-            static fn (string|int $name, array $configuration) => NodeTypeGroup::from((string)$name, $configuration, $labels),
-            array_keys($this->groups),
-            array_values($this->groups),
         ));
     }
 
