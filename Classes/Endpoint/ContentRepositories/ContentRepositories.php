@@ -7,7 +7,7 @@ use Neos\Api\Endpoint\ContentRepositories\Schema\ContentRepositoryList;
 use Neos\Api\Endpoint\ContentRepositories\Schema\ContentRepositoryListing;
 use Neos\Api\Endpoint\ContentRepositories\Schema\ContentRepository;
 use Neos\Api\Endpoint\ContentRepositories\Schema\ContentRepositoryId;
-use Neos\Api\Infrastructure\I18n\Labels;
+use Neos\Api\Infrastructure\ContentRepository\ContentRepositoryFinder;
 use Neos\Api\Infrastructure\I18n\LabelTranslator;
 use Neos\Api\Security\ApiAuthContextProvider;
 use Neos\Api\Security\ApiScopes;
@@ -25,6 +25,7 @@ final readonly class ContentRepositories
 {
     public function __construct(
         private ContentRepositoryRegistry $contentRepositoryRegistry,
+        private ContentRepositoryFinder $contentRepositoryFinder,
         private LabelTranslator $labelTranslator,
     ) {
     }
@@ -44,7 +45,7 @@ final readonly class ContentRepositories
     ): ContentRepositoryListing {
         $labels = $this->labelTranslator->forAcceptLanguage($acceptLanguage);
         return ContentRepositoryListing::of(new ContentRepositoryList(...array_map(
-            fn (SharedModel\ContentRepository\ContentRepositoryId $id) => $this->contentRepository($id, $labels),
+            fn (SharedModel\ContentRepository\ContentRepositoryId $id) => ContentRepository::from($this->contentRepositoryRegistry->get($id), $labels),
             iterator_to_array($this->contentRepositoryRegistry->getContentRepositoryIds(), false),
         )));
     }
@@ -63,17 +64,10 @@ final readonly class ContentRepositories
         ContentRepositoryId $contentRepositoryId,
         #[Parameter(in: 'header', name: 'Accept-Language')] AcceptLanguage|null $acceptLanguage = null,
     ): ContentRepository|NotFound {
-        // checked up front: the registry throws for an unknown one
-        foreach ($this->contentRepositoryRegistry->getContentRepositoryIds() as $id) {
-            if ($id->value === $contentRepositoryId->value) {
-                return $this->contentRepository($id, $this->labelTranslator->forAcceptLanguage($acceptLanguage));
-            }
+        $contentRepository = $this->contentRepositoryFinder->find($contentRepositoryId->toContentRepositoryId());
+        if ($contentRepository === null) {
+            return NotFound::because(sprintf('There is no content repository with the ID %s', $contentRepositoryId->value));
         }
-        return NotFound::because(sprintf('There is no content repository with the ID %s', $contentRepositoryId->value));
-    }
-
-    private function contentRepository(SharedModel\ContentRepository\ContentRepositoryId $contentRepositoryId, Labels $labels): ContentRepository
-    {
-        return ContentRepository::from($this->contentRepositoryRegistry->get($contentRepositoryId), $labels);
+        return ContentRepository::from($contentRepository, $this->labelTranslator->forAcceptLanguage($acceptLanguage));
     }
 }

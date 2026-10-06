@@ -25,6 +25,7 @@ use Neos\ContentRepository\Core\Projection\ContentGraph\Filter\FindClosestNodeFi
 use Neos\ContentRepository\Core\Projection\ContentGraph\Node;
 use Neos\ContentRepository\Core\SharedModel;
 use Neos\ContentRepository\Core\SharedModel\Workspace\WorkspaceName;
+use Neos\ContentRepositoryRegistry\ContentRepositoryRegistry;
 use Neos\Flow\Annotations as Flow;
 use Neos\Neos\Domain\Model\RenderingMode;
 use Neos\Neos\Domain\Repository\SiteRepository;
@@ -65,6 +66,7 @@ final readonly class Views
      */
     public function __construct(
         private ContentSubgraphs $contentSubgraphs,
+        private ContentRepositoryRegistry $contentRepositoryRegistry,
         private SiteRepository $siteRepository,
         private RenderingModeService $renderingModeService,
         private AccountPrivileges $accountPrivileges,
@@ -154,12 +156,11 @@ final readonly class Views
      */
     private function addressedNode(SharedModel\Node\NodeAddress $address, RenderingMode $renderingMode): array|NotFound
     {
-        $subgraph = $this->subgraph($address->contentRepositoryId, $address->workspaceName, $address->dimensionSpacePoint, $renderingMode);
-        $node = $subgraph?->findNodeById($address->aggregateId);
-        if ($subgraph === null || $node === null) {
+        $node = $this->contentSubgraphs->findNode($address, self::excludeDisabled($address->workspaceName, $renderingMode));
+        if ($node === null) {
             return NotFound::because(sprintf('There is no node %s', $address->toJson()));
         }
-        $site = $subgraph->findClosestNode($address->aggregateId, FindClosestNodeFilter::create(nodeTypes: NodeTypeNameFactory::NAME_SITE));
+        $site = $this->contentRepositoryRegistry->subgraphForNode($node)->findClosestNode($address->aggregateId, FindClosestNodeFilter::create(nodeTypes: NodeTypeNameFactory::NAME_SITE));
         if ($site === null) {
             return NotFound::because(sprintf('The node %s belongs to no site, so there is no Fusion to render it with', $address->toJson()));
         }
@@ -193,12 +194,21 @@ final readonly class Views
     }
 
     /**
-     * The subgraph as the frontend (frontend rendering mode in live: never with disabled nodes) or the preview of the
-     * Neos backend (otherwise) sees it, null if there is none the account may read
+     * The subgraph as the frontend or the preview of the Neos backend sees it, see excludeDisabled(), null if there is
+     * none the account may read
      */
     private function subgraph(SharedModel\ContentRepository\ContentRepositoryId $contentRepositoryId, WorkspaceName $workspaceName, DimensionSpacePoint $dimensionSpacePoint, RenderingMode $renderingMode): ?ContentSubgraphInterface
     {
-        return $this->contentSubgraphs->find($contentRepositoryId, $workspaceName, $dimensionSpacePoint, $workspaceName->isLive() && $renderingMode->name === RenderingMode::FRONTEND);
+        return $this->contentSubgraphs->find($contentRepositoryId, $workspaceName, $dimensionSpacePoint, self::excludeDisabled($workspaceName, $renderingMode));
+    }
+
+    /**
+     * As the frontend (frontend rendering mode in live: never with disabled nodes), otherwise as the preview of the
+     * Neos backend
+     */
+    private static function excludeDisabled(WorkspaceName $workspaceName, RenderingMode $renderingMode): bool
+    {
+        return $workspaceName->isLive() && $renderingMode->name === RenderingMode::FRONTEND;
     }
 
     /**

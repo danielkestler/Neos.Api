@@ -9,6 +9,7 @@ use Neos\Api\Endpoint\NodeTypes\Schema\NodeType;
 use Neos\Api\Endpoint\NodeTypes\Schema\NodeTypeName;
 use Neos\Api\Endpoint\NodeTypes\Schema\NodeTypeList;
 use Neos\Api\Endpoint\NodeTypes\Schema\NodeTypeListing;
+use Neos\Api\Infrastructure\ContentRepository\ContentRepositoryFinder;
 use Neos\Api\Infrastructure\I18n\LabelTranslator;
 use Neos\Api\Security\ApiAuthContextProvider;
 use Neos\Api\Security\ApiScopes;
@@ -17,7 +18,6 @@ use Neos\Api\Shared\Response\BadRequest;
 use Neos\Api\Shared\Response\NotFound;
 use Neos\Api\Shared\Schema\AcceptLanguage;
 use Neos\ContentRepository\Core;
-use Neos\ContentRepositoryRegistry\ContentRepositoryRegistry;
 use Neos\Neos\Service\IconNameMappingService;
 use Neos\OpenApi\Attributes\Operation;
 use Neos\OpenApi\Attributes\Parameter;
@@ -32,7 +32,7 @@ final readonly class NodeTypes
     private const array INCLUDE_PATHS = ['properties', 'references', 'configuration'];
 
     public function __construct(
-        private ContentRepositoryRegistry $contentRepositoryRegistry,
+        private ContentRepositoryFinder $contentRepositoryFinder,
         private LabelTranslator $labelTranslator,
         private IconNameMappingService $iconNameMappingService,
     ) {
@@ -57,10 +57,10 @@ final readonly class NodeTypes
         Params\IncludePaths|null $include = null,
         #[Parameter(in: 'header', name: 'Accept-Language')] AcceptLanguage|null $acceptLanguage = null,
     ): NodeTypeListing|NotFound|BadRequest {
-        $includePaths = $include?->paths() ?? [];
-        $unknown = array_diff($includePaths, self::INCLUDE_PATHS);
-        if ($unknown !== []) {
-            return BadRequest::because(sprintf('Can\'t include %s, only: %s', implode(', ', $unknown), implode(', ', self::INCLUDE_PATHS)));
+        $include ??= Params\IncludePaths::none();
+        $unsupported = $include->unsupported(self::INCLUDE_PATHS);
+        if ($unsupported !== null) {
+            return $unsupported;
         }
         $nodeTypeManager = $this->nodeTypeManager($contentRepositoryId);
         if ($nodeTypeManager === null) {
@@ -81,9 +81,9 @@ final readonly class NodeTypes
                 $nodeType,
                 $labels,
                 $this->iconNameMappingService,
-                withProperties: in_array('properties', $includePaths, true),
-                withReferences: in_array('references', $includePaths, true),
-                withConfiguration: in_array('configuration', $includePaths, true),
+                withProperties: $include->includes('properties'),
+                withReferences: $include->includes('references'),
+                withConfiguration: $include->includes('configuration'),
             ),
             array_values($nodeTypes),
         )));
@@ -125,14 +125,8 @@ final readonly class NodeTypes
 
     private function nodeTypeManager(ContentRepositoryId|null $contentRepositoryId): Core\NodeType\NodeTypeManager|null
     {
-        $value = $contentRepositoryId->value ?? self::DEFAULT_CONTENT_REPOSITORY_ID;
-        // checked up front: the registry throws for an unknown one
-        foreach ($this->contentRepositoryRegistry->getContentRepositoryIds() as $id) {
-            if ($id->value === $value) {
-                return $this->contentRepositoryRegistry->get($id)->getNodeTypeManager();
-            }
-        }
-        return null;
+        $id = $contentRepositoryId?->toContentRepositoryId() ?? Core\SharedModel\ContentRepository\ContentRepositoryId::fromString(self::DEFAULT_CONTENT_REPOSITORY_ID);
+        return $this->contentRepositoryFinder->find($id)?->getNodeTypeManager();
     }
 
     private function contentRepositoryNotFound(ContentRepositoryId|null $contentRepositoryId): NotFound

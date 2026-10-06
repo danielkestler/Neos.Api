@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Neos\Api\Endpoint\ContentRepositories\Schema;
 
+use Neos\ContentRepository\Core\SharedModel;
 use Neos\JsonSchema\ProvidesSchema;
 use Neos\JsonSchema\Schema;
 use Neos\JsonSchema\StringSchema;
@@ -18,6 +19,12 @@ final readonly class ContentRepositoryId implements ProvidesSchema
     public static function fromString(string $value): self
     {
         return Schematic::instantiate(self::class, $value)->valueOrThrow();
+    }
+
+    public function toContentRepositoryId(): SharedModel\ContentRepository\ContentRepositoryId
+    {
+        // can't throw: the schema has the same rules
+        return SharedModel\ContentRepository\ContentRepositoryId::fromString($this->value);
     }
 
     public static function schema(): Schema
