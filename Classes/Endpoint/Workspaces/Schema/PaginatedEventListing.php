@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-namespace Neos\Api\Endpoint\Events\Schema;
+namespace Neos\Api\Endpoint\Workspaces\Schema;
 
 use Neos\Api\Shared\Schema\CursorListingLinks;
 use Neos\JsonSchema\ProvidesSchema;
