@@ -94,7 +94,7 @@ final readonly class Workspaces
         path: '/cr/{contentRepositoryId}/workspaces/{workspaceName}/events',
         method: 'GET',
         summary: 'List the events of a workspace',
-        description: 'The events of the workspace\'s current content stream, oldest first: what was changed in it since it was created or last published, discarded or rebased, which each start a new content stream. The workspace must be one the account may read, by its workspace roles or as the owner. Events about a node the account may not read are left out, as are events about a node that no longer exists in the workspace, as its permissions are unknown. after and limit (25 by default, 100 at most) choose the page, links.next continues after it.',
+        description: 'The events of the workspace\'s current content stream, oldest first: what was changed in it since it was created or last published, discarded or rebased, which each start a new content stream. The workspace must be one the account may read, by its workspace roles or as the owner. Events about a node the account may not read are left out. Events about a node that no longer exists in the workspace, e.g. its removal, are listed: it has no permissions left to check. after and limit (25 by default, 100 at most) choose the page, links.next continues after it.',
         operationId: 'listWorkspaceEvents',
         security: [
             ApiAuthContextProvider::SCOPES => [ApiScopes::WORKSPACES_READ],
@@ -156,7 +156,8 @@ final readonly class Workspaces
 
     /**
      * Whether the event isn't about a node (but e.g. its content stream) or about one the account may read: an event
-     * about a node aggregate is about all of its nodes, so one readable node is enough
+     * about a node aggregate is about all of its nodes, so one readable node is enough. An aggregate that no longer
+     * exists in the workspace has no permissions left, so whoever may read the workspace may read its events
      *
      * @param array<Role> $roles
      * @param array<string, bool> $readableNodeAggregates whether each node aggregate is readable, by id, filled while paging
@@ -170,7 +171,10 @@ final readonly class Workspaces
         }
         return $readableNodeAggregates[$nodeAggregateId] ??= (function () use ($nodeAggregateId, $contentGraph, $roles): bool {
             $nodeAggregate = $contentGraph->findNodeAggregateById(SharedModel\Node\NodeAggregateId::fromString($nodeAggregateId));
-            foreach ($nodeAggregate?->getNodes() ?? [] as $node) {
+            if ($nodeAggregate === null) {
+                return true;
+            }
+            foreach ($nodeAggregate->getNodes() as $node) {
                 if ($this->contentRepositoryAuthorizationService->getNodePermissions($node, $roles)->read) {
                     return true;
                 }
