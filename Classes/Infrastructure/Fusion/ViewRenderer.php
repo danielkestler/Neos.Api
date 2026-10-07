@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Neos\Api\Infrastructure\Fusion;
 
+use Neos\Api\Infrastructure\Json\JsonValues;
 use Neos\ContentRepository\Core\Projection\ContentGraph\Node;
 use Neos\Flow\Annotations as Flow;
 use Neos\Flow\Mvc\ActionRequest;
@@ -54,19 +55,6 @@ final readonly class ViewRenderer
         if (!$data instanceof \stdClass) {
             throw new \RuntimeException(sprintf('The Fusion prototype %s must render a JSON object, e.g. by inheriting from Neos.Api:View', $prototypeName), 1790838157);
         }
-        return array_map(self::decoded(...), get_object_vars($data));
-    }
-
-    /**
-     * A decoded JSON value as arrays, but an empty object stays an object: as an array it would be encoded as [] again.
-     * Non-empty objects can't stay objects, the serializer of the response only keeps the properties a class declares
-     */
-    private static function decoded(mixed $value): mixed
-    {
-        if ($value instanceof \stdClass) {
-            $value = get_object_vars($value);
-            return $value === [] ? new \stdClass() : array_map(self::decoded(...), $value);
-        }
-        return is_array($value) ? array_map(self::decoded(...), $value) : $value;
+        return array_map(JsonValues::decoded(...), get_object_vars($data));
     }
 }

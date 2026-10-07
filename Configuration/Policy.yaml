@@ -49,6 +49,9 @@ privilegeTargets:
     "Neos.Api:Workspaces.Read":
       label: "List the workspaces you can read"
       matcher: "workspaces.read"
+    "Neos.Api:Events.Read":
+      label: "Read the changes in the workspaces you can read"
+      matcher: "events.read"
 
 roles:
   "Neos.Flow:Everybody":
@@ -68,6 +71,9 @@ roles:
         permission: GRANT
       # which workspaces are listed is up to the account's workspace roles
       - privilegeTarget: "Neos.Api:Workspaces.Read"
+        permission: GRANT
+      # which events are listed is up to the account's workspace roles and node privileges
+      - privilegeTarget: "Neos.Api:Events.Read"
         permission: GRANT
 
   "Neos.Neos:Editor":
