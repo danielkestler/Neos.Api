@@ -71,27 +71,42 @@ class NodesTest extends EndpointTestCase
     }
 
     #[Test]
-    public function listsFromAtMostOneNode(): void
+    public function filtersByHierarchyOrReference(): void
     {
         $token = $this->token('nobody-machine', 'nodes.read');
+        $hierarchy = ['type' => 'parent', 'aggregateId' => 'some-node'];
 
-        $response = $this->get(self::listPath(['filter' => ['parent' => 'some-node', 'ancestor' => 'other-node']]), $token);
+        $response = $this->get(self::listPath(['filterByHierarchy' => $hierarchy, 'filterByReference' => ['aggregateId' => 'other-node']]), $token);
         self::assertSame(400, $response->getStatusCode(), (string)$response->getBody());
-        self::assertSame('At most one of filter[parent], filter[ancestor] and filter[referencing] is allowed', self::json($response)['detail']);
+        self::assertSame('filterByHierarchy and filterByReference can\'t be combined', self::json($response)['detail']);
 
-        // without one it's the default site of the content repository
-        foreach ([[], ['parent' => 'some-node'], ['ancestor' => 'some-node'], ['referencing' => 'some-node'], ['nodeType' => 'Neos.Neos:Document']] as $filter) {
-            $response = $this->get(self::listPath(['filter' => $filter, 'workspaceName' => 'live', 'dimensionSpacePoint' => '{"language":"de"}']), $token);
-            self::assertSame(404, $response->getStatusCode(), json_encode($filter) . ': ' . $response->getBody());
+        // valid ones get as far as the content repository lookup, without either it's the default site of the content repository
+        foreach ([
+            [],
+            ['filterByHierarchy' => $hierarchy],
+            ['filterByHierarchy' => ['type' => 'ancestor', 'aggregateId' => 'some-node']],
+            ['filterByReference' => ['aggregateId' => 'some-node']],
+            ['filterByReference' => ['aggregateId' => 'some-node', 'name' => 'relatedPages']],
+            ['filterByNodeType' => 'Neos.Neos:Document,!Neos.Neos:Shortcut', 'search' => 'neos'],
+        ] as $query) {
+            $response = $this->get(self::listPath($query + ['workspaceName' => 'live', 'dimensionSpacePoint' => '{"language":"de"}']), $token);
+            self::assertSame(404, $response->getStatusCode(), json_encode($query) . ': ' . $response->getBody());
         }
 
-        $response = $this->get(self::listPath(['filter' => ['parent' => 'some-node', 'referenceName' => 'relatedPages']]), $token);
-        self::assertSame(400, $response->getStatusCode(), (string)$response->getBody());
-        self::assertSame('filter[referenceName] needs filter[referencing]', self::json($response)['detail']);
-
-        // not an aggregate id, unknown filter members, the workspace and dimension space point aren't filters: its schema rejects them
-        foreach ([['parent' => '{"aggregateId":"some-node"}'], ['parent' => 'some-node', 'unknown' => 'x'], ['workspaceName' => 'live'], ['dimensionSpacePoint' => '{}']] as $filter) {
-            self::assertSame(400, $this->get(self::listPath(['filter' => $filter]), $token)->getStatusCode(), json_encode($filter));
+        // their schemas reject them: an unknown type, missing or unknown members, not an aggregate id, empty strings
+        foreach ([
+            ['filterByHierarchy' => ['type' => 'child', 'aggregateId' => 'some-node']],
+            ['filterByHierarchy' => ['aggregateId' => 'some-node']],
+            ['filterByHierarchy' => ['type' => 'parent']],
+            ['filterByHierarchy' => $hierarchy + ['unknown' => 'x']],
+            ['filterByHierarchy' => ['type' => 'parent', 'aggregateId' => 'Not_An_Id']],
+            ['filterByReference' => ['name' => 'relatedPages']],
+            ['filterByReference' => ['aggregateId' => 'some-node', 'name' => '']],
+            ['filterByNodeType' => ''],
+            ['filterByProperty' => ''],
+            ['search' => ''],
+        ] as $query) {
+            self::assertSame(400, $this->get(self::listPath($query), $token)->getStatusCode(), json_encode($query));
         }
     }
 
@@ -99,27 +114,27 @@ class NodesTest extends EndpointTestCase
     public function rejectsInvalidFiltersSortsAndPages(): void
     {
         $token = $this->token('nobody-machine', 'nodes.read');
-        $filter = ['parent' => 'some-node'];
+        $filter = ['filterByHierarchy' => ['type' => 'parent', 'aggregateId' => 'some-node']];
 
-        $response = $this->get(self::listPath(['filter' => $filter + ['property' => 'title = ']]), $token);
+        $response = $this->get(self::listPath($filter + ['filterByProperty' => 'title = ']), $token);
         self::assertSame(400, $response->getStatusCode(), (string)$response->getBody());
-        self::assertStringStartsWith('filter[property] is invalid', self::json($response)['detail']);
-        self::assertSame(404, $this->get(self::listPath(['filter' => $filter + ['property' => 'title *= \'Neos\' AND NOT (hideInMenu = true)']]), $token)->getStatusCode());
+        self::assertStringStartsWith('filterByProperty is invalid', self::json($response)['detail']);
+        self::assertSame(404, $this->get(self::listPath($filter + ['filterByProperty' => 'title *= \'Neos\' AND NOT (hideInMenu = true)']), $token)->getStatusCode());
 
-        $response = $this->get(self::listPath(['filter' => $filter, 'sort' => '-timestamps.lastModified,properties.title,label']), $token);
+        $response = $this->get(self::listPath($filter + ['sort' => '-timestamps.lastModified,properties.title,label']), $token);
         self::assertSame(400, $response->getStatusCode(), (string)$response->getBody());
         self::assertSame('Can\'t sort by label, only by properties.<name> and timestamps.created, timestamps.lastModified, timestamps.originalCreated, timestamps.originalLastModified', self::json($response)['detail']);
-        self::assertSame(404, $this->get(self::listPath(['filter' => $filter, 'sort' => '-timestamps.lastModified,properties.title']), $token)->getStatusCode());
+        self::assertSame(404, $this->get(self::listPath($filter + ['sort' => '-timestamps.lastModified,properties.title']), $token)->getStatusCode());
         // not a list of fields, its schema rejects it
-        self::assertSame(400, $this->get(self::listPath(['filter' => $filter, 'sort' => 'title,']), $token)->getStatusCode());
+        self::assertSame(400, $this->get(self::listPath($filter + ['sort' => 'title,']), $token)->getStatusCode());
 
-        $response = $this->get(self::listPath(['filter' => $filter, 'include' => 'children,parent']), $token);
+        $response = $this->get(self::listPath($filter + ['include' => 'children,parent']), $token);
         self::assertSame(400, $response->getStatusCode(), (string)$response->getBody());
         self::assertStringStartsWith('Can\'t include parent', self::json($response)['detail']);
 
-        self::assertSame(404, $this->get(self::listPath(['filter' => $filter, 'page' => ['offset' => '50', 'limit' => '100']]), $token)->getStatusCode());
+        self::assertSame(404, $this->get(self::listPath($filter + ['page' => ['offset' => '50', 'limit' => '100']]), $token)->getStatusCode());
         foreach ([['limit' => '101'], ['limit' => '0'], ['offset' => '-1'], ['size' => '10']] as $page) {
-            $response = $this->get(self::listPath(['filter' => $filter, 'page' => $page]), $token);
+            $response = $this->get(self::listPath($filter + ['page' => $page]), $token);
             self::assertSame(400, $response->getStatusCode(), json_encode($page) . ': ' . $response->getBody());
         }
     }
@@ -129,11 +144,11 @@ class NodesTest extends EndpointTestCase
     {
         $parameters = array_column(self::json($this->get('/api/openapi.json', null))['paths']['/cr/{contentRepositoryId}/nodes']['get']['parameters'], null, 'name');
 
-        foreach (['filter', 'page'] as $name) {
+        foreach (['filterByHierarchy', 'filterByReference', 'page'] as $name) {
             self::assertSame('deepObject', $parameters[$name]['style'] ?? null, $name);
             self::assertTrue($parameters[$name]['explode'] ?? null, $name);
         }
-        foreach (['sort', 'workspaceName', 'dimensionSpacePoint'] as $name) {
+        foreach (['filterByNodeType', 'filterByProperty', 'search', 'sort', 'workspaceName', 'dimensionSpacePoint'] as $name) {
             self::assertArrayNotHasKey('style', $parameters[$name], $name);
         }
     }
@@ -141,7 +156,7 @@ class NodesTest extends EndpointTestCase
     #[Test]
     public function requiresTheScope(): void
     {
-        foreach ([self::nodePath('some-node'), self::listPath(['filter' => ['parent' => 'some-node']])] as $path) {
+        foreach ([self::nodePath('some-node'), self::listPath(['filterByHierarchy' => ['type' => 'parent', 'aggregateId' => 'some-node']])] as $path) {
             $response = $this->get($path, $this->token('nobody-machine', 'me.read'));
 
             self::assertSame(403, $response->getStatusCode(), (string)$response->getBody());

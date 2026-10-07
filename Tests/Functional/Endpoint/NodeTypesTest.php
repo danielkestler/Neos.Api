@@ -70,7 +70,7 @@ class NodeTypesTest extends EndpointTestCase
     public function filtersBySuperType(): void
     {
         $this->requireContentRepository();
-        $response = $this->get('/api/cr/default/nodetypes?filter[superType]=Neos.Neos:Document', $this->token('editor-machine', 'nodetypes.read'));
+        $response = $this->get('/api/cr/default/nodetypes?filterBySuperType=Neos.Neos:Document', $this->token('editor-machine', 'nodetypes.read'));
 
         self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
         $names = array_column(self::json($response)['data'], 'name');
@@ -78,18 +78,18 @@ class NodeTypesTest extends EndpointTestCase
         self::assertContains('Neos.Neos:Shortcut', $names);
         self::assertNotContains('Neos.Neos:Content', $names);
 
-        self::assertSame(400, $this->get('/api/cr/default/nodetypes?filter[superType]=Vendor.Unknown:Type', $this->token('editor-machine', 'nodetypes.read'))->getStatusCode());
+        self::assertSame(400, $this->get('/api/cr/default/nodetypes?filterBySuperType=Vendor.Unknown:Type', $this->token('editor-machine', 'nodetypes.read'))->getStatusCode());
     }
 
     #[Test]
-    public function documentsTheFilterAsDeepObject(): void
+    public function documentsTheFilterAsPlainParameter(): void
     {
         $parameters = array_column(self::json($this->get('/api/openapi.json', null))['paths']['/cr/{contentRepositoryId}/nodetypes']['get']['parameters'], null, 'name');
-        self::assertSame('deepObject', $parameters['filter']['style'] ?? null);
-        self::assertArrayNotHasKey('superType', $parameters);
+        self::assertArrayNotHasKey('style', $parameters['filterBySuperType']);
+        self::assertArrayNotHasKey('filter', $parameters);
 
-        // unknown filter members, its schema rejects them before any content repository is asked
-        self::assertSame(400, $this->get('/api/cr/default/nodetypes?filter[nodeType]=Neos.Neos:Document', $this->token('editor-machine', 'nodetypes.read'))->getStatusCode());
+        // not a node type name, its schema rejects it before any content repository is asked
+        self::assertSame(400, $this->get('/api/cr/default/nodetypes?filterBySuperType=NoColon', $this->token('editor-machine', 'nodetypes.read'))->getStatusCode());
     }
 
     #[Test]

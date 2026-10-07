@@ -4,7 +4,11 @@ declare(strict_types=1);
 namespace Neos\Api\Endpoint\Nodes;
 
 use Neos\Api\Endpoint\ContentRepositories\Schema\ContentRepositoryId;
-use Neos\Api\Endpoint\Nodes\Params\NodeFilter;
+use Neos\Api\Endpoint\Nodes\Params\HierarchyFilter;
+use Neos\Api\Endpoint\Nodes\Params\NodeTypeCriteria;
+use Neos\Api\Endpoint\Nodes\Params\PropertyCriteria;
+use Neos\Api\Endpoint\Nodes\Params\ReferenceFilter;
+use Neos\Api\Endpoint\Nodes\Params\SearchTerm;
 use Neos\Api\Endpoint\Nodes\Schema\DimensionSpacePoint;
 use Neos\Api\Endpoint\Nodes\Schema\Node;
 use Neos\Api\Endpoint\Nodes\Schema\NodeAggregateId;
@@ -53,7 +57,7 @@ final readonly class Nodes
         path: '/cr/{contentRepositoryId}/nodes',
         method: 'GET',
         summary: 'List nodes',
-        description: 'A page of the nodes found from one node, in the workspace and dimension space point: with filter[parent] its direct child nodes (in their order unless sorted), with filter[ancestor] all nodes below it, with filter[referencing] the nodes that reference it, a node once per reference. Without any of them, all nodes below the site node of the content repository\'s default site (Neos.Neos.defaultSiteNodeName if it is in the content repository, else its first online site by name). The other filter members narrow them down. sort takes properties.<name> and timestamps.created, timestamps.lastModified, timestamps.originalCreated, timestamps.originalLastModified. page[offset] and page[limit] (25 by default, 100 at most) choose the page, meta.total and links tell about the others. include works as in getNode, for each node. Hidden nodes are visible as in getNode.',
+        description: 'A page of the nodes in the workspace and dimension space point: with filterByHierarchy the nodes below a node (type parent its direct child nodes, in their order unless sorted, type ancestor all of them), with filterByReference the nodes that reference a node, a node once per reference. The two can\'t be combined, each is a query of its own. Without either, all nodes below the site node of the content repository\'s default site (Neos.Neos.defaultSiteNodeName if it is in the content repository, else its first online site by name). filterByNodeType, filterByProperty and search narrow them down. sort takes properties.<name> and timestamps.created, timestamps.lastModified, timestamps.originalCreated, timestamps.originalLastModified. page[offset] and page[limit] (25 by default, 100 at most) choose the page, meta.total and links tell about the others. include works as in getNode, for each node. Hidden nodes are visible as in getNode.',
         operationId: 'listNodes',
         security: [
             ApiAuthContextProvider::SCOPES => [ApiScopes::NODES_READ],
@@ -66,8 +70,16 @@ final readonly class Nodes
         WorkspaceName|null $workspaceName = null,
         #[Parameter(in: 'query', description: 'The dimension space point to read the nodes in, as JSON. If omitted, the default one of the content repository\'s default site (Neos.Neos.defaultSiteNodeName if it is in the content repository, else its first online site by name), the only one of a content repository without a site')]
         DimensionSpacePoint|null $dimensionSpacePoint = null,
-        #[Parameter(in: 'query', description: 'Which nodes: at most one of filter[parent], filter[ancestor] and filter[referencing] (a node aggregate id each), all nodes below the site node of the default site without any, narrowed down by filter[nodeType], filter[search], filter[property] and, with filter[referencing], filter[referenceName]')]
-        NodeFilter|null $filter = null,
+        #[Parameter(in: 'query', description: 'The nodes below a node: filterByHierarchy[type] parent (its direct child nodes) or ancestor (all nodes below it) and filterByHierarchy[aggregateId]. Not with filterByReference')]
+        HierarchyFilter|null $filterByHierarchy = null,
+        #[Parameter(in: 'query', description: 'The nodes that reference a node: filterByReference[aggregateId], optionally filterByReference[name] for the references of that name only. Not with filterByHierarchy')]
+        ReferenceFilter|null $filterByReference = null,
+        #[Parameter(in: 'query', description: 'Only nodes of these node types or ones inheriting from them, comma-separated, a ! in front excludes a type and the ones inheriting from it. Unknown node types are a 400')]
+        NodeTypeCriteria|null $filterByNodeType = null,
+        #[Parameter(in: 'query', description: 'Only nodes whose properties match, in the content repository\'s syntax, e.g. title *= \'Neos\' AND NOT (hideInMenu = true)')]
+        PropertyCriteria|null $filterByProperty = null,
+        #[Parameter(in: 'query', description: 'Only nodes with a property containing this text')]
+        SearchTerm|null $search = null,
         #[Parameter(in: 'query', description: 'The fields to sort by, comma-separated, each ascending unless prefixed with -: properties.<name>, timestamps.created, timestamps.lastModified, timestamps.originalCreated, timestamps.originalLastModified')]
         Params\Sort|null $sort = null,
         #[Parameter(in: 'query', description: 'Which page: page[offset] and page[limit]')]
@@ -77,19 +89,11 @@ final readonly class Nodes
     ): PaginatedNodeListing|NotFound|BadRequest {
         $page ??= new Params\Page();
         $include ??= Params\IncludePaths::none();
-        $filter ??= new NodeFilter();
-        $entryPoints = $filter->entryPoints();
-        if (count($entryPoints) > 1) {
-            return BadRequest::because('At most one of filter[parent], filter[ancestor] and filter[referencing] is allowed');
-        }
-        if ($filter->referenceName !== null && $filter->referencing === null) {
-            return BadRequest::because('filter[referenceName] needs filter[referencing]');
-        }
         $unsupported = $include->unsupported(self::INCLUDE_PATHS);
         if ($unsupported !== null) {
             return $unsupported;
         }
-        $query = NodeQuery::create($filter, $sort, $page);
+        $query = NodeQuery::create($filterByHierarchy, $filterByReference, $filterByNodeType, $filterByProperty, $search, $sort, $page);
         if ($query instanceof BadRequest) {
             return $query;
         }
@@ -97,7 +101,8 @@ final readonly class Nodes
         if (!$subgraph instanceof ContentSubgraphInterface) {
             return $subgraph;
         }
-        $entryPoint = $entryPoints !== [] ? $this->findNode($subgraph, $entryPoints[0]) : $this->defaultSiteNode($subgraph);
+        $entryPointId = $query->entryPoint();
+        $entryPoint = $entryPointId !== null ? $this->findNode($subgraph, $entryPointId) : $this->defaultSiteNode($subgraph);
         if (!$entryPoint instanceof ContentGraph\Node) {
             return $entryPoint;
         }
@@ -182,7 +187,7 @@ final readonly class Nodes
     {
         $site = $this->siteFinder->findDefault($subgraph->getContentRepositoryId());
         if ($site === null) {
-            return NotFound::because(sprintf('There is no site in the content repository %s to list the nodes of, give filter[parent], filter[ancestor] or filter[referencing]', $subgraph->getContentRepositoryId()->value));
+            return NotFound::because(sprintf('There is no site in the content repository %s to list the nodes of, give filterByHierarchy or filterByReference', $subgraph->getContentRepositoryId()->value));
         }
         return $this->contentSubgraphs->findSiteNodeIn($subgraph, $site)
             ?? NotFound::because(sprintf(
