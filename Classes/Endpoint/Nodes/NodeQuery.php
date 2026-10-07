@@ -14,7 +14,8 @@ use Neos\ContentRepository\Core\SharedModel\Node\PropertyName;
 
 /**
  * The query of listNodes in the content repository's terms: the filter, sort and page of the request as the filter of
- * the subgraph query its entry point needs, the child nodes, descendant nodes or back references
+ * the subgraph query its entry point needs, the child nodes, descendant nodes or back references, descendant
+ * nodes without an entry point
  */
 final readonly class NodeQuery
 {
@@ -67,7 +68,8 @@ final readonly class NodeQuery
      * The page of nodes found from the entry point and the total, a 400 if a node type of filter[nodeType] doesn't
      * exist
      *
-     * @param ContentGraph\Node $entryPoint the node of filter[parent], filter[ancestor] or filter[referencing]
+     * @param ContentGraph\Node $entryPoint the node of filter[parent], filter[ancestor] or filter[referencing], else the
+     *                                      default site node
      * @param ContentSubgraphInterface $subgraph the one the entry point was found in
      * @return array{list<ContentGraph\Node>, int}|BadRequest
      */
@@ -87,27 +89,28 @@ final readonly class NodeQuery
                 $subgraph->countChildNodes($entryPoint->aggregateId, Filter\CountChildNodesFilter::fromFindChildNodesFilter($childNodesFilter)),
             ];
         }
-        if ($this->filter->ancestor !== null) {
-            $descendantNodesFilter = Filter\FindDescendantNodesFilter::create($this->nodeTypes, $this->searchTerm, $this->propertyValue, $this->ordering, $this->pagination);
+        if ($this->filter->referencing !== null) {
+            $backReferencesFilter = Filter\FindBackReferencesFilter::create(
+                nodeTypes: $this->nodeTypes,
+                nodeSearchTerm: $this->searchTerm,
+                nodePropertyValue: $this->propertyValue,
+                referenceName: $this->filter->referenceName,
+                ordering: $this->ordering,
+                pagination: $this->pagination,
+            );
             return [
-                iterator_to_array($subgraph->findDescendantNodes($entryPoint->aggregateId, $descendantNodesFilter), false),
-                $subgraph->countDescendantNodes($entryPoint->aggregateId, Filter\CountDescendantNodesFilter::fromFindDescendantNodesFilter($descendantNodesFilter)),
+                array_map(
+                    static fn (ContentGraph\Reference $reference) => $reference->node,
+                    iterator_to_array($subgraph->findBackReferences($entryPoint->aggregateId, $backReferencesFilter), false),
+                ),
+                $subgraph->countBackReferences($entryPoint->aggregateId, Filter\CountBackReferencesFilter::fromFindBackReferencesFilter($backReferencesFilter)),
             ];
         }
-        $backReferencesFilter = Filter\FindBackReferencesFilter::create(
-            nodeTypes: $this->nodeTypes,
-            nodeSearchTerm: $this->searchTerm,
-            nodePropertyValue: $this->propertyValue,
-            referenceName: $this->filter->referenceName,
-            ordering: $this->ordering,
-            pagination: $this->pagination,
-        );
+        // filter[ancestor], or the default site node without an entry point
+        $descendantNodesFilter = Filter\FindDescendantNodesFilter::create($this->nodeTypes, $this->searchTerm, $this->propertyValue, $this->ordering, $this->pagination);
         return [
-            array_map(
-                static fn (ContentGraph\Reference $reference) => $reference->node,
-                iterator_to_array($subgraph->findBackReferences($entryPoint->aggregateId, $backReferencesFilter), false),
-            ),
-            $subgraph->countBackReferences($entryPoint->aggregateId, Filter\CountBackReferencesFilter::fromFindBackReferencesFilter($backReferencesFilter)),
+            iterator_to_array($subgraph->findDescendantNodes($entryPoint->aggregateId, $descendantNodesFilter), false),
+            $subgraph->countDescendantNodes($entryPoint->aggregateId, Filter\CountDescendantNodesFilter::fromFindDescendantNodesFilter($descendantNodesFilter)),
         ];
     }
 

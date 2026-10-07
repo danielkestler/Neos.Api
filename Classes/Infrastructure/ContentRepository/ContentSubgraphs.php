@@ -15,6 +15,8 @@ use Neos\ContentRepository\Core\SharedModel\Workspace\WorkspaceName;
 use Neos\ContentRepositoryRegistry\ContentRepositoryRegistry;
 use Neos\Flow\Annotations as Flow;
 use Neos\Flow\Security\Context;
+use Neos\Neos\Domain\Model\Site;
+use Neos\Neos\Domain\Service\NodeTypeNameFactory;
 use Neos\Neos\Domain\SubtreeTagging\NeosVisibilityConstraints;
 use Neos\Neos\Security\Authorization\ContentRepositoryAuthorizationService;
 
@@ -67,6 +69,18 @@ final readonly class ContentSubgraphs
     {
         return $this->find($address->contentRepositoryId, $address->workspaceName, $address->dimensionSpacePoint, $excludeDisabled)
             ?->findNodeById($address->aggregateId);
+    }
+
+    /**
+     * The site node of the site in the live workspace and the site's default dimension space point, the one the
+     * frontend renders for its home page, null if there is none or the account may not read it, see find()
+     */
+    public function findSiteNode(Site $site, bool $excludeDisabled): ?Node
+    {
+        $configuration = $site->getConfiguration();
+        $subgraph = $this->find($configuration->contentRepositoryId, WorkspaceName::forLive(), $configuration->defaultDimensionSpacePoint, $excludeDisabled);
+        $sitesNode = $subgraph?->findRootNodeByType(NodeTypeNameFactory::forSites());
+        return $sitesNode !== null ? $subgraph->findNodeByPath($site->getNodeName()->toNodeName(), $sitesNode->aggregateId) : null;
     }
 
     /**

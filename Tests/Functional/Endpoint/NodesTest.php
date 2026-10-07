@@ -66,14 +66,19 @@ class NodesTest extends EndpointTestCase
     }
 
     #[Test]
-    public function listsFromExactlyOneNode(): void
+    public function listsFromAtMostOneNode(): void
     {
         $token = $this->token('nobody-machine', 'nodes.read');
 
-        foreach (['/api/nodes', self::listPath(['filter' => ['nodeType' => 'Neos.Neos:Document']]), self::listPath(['filter' => ['parent' => self::NODE_ADDRESS, 'ancestor' => self::NODE_ADDRESS]])] as $path) {
+        $response = $this->get(self::listPath(['filter' => ['parent' => self::NODE_ADDRESS, 'ancestor' => self::NODE_ADDRESS]]), $token);
+        self::assertSame(400, $response->getStatusCode(), (string)$response->getBody());
+        self::assertSame('At most one of filter[parent], filter[ancestor] and filter[referencing] is allowed', self::json($response)['detail']);
+
+        // without one it's the default site, there is no site in the Testing context
+        foreach (['/api/nodes', self::listPath(['filter' => ['nodeType' => 'Neos.Neos:Document']])] as $path) {
             $response = $this->get($path, $token);
-            self::assertSame(400, $response->getStatusCode(), $path . ': ' . $response->getBody());
-            self::assertSame('Exactly one of filter[parent], filter[ancestor] and filter[referencing] is required', self::json($response)['detail']);
+            self::assertSame(404, $response->getStatusCode(), $path . ': ' . $response->getBody());
+            self::assertSame('There is no site to list the nodes of, give filter[parent], filter[ancestor] or filter[referencing]', self::json($response)['detail']);
         }
         foreach (['parent', 'ancestor', 'referencing'] as $entryPoint) {
             $response = $this->get(self::listPath(['filter' => [$entryPoint => self::NODE_ADDRESS]]), $token);

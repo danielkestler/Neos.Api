@@ -19,8 +19,6 @@ use Neos\Api\Security\ApiScopes;
 use Neos\Api\Shared\Response\BadRequest;
 use Neos\Api\Shared\Response\Forbidden;
 use Neos\Api\Shared\Response\NotFound;
-use Neos\ContentRepository\Core\DimensionSpace\DimensionSpacePoint;
-use Neos\ContentRepository\Core\Projection\ContentGraph\ContentSubgraphInterface;
 use Neos\ContentRepository\Core\Projection\ContentGraph\Filter\FindClosestNodeFilter;
 use Neos\ContentRepository\Core\Projection\ContentGraph\Node;
 use Neos\ContentRepository\Core\SharedModel;
@@ -179,27 +177,15 @@ final readonly class Views
         if ($site === null) {
             return NotFound::because('There is no site to render the view for, give a nodeAddress');
         }
-        $configuration = $site->getConfiguration();
-        $subgraph = $this->subgraph($configuration->contentRepositoryId, WorkspaceName::forLive(), $configuration->defaultDimensionSpacePoint, $renderingMode);
-        $sitesNode = $subgraph?->findRootNodeByType(NodeTypeNameFactory::forSites());
-        $siteNode = $sitesNode !== null ? $subgraph?->findNodeByPath($site->getNodeName()->toNodeName(), $sitesNode->aggregateId) : null;
+        $siteNode = $this->contentSubgraphs->findSiteNode($site, self::excludeDisabled(WorkspaceName::forLive(), $renderingMode));
         if ($siteNode === null) {
             return NotFound::because(sprintf(
                 'The default site %s has no site node in the live workspace and its default dimension space point %s, configure Neos.Neos.sites.*.contentDimensions.defaultDimensionSpacePoint or give a nodeAddress',
                 $site->getNodeName()->value,
-                $configuration->defaultDimensionSpacePoint->toJson(),
+                $site->getConfiguration()->defaultDimensionSpacePoint->toJson(),
             ));
         }
         return [$siteNode, $siteNode];
-    }
-
-    /**
-     * The subgraph as the frontend or the preview of the Neos backend sees it, see excludeDisabled(), null if there is
-     * none the account may read
-     */
-    private function subgraph(SharedModel\ContentRepository\ContentRepositoryId $contentRepositoryId, WorkspaceName $workspaceName, DimensionSpacePoint $dimensionSpacePoint, RenderingMode $renderingMode): ?ContentSubgraphInterface
-    {
-        return $this->contentSubgraphs->find($contentRepositoryId, $workspaceName, $dimensionSpacePoint, self::excludeDisabled($workspaceName, $renderingMode));
     }
 
     /**

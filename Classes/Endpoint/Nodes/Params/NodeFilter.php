@@ -13,8 +13,9 @@ use Neos\JsonSchema\Support\ObjectProperties;
 /**
  * Which nodes to list, as JSON:API's filter family: ?filter[parent]=…&filter[nodeType]=Neos.Neos:Document
  *
- * Exactly one of parent, ancestor and referencing says where to look, each is a query of its own in the content
- * repository, so they can't be combined. Its node address says the workspace and dimension space point as well
+ * At most one of parent, ancestor and referencing says where to look, each is a query of its own in the content
+ * repository, so they can't be combined. Its node address says the workspace and dimension space point as well. Without
+ * any, it's the nodes below the site node of the default site
  */
 final readonly class NodeFilter implements ProvidesSchema
 {
@@ -41,7 +42,7 @@ final readonly class NodeFilter implements ProvidesSchema
     {
         static $schema = null;
         return $schema ??= ObjectSchema::create(
-            description: 'Which nodes to list. Exactly one of filter[parent], filter[ancestor] and filter[referencing] is required, its node address says the workspace and dimension space point as well. The other members narrow them down',
+            description: 'Which nodes to list. At most one of filter[parent], filter[ancestor] and filter[referencing], its node address says the workspace and dimension space point as well, without any all nodes below the site node of the default site. The other members narrow them down',
             properties: ObjectProperties::create(
                 parent: NodeAddress::schema(),
                 ancestor: NodeAddress::schema(),
