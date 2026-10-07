@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-namespace Neos\Api\Endpoint\Sites\Payload;
+namespace Neos\Api\Endpoint\Sites\RequestBody;
 
 use Neos\Api\Endpoint\NodeTypes\Schema\NodeTypeName;
 use Neos\Api\Endpoint\Sites\Schema\PackageKey;

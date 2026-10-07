@@ -3,8 +3,8 @@ declare(strict_types=1);
 
 namespace Neos\Api\Endpoint\Users;
 
-use Neos\Api\Endpoint\Users\Payload\UserCreate;
-use Neos\Api\Endpoint\Users\Payload\UserUpdate;
+use Neos\Api\Endpoint\Users\RequestBody\UserCreate;
+use Neos\Api\Endpoint\Users\RequestBody\UserUpdate;
 use Neos\Api\Endpoint\Users\Schema\PaginatedUserListing;
 use Neos\Api\Endpoint\Users\Schema\User;
 use Neos\Api\Endpoint\Users\Schema\UserId;
@@ -13,7 +13,8 @@ use Neos\Api\Endpoint\Users\Response\UserCreated;
 use Neos\Api\Security\ApiAuthContextProvider;
 use Neos\Api\Security\ApiCaller;
 use Neos\Api\Security\ApiScopes;
-use Neos\Api\Shared\Params;
+use Neos\Api\Shared\Parameter\Limit;
+use Neos\Api\Shared\Parameter\Offset;
 use Neos\Api\Shared\Response\Conflict;
 use Neos\Api\Shared\Response\NotFound;
 use Neos\Api\Shared\Response\UnprocessableContent;
@@ -43,7 +44,7 @@ final readonly class Users
         path: '/users',
         method: 'GET',
         summary: 'List the users',
-        description: 'A page of the Neos users with their accounts, ordered by account identifier. page[offset] and page[limit] (25 by default, 100 at most) choose the page, meta.total and links tell about the others.',
+        description: 'A page of the Neos users with their accounts, ordered by account identifier. offset and limit (25 by default, 100 at most) choose the page, meta.total and links tell about the others.',
         operationId: 'listUsers',
         security: [
             ApiAuthContextProvider::SCOPES => [ApiScopes::USERS_READ],
@@ -51,18 +52,21 @@ final readonly class Users
     )]
     public function list(
         ServerRequestInterface $request,
-        #[Parameter(in: 'query', description: 'Which page: page[offset] and page[limit]')]
-        Params\Page|null $page = null,
+        #[Parameter(in: 'query', description: 'How many items to skip, 0 if omitted')]
+        Offset|null $offset = null,
+        #[Parameter(in: 'query', description: 'How many items at most, 25 if omitted, 100 at most')]
+        Limit|null $limit = null,
     ): PaginatedUserListing {
-        $page ??= new Params\Page();
+        $offset ??= Offset::none();
+        $limit ??= Limit::default();
         $users = $this->userService->getUsers();
         $total = $users->count();
         // a copy of the query, paged in the database
-        $query = $users->getQuery()->setOffset($page->offset)->setLimit($page->limit);
+        $query = $users->getQuery()->setOffset($offset->value)->setLimit($limit->value);
         return new PaginatedUserListing(
             new UserList(...array_map(User::from(...), $query->execute()->toArray())),
             new ListingMeta($total),
-            ListingLinks::for($request, $page, $total),
+            ListingLinks::for($request, $offset, $limit, $total),
         );
     }
 

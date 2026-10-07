@@ -65,24 +65,24 @@ class UsersTest extends EndpointTestCase
     {
         $token = $this->token('editor-machine', 'users.read');
 
-        $response = $this->get('/api/users?page[offset]=1&page[limit]=1', $token);
+        $response = $this->get('/api/users?offset=1&limit=1', $token);
         self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
         self::assertSame(['Edith Editor'], array_column(self::json($response)['data'], 'label'));
         self::assertSame(['total' => 3], self::json($response)['meta']);
         $links = array_map(static fn (?string $link) => $link !== null ? urldecode(parse_url($link, PHP_URL_QUERY)) : null, self::json($response)['links']);
         self::assertSame([
-            'self' => 'page[offset]=1&page[limit]=1',
-            'first' => 'page[offset]=0&page[limit]=1',
-            'prev' => 'page[offset]=0&page[limit]=1',
-            'next' => 'page[offset]=2&page[limit]=1',
-            'last' => 'page[offset]=2&page[limit]=1',
+            'self' => 'offset=1&limit=1',
+            'first' => 'offset=0&limit=1',
+            'prev' => 'offset=0&limit=1',
+            'next' => 'offset=2&limit=1',
+            'last' => 'offset=2&limit=1',
         ], $links);
 
         $response = $this->get('/api/users', $token);
         self::assertNull(self::json($response)['links']['prev']);
         self::assertNull(self::json($response)['links']['next']);
 
-        foreach (['page[limit]=101', 'page[limit]=0', 'page[offset]=-1', 'page[size]=10'] as $query) {
+        foreach (['limit=101', 'limit=0', 'offset=-1', 'limit=ten', 'offset=1.5'] as $query) {
             self::assertSame(400, $this->get('/api/users?' . $query, $token)->getStatusCode(), $query);
         }
     }

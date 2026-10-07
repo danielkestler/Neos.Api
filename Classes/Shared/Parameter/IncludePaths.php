@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-namespace Neos\Api\Shared\Params;
+namespace Neos\Api\Shared\Parameter;
 
 use Neos\Api\Shared\Response\BadRequest;
 use Neos\JsonSchema\ProvidesSchema;

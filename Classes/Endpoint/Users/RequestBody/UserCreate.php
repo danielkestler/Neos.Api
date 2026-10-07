@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-namespace Neos\Api\Endpoint\Users\Payload;
+namespace Neos\Api\Endpoint\Users\RequestBody;
 
 use Neos\Api\Endpoint\Users\Schema\AccountIdentifier;
 use Neos\Api\Endpoint\Users\Schema\EmailAddress;

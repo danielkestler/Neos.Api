@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-namespace Neos\Api\Endpoint\Sites\Payload;
+namespace Neos\Api\Endpoint\Sites\RequestBody;
 
 use Neos\Api\Endpoint\Sites\Schema\Hostname;
 use Neos\Api\Endpoint\Sites\Schema\Port;

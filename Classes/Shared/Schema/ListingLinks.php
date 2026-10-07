@@ -3,7 +3,8 @@ declare(strict_types=1);
 
 namespace Neos\Api\Shared\Schema;
 
-use Neos\Api\Shared\Params;
+use Neos\Api\Shared\Parameter\Limit;
+use Neos\Api\Shared\Parameter\Offset;
 use Neos\JsonSchema\Nullable;
 use Neos\JsonSchema\ObjectSchema;
 use Neos\JsonSchema\ProvidesSchema;
@@ -13,7 +14,7 @@ use Neos\JsonSchema\Support\ObjectProperties;
 use Psr\Http\Message\ServerRequestInterface;
 
 /**
- * The pages of a list, as JSON:API's pagination links: the request's URL with another page[offset]
+ * The pages of a list, as JSON:API's pagination links: the request's URL with another offset
  */
 final readonly class ListingLinks implements ProvidesSchema
 {
@@ -26,19 +27,20 @@ final readonly class ListingLinks implements ProvidesSchema
     ) {
     }
 
-    public static function for(ServerRequestInterface $request, Params\Page $page, int $total): self
+    public static function for(ServerRequestInterface $request, Offset $offset, Limit $limit, int $total): self
     {
-        $at = static function (int $offset) use ($request, $page): string {
+        $at = static function (int $at) use ($request, $limit): string {
             $query = $request->getQueryParams();
-            $query['page'] = ['offset' => $offset, 'limit' => $page->limit];
+            $query['offset'] = $at;
+            $query['limit'] = $limit->value;
             return (string)$request->getUri()->withQuery(http_build_query($query, '', '&', PHP_QUERY_RFC3986));
         };
-        $lastOffset = $total > 0 ? intdiv($total - 1, $page->limit) * $page->limit : 0;
+        $lastOffset = $total > 0 ? intdiv($total - 1, $limit->value) * $limit->value : 0;
         return new self(
-            $at($page->offset),
+            $at($offset->value),
             $at(0),
-            $page->offset > 0 ? $at(max(0, $page->offset - $page->limit)) : null,
-            $page->offset + $page->limit < $total ? $at($page->offset + $page->limit) : null,
+            $offset->value > 0 ? $at(max(0, $offset->value - $limit->value)) : null,
+            $offset->value + $limit->value < $total ? $at($offset->value + $limit->value) : null,
             $at($lastOffset),
         );
     }
@@ -46,9 +48,9 @@ final readonly class ListingLinks implements ProvidesSchema
     public static function schema(): Schema
     {
         static $schema = null;
-        $link = static fn (string $description) => StringSchema::create(description: $description, examples: ['https://example.com/api/cr/default/nodes?page%5Boffset%5D=25&page%5Blimit%5D=25']);
+        $link = static fn (string $description) => StringSchema::create(description: $description, examples: ['https://example.com/api/cr/default/nodes?offset=25&limit=25']);
         return $schema ??= ObjectSchema::create(
-            description: 'The URLs of the pages, the request with another page[offset]',
+            description: 'The URLs of the pages, the request with another offset',
             properties: ObjectProperties::create(
                 self: $link('This page'),
                 first: $link('The first page'),

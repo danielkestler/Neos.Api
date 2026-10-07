@@ -3,14 +3,16 @@ declare(strict_types=1);
 
 namespace Neos\Api\Endpoint\Nodes;
 
-use Neos\Api\Endpoint\Nodes\Params\HierarchyFilter;
-use Neos\Api\Endpoint\Nodes\Params\HierarchyFilterType;
-use Neos\Api\Endpoint\Nodes\Params\NodeTypeCriteria;
-use Neos\Api\Endpoint\Nodes\Params\PropertyCriteria;
-use Neos\Api\Endpoint\Nodes\Params\ReferenceFilter;
-use Neos\Api\Endpoint\Nodes\Params\SearchTerm;
+use Neos\Api\Endpoint\Nodes\Parameter\HierarchyFilter;
+use Neos\Api\Endpoint\Nodes\Parameter\HierarchyFilterType;
+use Neos\Api\Endpoint\Nodes\Parameter\NodeTypeCriteria;
+use Neos\Api\Endpoint\Nodes\Parameter\PropertyCriteria;
+use Neos\Api\Endpoint\Nodes\Parameter\ReferenceFilter;
+use Neos\Api\Endpoint\Nodes\Parameter\SearchTerm;
 use Neos\Api\Endpoint\Nodes\Schema\NodeAggregateId;
-use Neos\Api\Shared\Params;
+use Neos\Api\Shared\Parameter\Limit;
+use Neos\Api\Shared\Parameter\Offset;
+use Neos\Api\Shared\Parameter\Sort;
 use Neos\Api\Shared\Response\BadRequest;
 use Neos\ContentRepository\Core\NodeType\NodeTypeManager;
 use Neos\ContentRepository\Core\Projection\ContentGraph;
@@ -19,7 +21,7 @@ use Neos\ContentRepository\Core\Projection\ContentGraph\Filter;
 use Neos\ContentRepository\Core\SharedModel\Node\PropertyName;
 
 /**
- * The query of listNodes in the content repository's terms: the filters, search, sort and page of the request as the
+ * The query of listNodes in the content repository's terms: the filters, search, sort, offset and limit of the request as the
  * filter of the subgraph query its entry point needs, the child nodes or descendant nodes (filterByHierarchy), the back
  * references (filterByReference), descendant nodes without an entry point
  */
@@ -56,8 +58,9 @@ final readonly class NodeQuery
         ?NodeTypeCriteria $nodeTypes,
         ?PropertyCriteria $properties,
         ?SearchTerm $search,
-        ?Params\Sort $sort,
-        Params\Page $page,
+        ?Sort $sort,
+        Offset $offset,
+        Limit $limit,
     ): self|BadRequest {
         if ($hierarchy !== null && $reference !== null) {
             return BadRequest::because('filterByHierarchy and filterByReference can\'t be combined');
@@ -78,7 +81,7 @@ final readonly class NodeQuery
             $search !== null ? Filter\SearchTerm\SearchTerm::fulltext($search->value) : null,
             $propertyValue,
             self::ordering($sort),
-            $page->toPagination(),
+            Filter\Pagination\Pagination::fromLimitAndOffset($limit->value, $offset->value),
         );
     }
 
@@ -139,7 +142,7 @@ final readonly class NodeQuery
         ];
     }
 
-    private static function invalidSort(?Params\Sort $sort): ?BadRequest
+    private static function invalidSort(?Sort $sort): ?BadRequest
     {
         $unknown = array_filter(
             array_column($sort?->fields() ?? [], 'field'),
@@ -148,7 +151,7 @@ final readonly class NodeQuery
         return $unknown !== [] ? BadRequest::because(sprintf('Can\'t sort by %s, only by properties.<name> and %s', implode(', ', $unknown), implode(', ', array_keys(self::SORT_TIMESTAMPS)))) : null;
     }
 
-    private static function ordering(?Params\Sort $sort): ?Filter\Ordering\Ordering
+    private static function ordering(?Sort $sort): ?Filter\Ordering\Ordering
     {
         $ordering = null;
         foreach ($sort?->fields() ?? [] as ['field' => $field, 'descending' => $descending]) {

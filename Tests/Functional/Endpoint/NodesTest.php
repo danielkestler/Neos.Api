@@ -132,23 +132,23 @@ class NodesTest extends EndpointTestCase
         self::assertSame(400, $response->getStatusCode(), (string)$response->getBody());
         self::assertStringStartsWith('Can\'t include parent', self::json($response)['detail']);
 
-        self::assertSame(404, $this->get(self::listPath($filter + ['page' => ['offset' => '50', 'limit' => '100']]), $token)->getStatusCode());
-        foreach ([['limit' => '101'], ['limit' => '0'], ['offset' => '-1'], ['size' => '10']] as $page) {
-            $response = $this->get(self::listPath($filter + ['page' => $page]), $token);
+        self::assertSame(404, $this->get(self::listPath($filter + ['offset' => '50', 'limit' => '100']), $token)->getStatusCode());
+        foreach ([['limit' => '101'], ['limit' => '0'], ['offset' => '-1'], ['limit' => 'ten']] as $page) {
+            $response = $this->get(self::listPath($filter + $page), $token);
             self::assertSame(400, $response->getStatusCode(), json_encode($page) . ': ' . $response->getBody());
         }
     }
 
     #[Test]
-    public function documentsFiltersAndPagesAsDeepObjects(): void
+    public function documentsOnlyObjectFiltersAsDeepObjects(): void
     {
         $parameters = array_column(self::json($this->get('/api/openapi.json', null))['paths']['/cr/{contentRepositoryId}/nodes']['get']['parameters'], null, 'name');
 
-        foreach (['filterByHierarchy', 'filterByReference', 'page'] as $name) {
+        foreach (['filterByHierarchy', 'filterByReference'] as $name) {
             self::assertSame('deepObject', $parameters[$name]['style'] ?? null, $name);
             self::assertTrue($parameters[$name]['explode'] ?? null, $name);
         }
-        foreach (['filterByNodeType', 'filterByProperty', 'search', 'sort', 'workspaceName', 'dimensionSpacePoint'] as $name) {
+        foreach (['filterByNodeType', 'filterByProperty', 'search', 'sort', 'offset', 'limit', 'workspaceName', 'dimensionSpacePoint'] as $name) {
             self::assertArrayNotHasKey('style', $parameters[$name], $name);
         }
     }

@@ -4,11 +4,11 @@ declare(strict_types=1);
 namespace Neos\Api\Endpoint\Nodes;
 
 use Neos\Api\Endpoint\ContentRepositories\Schema\ContentRepositoryId;
-use Neos\Api\Endpoint\Nodes\Params\HierarchyFilter;
-use Neos\Api\Endpoint\Nodes\Params\NodeTypeCriteria;
-use Neos\Api\Endpoint\Nodes\Params\PropertyCriteria;
-use Neos\Api\Endpoint\Nodes\Params\ReferenceFilter;
-use Neos\Api\Endpoint\Nodes\Params\SearchTerm;
+use Neos\Api\Endpoint\Nodes\Parameter\HierarchyFilter;
+use Neos\Api\Endpoint\Nodes\Parameter\NodeTypeCriteria;
+use Neos\Api\Endpoint\Nodes\Parameter\PropertyCriteria;
+use Neos\Api\Endpoint\Nodes\Parameter\ReferenceFilter;
+use Neos\Api\Endpoint\Nodes\Parameter\SearchTerm;
 use Neos\Api\Endpoint\Nodes\Schema\DimensionSpacePoint;
 use Neos\Api\Endpoint\Nodes\Schema\Node;
 use Neos\Api\Endpoint\Nodes\Schema\NodeAggregateId;
@@ -20,7 +20,10 @@ use Neos\Api\Infrastructure\ContentRepository\NodeSerializer;
 use Neos\Api\Infrastructure\ContentRepository\SiteFinder;
 use Neos\Api\Security\ApiAuthContextProvider;
 use Neos\Api\Security\ApiScopes;
-use Neos\Api\Shared\Params;
+use Neos\Api\Shared\Parameter\IncludePaths;
+use Neos\Api\Shared\Parameter\Limit;
+use Neos\Api\Shared\Parameter\Offset;
+use Neos\Api\Shared\Parameter\Sort;
 use Neos\Api\Shared\Response\BadRequest;
 use Neos\Api\Shared\Response\NotFound;
 use Neos\Api\Shared\Schema\ListingLinks;
@@ -57,7 +60,7 @@ final readonly class Nodes
         path: '/cr/{contentRepositoryId}/nodes',
         method: 'GET',
         summary: 'List nodes',
-        description: 'A page of the nodes in the workspace and dimension space point: with filterByHierarchy the nodes below a node (type parent its direct child nodes, in their order unless sorted, type ancestor all of them), with filterByReference the nodes that reference a node, a node once per reference. The two can\'t be combined, each is a query of its own. Without either, all nodes below the site node of the content repository\'s default site (Neos.Neos.defaultSiteNodeName if it is in the content repository, else its first online site by name). filterByNodeType, filterByProperty and search narrow them down. sort takes properties.<name> and timestamps.created, timestamps.lastModified, timestamps.originalCreated, timestamps.originalLastModified. page[offset] and page[limit] (25 by default, 100 at most) choose the page, meta.total and links tell about the others. include works as in getNode, for each node. Hidden nodes are visible as in getNode.',
+        description: 'A page of the nodes in the workspace and dimension space point: with filterByHierarchy the nodes below a node (type parent its direct child nodes, in their order unless sorted, type ancestor all of them), with filterByReference the nodes that reference a node, a node once per reference. The two can\'t be combined, each is a query of its own. Without either, all nodes below the site node of the content repository\'s default site (Neos.Neos.defaultSiteNodeName if it is in the content repository, else its first online site by name). filterByNodeType, filterByProperty and search narrow them down. sort takes properties.<name> and timestamps.created, timestamps.lastModified, timestamps.originalCreated, timestamps.originalLastModified. offset and limit (25 by default, 100 at most) choose the page, meta.total and links tell about the others. include works as in getNode, for each node. Hidden nodes are visible as in getNode.',
         operationId: 'listNodes',
         security: [
             ApiAuthContextProvider::SCOPES => [ApiScopes::NODES_READ],
@@ -81,19 +84,22 @@ final readonly class Nodes
         #[Parameter(in: 'query', description: 'Only nodes with a property containing this text')]
         SearchTerm|null $search = null,
         #[Parameter(in: 'query', description: 'The fields to sort by, comma-separated, each ascending unless prefixed with -: properties.<name>, timestamps.created, timestamps.lastModified, timestamps.originalCreated, timestamps.originalLastModified')]
-        Params\Sort|null $sort = null,
-        #[Parameter(in: 'query', description: 'Which page: page[offset] and page[limit]')]
-        Params\Page|null $page = null,
+        Sort|null $sort = null,
+        #[Parameter(in: 'query', description: 'How many items to skip, 0 if omitted')]
+        Offset|null $offset = null,
+        #[Parameter(in: 'query', description: 'How many items at most, 25 if omitted, 100 at most')]
+        Limit|null $limit = null,
         #[Parameter(in: 'query', description: 'What to include beyond each node\'s own fields, comma-separated: references, children, children.references, variants, variants.references')]
-        Params\IncludePaths|null $include = null,
+        IncludePaths|null $include = null,
     ): PaginatedNodeListing|NotFound|BadRequest {
-        $page ??= new Params\Page();
-        $include ??= Params\IncludePaths::none();
+        $offset ??= Offset::none();
+        $limit ??= Limit::default();
+        $include ??= IncludePaths::none();
         $unsupported = $include->unsupported(self::INCLUDE_PATHS);
         if ($unsupported !== null) {
             return $unsupported;
         }
-        $query = NodeQuery::create($filterByHierarchy, $filterByReference, $filterByNodeType, $filterByProperty, $search, $sort, $page);
+        $query = NodeQuery::create($filterByHierarchy, $filterByReference, $filterByNodeType, $filterByProperty, $search, $sort, $offset, $limit);
         if ($query instanceof BadRequest) {
             return $query;
         }
@@ -115,7 +121,7 @@ final readonly class Nodes
         return new PaginatedNodeListing(
             new NodeList(...array_map(fn (ContentGraph\Node $node) => $this->node($node, $include), $nodes)),
             new ListingMeta($total),
-            ListingLinks::for($request, $page, $total),
+            ListingLinks::for($request, $offset, $limit, $total),
         );
     }
 
@@ -137,9 +143,9 @@ final readonly class Nodes
         #[Parameter(in: 'query', description: 'The dimension space point to read the node in, as JSON. If omitted, the default one of the content repository\'s default site (Neos.Neos.defaultSiteNodeName if it is in the content repository, else its first online site by name), the only one of a content repository without a site')]
         DimensionSpacePoint|null $dimensionSpacePoint = null,
         #[Parameter(in: 'query', description: 'What to include beyond the node\'s own fields, comma-separated: references, children, children.references, variants, variants.references')]
-        Params\IncludePaths|null $include = null,
+        IncludePaths|null $include = null,
     ): Node|NotFound|BadRequest {
-        $include ??= Params\IncludePaths::none();
+        $include ??= IncludePaths::none();
         $unsupported = $include->unsupported(self::INCLUDE_PATHS);
         if ($unsupported !== null) {
             return $unsupported;
@@ -198,7 +204,7 @@ final readonly class Nodes
             ));
     }
 
-    private function node(ContentGraph\Node $node, Params\IncludePaths $include): Node
+    private function node(ContentGraph\Node $node, IncludePaths $include): Node
     {
         return Node::from(
             $node,

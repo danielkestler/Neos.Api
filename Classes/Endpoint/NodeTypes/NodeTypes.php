@@ -12,7 +12,7 @@ use Neos\Api\Infrastructure\ContentRepository\ContentRepositoryFinder;
 use Neos\Api\Infrastructure\I18n\LabelTranslator;
 use Neos\Api\Security\ApiAuthContextProvider;
 use Neos\Api\Security\ApiScopes;
-use Neos\Api\Shared\Params;
+use Neos\Api\Shared\Parameter\IncludePaths;
 use Neos\Api\Shared\Response\BadRequest;
 use Neos\Api\Shared\Response\NotFound;
 use Neos\Api\Shared\Schema\AcceptLanguage;
@@ -50,10 +50,10 @@ final readonly class NodeTypes
         #[Parameter(in: 'query', description: 'Only the node types of this type: it and the ones inheriting from it, directly or not. An unknown node type is a 400')]
         NodeTypeName|null $filterBySuperType = null,
         #[Parameter(in: 'query', description: 'What to include beyond the node types\' own fields, comma-separated: properties, references, configuration')]
-        Params\IncludePaths|null $include = null,
+        IncludePaths|null $include = null,
         #[Parameter(in: 'header', name: 'Accept-Language')] AcceptLanguage|null $acceptLanguage = null,
     ): NodeTypeListing|NotFound|BadRequest {
-        $include ??= Params\IncludePaths::none();
+        $include ??= IncludePaths::none();
         $unsupported = $include->unsupported(self::INCLUDE_PATHS);
         if ($unsupported !== null) {
             return $unsupported;

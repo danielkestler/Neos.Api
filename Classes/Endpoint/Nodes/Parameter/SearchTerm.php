@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-namespace Neos\Api\Endpoint\Nodes\Params;
+namespace Neos\Api\Endpoint\Nodes\Parameter;
 
 use Neos\JsonSchema\ProvidesSchema;
 use Neos\JsonSchema\Schema;
@@ -9,9 +9,9 @@ use Neos\JsonSchema\StringSchema;
 use Neos\Schematic\Schematic;
 
 /**
- * The node types of filterByNodeType, in the filter string syntax of Neos\ContentRepository\Core\Projection\ContentGraph\Filter\NodeType\NodeTypeCriteria
+ * The text of search, a full-text search in the node properties
  */
-final readonly class NodeTypeCriteria implements ProvidesSchema
+final readonly class SearchTerm implements ProvidesSchema
 {
     private function __construct(
         public string $value,
@@ -27,8 +27,8 @@ final readonly class NodeTypeCriteria implements ProvidesSchema
     {
         static $schema = null;
         return $schema ??= StringSchema::create(
-            description: 'Only nodes of these node types or ones inheriting from them, comma-separated, a ! in front excludes a type and the ones inheriting from it',
-            examples: ['Neos.Neos:Document,!Neos.Neos:Shortcut'],
+            description: 'Only nodes with a property containing this text',
+            examples: ['neos'],
             minLength: 1,
         );
     }

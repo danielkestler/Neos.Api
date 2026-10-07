@@ -4,10 +4,10 @@ declare(strict_types=1);
 namespace Neos\Api\Endpoint\Sites;
 
 use Doctrine\DBAL\Exception as DBALException;
-use Neos\Api\Endpoint\Sites\Payload\DomainCreate;
-use Neos\Api\Endpoint\Sites\Payload\DomainUpdate;
-use Neos\Api\Endpoint\Sites\Payload\SiteCreate;
-use Neos\Api\Endpoint\Sites\Payload\SiteUpdate;
+use Neos\Api\Endpoint\Sites\RequestBody\DomainCreate;
+use Neos\Api\Endpoint\Sites\RequestBody\DomainUpdate;
+use Neos\Api\Endpoint\Sites\RequestBody\SiteCreate;
+use Neos\Api\Endpoint\Sites\RequestBody\SiteUpdate;
 use Neos\Api\Endpoint\Sites\Schema\DomainId;
 use Neos\Api\Endpoint\Sites\Schema\Hostname;
 use Neos\Api\Endpoint\Sites\Schema\PackageKey;

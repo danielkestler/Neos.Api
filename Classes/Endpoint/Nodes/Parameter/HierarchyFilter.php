@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-namespace Neos\Api\Endpoint\Nodes\Params;
+namespace Neos\Api\Endpoint\Nodes\Parameter;
 
 use Neos\Api\Endpoint\Nodes\Schema\NodeAggregateId;
 use Neos\JsonSchema\ObjectSchema;
