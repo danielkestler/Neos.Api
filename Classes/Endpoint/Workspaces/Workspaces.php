@@ -4,8 +4,11 @@ declare(strict_types=1);
 namespace Neos\Api\Endpoint\Workspaces;
 
 use Neos\Api\Endpoint\ContentRepositories\Schema\ContentRepositoryId;
+use Neos\Api\Endpoint\Workspaces\Schema\Change;
+use Neos\Api\Endpoint\Workspaces\Schema\ChangeList;
 use Neos\Api\Endpoint\Workspaces\Schema\Event;
 use Neos\Api\Endpoint\Workspaces\Schema\EventList;
+use Neos\Api\Endpoint\Workspaces\Schema\PaginatedChangeListing;
 use Neos\Api\Endpoint\Workspaces\Schema\PaginatedEventListing;
 use Neos\Api\Endpoint\Workspaces\Schema\SequenceNumber;
 use Neos\Api\Endpoint\Workspaces\Schema\Workspace;
@@ -19,15 +22,16 @@ use Neos\Api\Security\ApiAuthContextProvider;
 use Neos\Api\Security\ApiCaller;
 use Neos\Api\Security\ApiScopes;
 use Neos\Api\Shared\Parameter\Limit;
+use Neos\Api\Shared\Parameter\Offset;
 use Neos\Api\Shared\Response\NotFound;
 use Neos\Api\Shared\Schema\CursorListingLinks;
-use Neos\ContentRepositoryRegistry\ContentRepositoryRegistry;
-use Neos\ContentRepository\Core\Feature\Security\Exception\AccessDenied;
-use Neos\ContentRepository\Core\Projection\ContentGraph\ContentGraphInterface;
+use Neos\Api\Shared\Schema\ListingLinks;
+use Neos\Api\Shared\Schema\ListingMeta;
 use Neos\ContentRepository\Core\SharedModel;
+use Neos\ContentRepositoryRegistry\ContentRepositoryRegistry;
 use Neos\EventStore\Model\EventEnvelope;
-use Neos\Flow\Security\Policy\Role;
 use Neos\Neos\Domain\Model;
+use Neos\Neos\Domain\Service\WorkspacePublishingService;
 use Neos\Neos\Domain\Service\WorkspaceService;
 use Neos\Neos\Security\Authorization\ContentRepositoryAuthorizationService;
 use Neos\OpenApi\Attributes\AuthContext;
@@ -37,14 +41,16 @@ use Neos\Party\Domain\Service\PartyService;
 use Psr\Http\Message\ServerRequestInterface;
 
 /**
- * The workspaces of a content repository, live and the ones changes are made in before they're published, and their
- * events: what was changed in them, as the content repository's event store records it
+ * The workspaces of a content repository, live and the ones changes are made in before they're published, their
+ * changes compared to their base workspace and their events, what was changed in them as the event store records it
  */
 final readonly class Workspaces
 {
     public function __construct(
         private ContentRepositoryFinder $contentRepositoryFinder,
         private ContentRepositoryRegistry $contentRepositoryRegistry,
+        private WorkspaceResolver $workspaceResolver,
+        private WorkspacePublishingService $workspacePublishingService,
         private WorkspaceService $workspaceService,
         private ContentRepositoryAuthorizationService $contentRepositoryAuthorizationService,
         private AccountPrivileges $accountPrivileges,
@@ -91,6 +97,48 @@ final readonly class Workspaces
     }
 
     #[Operation(
+        path: '/cr/{contentRepositoryId}/workspaces/{workspaceName}/changes',
+        method: 'GET',
+        summary: 'List the changes of a workspace',
+        description: 'What changed in the workspace compared to its base workspace and isn\'t published yet, one item per node variant (or per node aggregate for changes to all of its variants, like its name or node type), as Neos\' pending changes projection keeps it, sorted by aggregate id and dimension space point. The workspace must be one the account may read, by its workspace roles or as the owner. Changes of a node the account may not read are left out. Changes of a node that no longer exists in the workspace are listed: it has no permissions left to check. offset and limit (25 by default, 100 at most) choose the page, meta.total and links tell about the others.',
+        operationId: 'listWorkspaceChanges',
+        security: [
+            ApiAuthContextProvider::SCOPES => [ApiScopes::WORKSPACES_READ],
+        ],
+    )]
+    public function listChanges(
+        ServerRequestInterface $request,
+        ContentRepositoryId $contentRepositoryId,
+        WorkspaceName $workspaceName,
+        #[AuthContext] ApiCaller $caller,
+        #[Parameter(in: 'query', description: 'How many items to skip, 0 if omitted')]
+        Offset|null $offset = null,
+        #[Parameter(in: 'query', description: 'How many items at most, 25 if omitted, 100 at most')]
+        Limit|null $limit = null,
+    ): PaginatedChangeListing|NotFound {
+        $offset ??= Offset::none();
+        $limit ??= Limit::default();
+        $workspace = $this->workspaceResolver->resolve($contentRepositoryId, $workspaceName, $caller->account);
+        if ($workspace instanceof NotFound) {
+            return $workspace;
+        }
+        $changes = [];
+        // the projection reads them all at once and can't check permissions, so they're filtered and paged here
+        foreach ($this->workspacePublishingService->pendingWorkspaceChanges($workspace->contentRepository->id, $workspace->workspace->workspaceName) as $change) {
+            if ($workspace->mayReadNodeAggregate($change->nodeAggregateId)) {
+                $changes[] = Change::from($change);
+            }
+        }
+        // the projection has no order
+        usort($changes, static fn (Change $a, Change $b) => [$a->nodeAggregateId->value, $a->originDimensionSpacePoint?->value] <=> [$b->nodeAggregateId->value, $b->originDimensionSpacePoint?->value]);
+        return new PaginatedChangeListing(
+            new ChangeList(...array_slice($changes, $offset->value, $limit->value)),
+            new ListingMeta(count($changes)),
+            ListingLinks::for($request, $offset, $limit, count($changes)),
+        );
+    }
+
+    #[Operation(
         path: '/cr/{contentRepositoryId}/workspaces/{workspaceName}/events',
         method: 'GET',
         summary: 'List the events of a workspace',
@@ -111,82 +159,48 @@ final readonly class Workspaces
         Limit|null $limit = null,
     ): PaginatedEventListing|NotFound {
         $limit ??= Limit::default();
-        $contentRepository = $this->contentRepositoryFinder->find($contentRepositoryId->toContentRepositoryId());
-        if ($contentRepository === null) {
-            return NotFound::because(sprintf('There is no content repository with the ID %s', $contentRepositoryId->value));
-        }
-        // the token's account alone, as for its privileges, not Flow's security context
-        $roles = $this->accountPrivileges->rolesOf($caller->account);
-        $user = $this->partyService->getAssignedPartyOfAccount($caller->account);
-        $workspace = $contentRepository->findWorkspaceByName($workspaceName->toWorkspaceName());
-        $notFound = NotFound::because(sprintf('There is no workspace %s in the content repository %s', $workspaceName->value, $contentRepositoryId->value));
-        // the same 404 for a workspace the account may not read, so workspaces can't be probed
-        if ($workspace === null || !$this->contentRepositoryAuthorizationService->getWorkspacePermissions($contentRepository->id, $workspace->workspaceName, $roles, $user instanceof Model\User ? $user->getId() : null)->read) {
-            return $notFound;
-        }
-        try {
-            $contentGraph = $contentRepository->getContentGraph($workspace->workspaceName);
-        } catch (AccessDenied) {
-            return $notFound;
+        $workspace = $this->workspaceResolver->resolve($contentRepositoryId, $workspaceName, $caller->account);
+        if ($workspace instanceof NotFound) {
+            return $workspace;
         }
         $stream = $this->contentRepositoryRegistry
-            ->buildService($contentRepository->id, new ContentStreamEventsFactory())
-            ->load($workspace->currentContentStreamId);
+            ->buildService($workspace->contentRepository->id, new ContentStreamEventsFactory())
+            ->load($workspace->workspace->currentContentStreamId);
 
         $events = [];
-        $readableNodeAggregates = [];
         $from = $after !== null ? $after->value + 1 : 1;
         // in batches: the event store reads all events of a query at once, and left out events don't count
         do {
             $batch = iterator_to_array($stream->withMinimumSequenceNumber(SequenceNumber::fromInteger($from)->toSequenceNumber())->limit($limit->value + 1), false);
             foreach ($batch as $envelope) {
                 $from = $envelope->sequenceNumber->value + 1;
-                if (!$this->isAboutReadableNode($envelope, $contentGraph, $roles, $readableNodeAggregates)) {
+                if (!self::isAboutReadableNode($envelope, $workspace)) {
                     continue;
                 }
                 // one more than the page, so there is a next one
                 if (count($events) === $limit->value) {
-                    return self::listing($request, $limit, $events, true);
+                    return self::eventListing($request, $limit, $events, true);
                 }
                 $events[] = Event::from($envelope);
             }
         } while (count($batch) === $limit->value + 1);
-        return self::listing($request, $limit, $events, false);
+        return self::eventListing($request, $limit, $events, false);
     }
 
     /**
-     * Whether the event isn't about a node (but e.g. its content stream) or about one the account may read: an event
-     * about a node aggregate is about all of its nodes, so one readable node is enough. An aggregate that no longer
-     * exists in the workspace has no permissions left, so whoever may read the workspace may read its events
-     *
-     * @param array<Role> $roles
-     * @param array<string, bool> $readableNodeAggregates whether each node aggregate is readable, by id, filled while paging
+     * Whether the event isn't about a node (but e.g. its content stream) or about one the account may read
      */
-    private function isAboutReadableNode(EventEnvelope $envelope, ContentGraphInterface $contentGraph, array $roles, array &$readableNodeAggregates): bool
+    private static function isAboutReadableNode(EventEnvelope $envelope, ReadableWorkspace $workspace): bool
     {
         $payload = json_decode($envelope->event->data->value, true, flags: JSON_THROW_ON_ERROR);
         $nodeAggregateId = is_array($payload) ? ($payload['nodeAggregateId'] ?? null) : null;
-        if (!is_string($nodeAggregateId)) {
-            return true;
-        }
-        return $readableNodeAggregates[$nodeAggregateId] ??= (function () use ($nodeAggregateId, $contentGraph, $roles): bool {
-            $nodeAggregate = $contentGraph->findNodeAggregateById(SharedModel\Node\NodeAggregateId::fromString($nodeAggregateId));
-            if ($nodeAggregate === null) {
-                return true;
-            }
-            foreach ($nodeAggregate->getNodes() as $node) {
-                if ($this->contentRepositoryAuthorizationService->getNodePermissions($node, $roles)->read) {
-                    return true;
-                }
-            }
-            return false;
-        })();
+        return !is_string($nodeAggregateId) || $workspace->mayReadNodeAggregate(SharedModel\Node\NodeAggregateId::fromString($nodeAggregateId));
     }
 
     /**
      * @param list<Event> $events
      */
-    private static function listing(ServerRequestInterface $request, Limit $limit, array $events, bool $hasMore): PaginatedEventListing
+    private static function eventListing(ServerRequestInterface $request, Limit $limit, array $events, bool $hasMore): PaginatedEventListing
     {
         $last = end($events);
         return new PaginatedEventListing(
