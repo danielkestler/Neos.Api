@@ -4,11 +4,11 @@ declare(strict_types=1);
 namespace Neos\Api\Endpoint\NodeTypes;
 
 use Neos\Api\Endpoint\ContentRepositories\Schema\ContentRepositoryId;
-use Neos\Api\Endpoint\NodeTypes\Params\NodeTypeFilter;
-use Neos\Api\Endpoint\NodeTypes\Schema\NodeType;
-use Neos\Api\Endpoint\NodeTypes\Schema\NodeTypeName;
-use Neos\Api\Endpoint\NodeTypes\Schema\NodeTypeList;
-use Neos\Api\Endpoint\NodeTypes\Schema\NodeTypeListing;
+use Neos\Api\Endpoint\ContentRepositories\Params\NodeTypeFilter;
+use Neos\Api\Endpoint\ContentRepositories\Schema\NodeType;
+use Neos\Api\Endpoint\ContentRepositories\Schema\NodeTypeName;
+use Neos\Api\Endpoint\ContentRepositories\Schema\NodeTypeList;
+use Neos\Api\Endpoint\ContentRepositories\Schema\NodeTypeListing;
 use Neos\Api\Infrastructure\ContentRepository\ContentRepositoryFinder;
 use Neos\Api\Infrastructure\I18n\LabelTranslator;
 use Neos\Api\Security\ApiAuthContextProvider;

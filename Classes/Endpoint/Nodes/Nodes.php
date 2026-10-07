@@ -19,6 +19,7 @@ use Neos\Api\Shared\Schema\ListingLinks;
 use Neos\Api\Shared\Schema\ListingMeta;
 use Neos\ContentRepository\Core\Projection\ContentGraph;
 use Neos\ContentRepository\Core\Projection\ContentGraph\Filter\FindChildNodesFilter;
+use Neos\ContentRepository\Core\SharedModel\Workspace\WorkspaceName;
 use Neos\ContentRepositoryRegistry\ContentRepositoryRegistry;
 use Neos\Neos\Domain\Repository\SiteRepository;
 use Neos\OpenApi\Attributes\Operation;
@@ -47,7 +48,7 @@ final readonly class Nodes
         path: '/nodes',
         method: 'GET',
         summary: 'List nodes',
-        description: 'A page of the nodes found from one node, in its workspace and dimension space point: with filter[parent] its direct child nodes (in their order unless sorted), with filter[ancestor] all nodes below it, with filter[referencing] the nodes that reference it, a node once per reference. Without any of them, all nodes below the site node of the default site (Neos.Neos.defaultSiteNodeName, else the first online site) in the live workspace and the site\'s default dimension space point. The other filter members narrow them down. sort takes properties.<name> and timestamps.created, timestamps.lastModified, timestamps.originalCreated, timestamps.originalLastModified. page[offset] and page[limit] (25 by default, 100 at most) choose the page, meta.total and links tell about the others. include works as in getNode, for each node. Hidden nodes are visible as in getNode.',
+        description: 'A page of the nodes found from one node, in its workspace and dimension space point: with filter[parent] its direct child nodes (in their order unless sorted), with filter[ancestor] all nodes below it, with filter[referencing] the nodes that reference it, a node once per reference. Without any of them, all nodes below the site node of the default site (Neos.Neos.defaultSiteNodeName, else the first online site), in filter[workspace] (live by default) and filter[dimensionSpacePoint] (the site\'s default one by default), which only apply then: a node address has its own. The other filter members narrow them down. sort takes properties.<name> and timestamps.created, timestamps.lastModified, timestamps.originalCreated, timestamps.originalLastModified. page[offset] and page[limit] (25 by default, 100 at most) choose the page, meta.total and links tell about the others. include works as in getNode, for each node. Hidden nodes are visible as in getNode.',
         operationId: 'listNodes',
         security: [
             ApiAuthContextProvider::SCOPES => [ApiScopes::NODES_READ],
@@ -55,7 +56,7 @@ final readonly class Nodes
     )]
     public function list(
         ServerRequestInterface $request,
-        #[Parameter(in: 'query', description: 'Which nodes: at most one of filter[parent], filter[ancestor] and filter[referencing] (a node address each), all nodes below the site node of the default site without any, narrowed down by filter[nodeType], filter[search], filter[property] and, with filter[referencing], filter[referenceName]')]
+        #[Parameter(in: 'query', description: 'Which nodes: at most one of filter[parent], filter[ancestor] and filter[referencing] (a node address each), all nodes below the site node of the default site without any, in filter[workspace] and filter[dimensionSpacePoint] then, narrowed down by filter[nodeType], filter[search], filter[property] and, with filter[referencing], filter[referenceName]')]
         NodeFilter|null $filter = null,
         #[Parameter(in: 'query', description: 'The fields to sort by, comma-separated, each ascending unless prefixed with -: properties.<name>, timestamps.created, timestamps.lastModified, timestamps.originalCreated, timestamps.originalLastModified')]
         Params\Sort|null $sort = null,
@@ -71,6 +72,9 @@ final readonly class Nodes
         if (count($entryPoints) > 1) {
             return BadRequest::because('At most one of filter[parent], filter[ancestor] and filter[referencing] is allowed');
         }
+        if ($entryPoints !== [] && ($filter->workspace !== null || $filter->dimensionSpacePoint !== null)) {
+            return BadRequest::because('filter[workspace] and filter[dimensionSpacePoint] only apply without filter[parent], filter[ancestor] and filter[referencing], whose node address has its own');
+        }
         if ($filter->referenceName !== null && $filter->referencing === null) {
             return BadRequest::because('filter[referenceName] needs filter[referencing]');
         }
@@ -82,7 +86,7 @@ final readonly class Nodes
         if ($query instanceof BadRequest) {
             return $query;
         }
-        $entryPoint = $entryPoints !== [] ? $this->findNode($entryPoints[0]) : $this->defaultSiteNode();
+        $entryPoint = $entryPoints !== [] ? $this->findNode($entryPoints[0]) : $this->defaultSiteNode($filter);
         if (!$entryPoint instanceof ContentGraph\Node) {
             return $entryPoint;
         }
@@ -140,20 +144,33 @@ final readonly class Nodes
     }
 
     /**
-     * The site node of the default site in the live workspace and the site's default dimension space point, with the
-     * visibility of the Neos backend, a 404 if there is none the account may read
+     * The site node of the default site in filter[workspace] and filter[dimensionSpacePoint], by default the live
+     * workspace and the site's default dimension space point, with the visibility of the Neos backend. A 400 if the
+     * dimension space point is invalid or not one of the content repository, a 404 if there is no site node the
+     * account may read
      */
-    private function defaultSiteNode(): ContentGraph\Node|NotFound
+    private function defaultSiteNode(NodeFilter $filter): ContentGraph\Node|BadRequest|NotFound
     {
         $site = $this->siteRepository->findDefault();
         if ($site === null) {
             return NotFound::because('There is no site to list the nodes of, give filter[parent], filter[ancestor] or filter[referencing]');
         }
-        return $this->contentSubgraphs->findSiteNode($site, excludeDisabled: false)
+        $contentRepositoryId = $site->getConfiguration()->contentRepositoryId;
+        $workspaceName = $filter->workspace?->toWorkspaceName() ?? WorkspaceName::forLive();
+        try {
+            $dimensionSpacePoint = $filter->dimensionSpacePoint?->toDimensionSpacePoint() ?? $site->getConfiguration()->defaultDimensionSpacePoint;
+        } catch (\InvalidArgumentException | \RuntimeException | \TypeError $exception) {
+            return BadRequest::because(sprintf('filter[dimensionSpacePoint] is invalid: %s', $exception->getMessage()));
+        }
+        if (!$this->contentRepositoryRegistry->get($contentRepositoryId)->getVariationGraph()->getDimensionSpacePoints()->contains($dimensionSpacePoint)) {
+            return BadRequest::because(sprintf('There is no dimension space point %s in the content repository %s, GET /contentrepositories lists its dimensions and their values', $dimensionSpacePoint->toJson(), $contentRepositoryId->value));
+        }
+        return $this->contentSubgraphs->findSiteNode($site, excludeDisabled: false, workspaceName: $workspaceName, dimensionSpacePoint: $dimensionSpacePoint)
             ?? NotFound::because(sprintf(
-                'The default site %s has no site node in the live workspace and its default dimension space point %s, configure Neos.Neos.sites.*.contentDimensions.defaultDimensionSpacePoint or give filter[parent], filter[ancestor] or filter[referencing]',
+                'There is no site node of the default site %s in the workspace %s and the dimension space point %s',
                 $site->getNodeName()->value,
-                $site->getConfiguration()->defaultDimensionSpacePoint->toJson(),
+                $workspaceName->value,
+                $dimensionSpacePoint->toJson(),
             ));
     }
 

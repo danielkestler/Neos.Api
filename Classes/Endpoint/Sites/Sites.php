@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Neos\Api\Endpoint\Sites;
 
+use Doctrine\DBAL\Exception as DBALException;
 use Neos\Api\Endpoint\Sites\Payload\DomainCreate;
 use Neos\Api\Endpoint\Sites\Payload\DomainUpdate;
 use Neos\Api\Endpoint\Sites\Payload\SiteCreate;
@@ -20,6 +21,7 @@ use Neos\Api\Endpoint\Sites\Schema\SiteNodeType;
 use Neos\Api\Endpoint\Sites\Schema\SiteNodeTypeList;
 use Neos\Api\Endpoint\Sites\Response\DomainCreated;
 use Neos\Api\Endpoint\Sites\Response\SiteCreated;
+use Neos\Api\Infrastructure\ContentRepository\ContentSubgraphs;
 use Neos\Api\Infrastructure\I18n\LabelTranslator;
 use Neos\Api\Security\ApiAuthContextProvider;
 use Neos\Api\Security\ApiScopes;
@@ -29,8 +31,10 @@ use Neos\Api\Shared\Response\UnprocessableContent;
 use Neos\Api\Shared\Schema\AcceptLanguage;
 use Neos\ContentRepository\Core\NodeType\NodeType;
 use Neos\ContentRepository\Core\NodeType\NodeTypeManager;
+use Neos\ContentRepository\Core\Projection\ContentGraph\Node;
 use Neos\ContentRepository\Core\SharedModel\ContentRepository\ContentRepositoryId;
 use Neos\ContentRepositoryRegistry\ContentRepositoryRegistry;
+use Neos\ContentRepositoryRegistry\Exception\InvalidConfigurationException;
 use Neos\Flow\Annotations as Flow;
 use Neos\Flow\Package\PackageManager;
 use Neos\Flow\Persistence\PersistenceManagerInterface;
@@ -58,6 +62,7 @@ final readonly class Sites
         private ContentRepositoryRegistry $contentRepositoryRegistry,
         private PersistenceManagerInterface $persistenceManager,
         private LabelTranslator $labelTranslator,
+        private ContentSubgraphs $contentSubgraphs,
         #[Flow\InjectConfiguration(path: 'sitePresets.default.contentRepository', package: 'Neos.Neos')]
         string $defaultContentRepository,
     ) {
@@ -69,7 +74,7 @@ final readonly class Sites
         path: '/sites',
         method: 'GET',
         summary: 'List all sites',
-        description: 'All Neos sites, including the offline ones, ordered by name.',
+        description: 'All Neos sites, including the offline ones, ordered by name. nodeAddress is the site node in the live workspace and the site\'s default dimension space point, the entry point for GET /nodes: to read it in another language, change the dimensionSpacePoint in it.',
         operationId: 'listSites',
         security: [
             ApiAuthContextProvider::SCOPES => [ApiScopes::SITES_READ],
@@ -305,7 +310,21 @@ final readonly class Sites
 
     private function site(Model\Site $site): Site
     {
-        return Site::from($site, $this->persistenceManager);
+        return Site::from($site, $this->siteNode($site), $this->persistenceManager);
+    }
+
+    /**
+     * The site node in the live workspace and the site's default dimension space point, null if there is none the
+     * account may read, or the content repository can't be built or isn't set up: sites and their domains are managed
+     * without it, e.g. before ./flow cr:setup
+     */
+    private function siteNode(Model\Site $site): ?Node
+    {
+        try {
+            return $this->contentSubgraphs->findSiteNode($site, excludeDisabled: false);
+        } catch (InvalidConfigurationException | DBALException) {
+            return null;
+        }
     }
 
     private function nodeTypeManager(ContentRepositoryId $contentRepositoryId): NodeTypeManager

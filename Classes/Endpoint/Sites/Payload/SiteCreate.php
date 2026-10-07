@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 namespace Neos\Api\Endpoint\Sites\Payload;
 
-use Neos\Api\Endpoint\NodeTypes\Schema\NodeTypeName;
+use Neos\Api\Endpoint\ContentRepositories\Schema\NodeTypeName;
 use Neos\Api\Endpoint\Sites\Schema\PackageKey;
 use Neos\Api\Endpoint\Sites\Schema\SiteName;
 use Neos\Api\Endpoint\Sites\Schema\SiteNodeName;

@@ -67,6 +67,8 @@ class SitesTest extends EndpointTestCase
                 ['id' => $this->primaryDomainId, 'hostname' => 'www.example.com', 'scheme' => 'https', 'port' => null, 'active' => true, 'isPrimary' => true, 'url' => 'https://www.example.com'],
             ],
             'primaryDomain' => 'https://www.example.com',
+            // there is no content repository in the Testing context
+            'nodeAddress' => null,
         ], $sites[1]);
         self::assertFalse($sites[0]['online']);
     }

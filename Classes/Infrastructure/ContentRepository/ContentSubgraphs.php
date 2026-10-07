@@ -72,13 +72,14 @@ final readonly class ContentSubgraphs
     }
 
     /**
-     * The site node of the site in the live workspace and the site's default dimension space point, the one the
-     * frontend renders for its home page, null if there is none or the account may not read it, see find()
+     * The site node of the site in the workspace and dimension space point, by default the live workspace and the
+     * site's default dimension space point, the one the frontend renders for its home page. Null if there is none or
+     * the account may not read it, see find()
      */
-    public function findSiteNode(Site $site, bool $excludeDisabled): ?Node
+    public function findSiteNode(Site $site, bool $excludeDisabled, ?WorkspaceName $workspaceName = null, ?DimensionSpacePoint $dimensionSpacePoint = null): ?Node
     {
         $configuration = $site->getConfiguration();
-        $subgraph = $this->find($configuration->contentRepositoryId, WorkspaceName::forLive(), $configuration->defaultDimensionSpacePoint, $excludeDisabled);
+        $subgraph = $this->find($configuration->contentRepositoryId, $workspaceName ?? WorkspaceName::forLive(), $dimensionSpacePoint ?? $configuration->defaultDimensionSpacePoint, $excludeDisabled);
         $sitesNode = $subgraph?->findRootNodeByType(NodeTypeNameFactory::forSites());
         return $sitesNode !== null ? $subgraph->findNodeByPath($site->getNodeName()->toNodeName(), $sitesNode->aggregateId) : null;
     }

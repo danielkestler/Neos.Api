@@ -1,9 +1,9 @@
 <?php
 declare(strict_types=1);
 
-namespace Neos\Api\Endpoint\NodeTypes\Params;
+namespace Neos\Api\Endpoint\ContentRepositories\Params;
 
-use Neos\Api\Endpoint\NodeTypes\Schema\NodeTypeName;
+use Neos\Api\Endpoint\ContentRepositories\Schema\NodeTypeName;
 use Neos\JsonSchema\ObjectSchema;
 use Neos\JsonSchema\ProvidesSchema;
 use Neos\JsonSchema\Schema;

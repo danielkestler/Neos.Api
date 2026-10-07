@@ -86,6 +86,18 @@ class NodesTest extends EndpointTestCase
             self::assertStringStartsWith('There is no node {"contentRepositoryId":"unknown"', self::json($response)['detail']);
         }
 
+        // the node address has its own workspace and dimension space point
+        foreach (['workspace' => 'live', 'dimensionSpacePoint' => '{"language":"de"}'] as $member => $value) {
+            $response = $this->get(self::listPath(['filter' => ['ancestor' => self::NODE_ADDRESS, $member => $value]]), $token);
+            self::assertSame(400, $response->getStatusCode(), $member . ': ' . $response->getBody());
+            self::assertSame('filter[workspace] and filter[dimensionSpacePoint] only apply without filter[parent], filter[ancestor] and filter[referencing], whose node address has its own', self::json($response)['detail']);
+        }
+        $response = $this->get(self::listPath(['filter' => ['workspace' => 'live', 'dimensionSpacePoint' => '{"language":"de"}']]), $token);
+        self::assertSame(404, $response->getStatusCode(), (string)$response->getBody());
+        // invalid ones, their schemas reject them
+        self::assertSame(400, $this->get(self::listPath(['filter' => ['workspace' => 'Not A Workspace']]), $token)->getStatusCode());
+        self::assertSame(400, $this->get(self::listPath(['filter' => ['dimensionSpacePoint' => 'de']]), $token)->getStatusCode());
+
         $response = $this->get(self::listPath(['filter' => ['parent' => self::NODE_ADDRESS, 'referenceName' => 'relatedPages']]), $token);
         self::assertSame(400, $response->getStatusCode(), (string)$response->getBody());
         self::assertSame('filter[referenceName] needs filter[referencing]', self::json($response)['detail']);
