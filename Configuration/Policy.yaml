@@ -49,6 +49,9 @@ privilegeTargets:
     "Neos.Api:Workspaces.Read":
       label: "List the workspaces you can read and the changes in them"
       matcher: "workspaces.read"
+    "Neos.Api:DataSources.Read":
+      label: "Get the data of the data sources, e.g. the options of select boxes"
+      matcher: "datasources.read"
 
 roles:
   "Neos.Flow:Everybody":
@@ -68,6 +71,12 @@ roles:
         permission: GRANT
       # which workspaces and events are listed is up to the account's workspace roles (and for events its node privileges)
       - privilegeTarget: "Neos.Api:Workspaces.Read"
+        permission: GRANT
+
+  # as Neos grants Neos.Neos:Backend.DataSource
+  "Neos.Neos:AbstractEditor":
+    privileges:
+      - privilegeTarget: "Neos.Api:DataSources.Read"
         permission: GRANT
 
   "Neos.Neos:Editor":

@@ -39,6 +39,7 @@ Neos:
             'Neos\Api\Endpoint\NodeTypes\NodeTypes': true
             'Neos\Api\Endpoint\Workspaces\Workspaces': true
             'Neos\Api\Endpoint\Views\Views': true
+            'Neos\Api\Endpoint\DataSources\DataSources': true
           specPath: "openapi.json"
           # the docs are served by Neos.Api's DocsController, which lets users log in
           authContextProvider: 'Neos\Api\Security\ApiAuthContextProvider'

@@ -25,4 +25,5 @@ final class ApiScopes
     public const string VIEWS_READ = 'views.read';
     public const string NODES_READ = 'nodes.read';
     public const string WORKSPACES_READ = 'workspaces.read';
+    public const string DATASOURCES_READ = 'datasources.read';
 }
