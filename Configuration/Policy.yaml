@@ -46,6 +46,9 @@ privilegeTargets:
     "Neos.Api:Nodes.Read":
       label: "Read the nodes you can read"
       matcher: "nodes.read"
+    "Neos.Api:Workspaces.Read":
+      label: "List the workspaces you can read"
+      matcher: "workspaces.read"
 
 roles:
   "Neos.Flow:Everybody":
@@ -62,6 +65,9 @@ roles:
         permission: GRANT
       # which nodes are found is up to the account's node privileges
       - privilegeTarget: "Neos.Api:Nodes.Read"
+        permission: GRANT
+      # which workspaces are listed is up to the account's workspace roles
+      - privilegeTarget: "Neos.Api:Workspaces.Read"
         permission: GRANT
 
   "Neos.Neos:Editor":

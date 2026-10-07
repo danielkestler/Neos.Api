@@ -29,11 +29,11 @@ final readonly class AccountPrivileges
     }
 
     /**
-     * What Flow's security context would hold for the account alone
+     * What Flow's security context would hold for the account alone, e.g. for Neos' workspace permissions
      *
      * @return array<string, Role>
      */
-    private function rolesOf(Account $account): array
+    public function rolesOf(Account $account): array
     {
         $roles = [];
         foreach (['Neos.Flow:Everybody', 'Neos.Flow:AuthenticatedUser'] as $identifier) {

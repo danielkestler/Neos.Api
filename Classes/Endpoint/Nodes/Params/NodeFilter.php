@@ -5,7 +5,7 @@ namespace Neos\Api\Endpoint\Nodes\Params;
 
 use Neos\Api\Endpoint\Nodes\Schema\DimensionSpacePoint;
 use Neos\Api\Endpoint\Nodes\Schema\NodeAddress;
-use Neos\Api\Endpoint\Nodes\Schema\WorkspaceName;
+use Neos\Api\Endpoint\Workspaces\Schema\WorkspaceName;
 use Neos\JsonSchema\ObjectSchema;
 use Neos\JsonSchema\ProvidesSchema;
 use Neos\JsonSchema\Schema;
