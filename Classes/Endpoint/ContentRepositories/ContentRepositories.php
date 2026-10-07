@@ -31,7 +31,7 @@ final readonly class ContentRepositories
     }
 
     #[Operation(
-        path: '/contentrepositories',
+        path: '/cr',
         method: 'GET',
         summary: 'List all content repositories',
         description: 'The content repositories configured in the Neos.ContentRepositoryRegistry settings, in the order of the settings. The labels are translated to the Accept-Language.',
@@ -51,7 +51,7 @@ final readonly class ContentRepositories
     }
 
     #[Operation(
-        path: '/contentrepositories/{contentRepositoryId}',
+        path: '/cr/{contentRepositoryId}',
         method: 'GET',
         summary: 'Get a content repository',
         description: 'The labels are translated to the Accept-Language.',

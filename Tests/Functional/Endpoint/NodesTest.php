@@ -8,12 +8,10 @@ use PHPUnit\Framework\Attributes\Test;
 
 /**
  * Nodes need a content repository, which the Testing context (SQLite) doesn't have: these tests cover everything up
- * to the node lookup
+ * to the content repository lookup
  */
 class NodesTest extends EndpointTestCase
 {
-    private const string NODE_ADDRESS = '{"contentRepositoryId":"unknown","workspaceName":"live","dimensionSpacePoint":{},"aggregateId":"some-node"}';
-
     protected function setUp(): void
     {
         parent::setUp();
@@ -26,27 +24,34 @@ class NodesTest extends EndpointTestCase
     public function nodesOfUnknownContentRepositoriesAreNotFound(): void
     {
         // every account may read nodes, which ones is up to its node privileges
-        $response = $this->get(self::nodePath(self::NODE_ADDRESS), $this->token('nobody-machine', 'nodes.read'));
+        $token = $this->token('nobody-machine', 'nodes.read');
 
-        self::assertSame(404, $response->getStatusCode(), (string)$response->getBody());
-        self::assertStringStartsWith('There is no node {"contentRepositoryId":"unknown"', self::json($response)['detail']);
+        foreach ([self::nodePath('some-node'), self::nodePath('some-node', ['workspaceName' => 'user-editor', 'dimensionSpacePoint' => '{"language":"de"}']), self::listPath([])] as $path) {
+            $response = $this->get($path, $token);
+            self::assertSame(404, $response->getStatusCode(), $path . ': ' . $response->getBody());
+            self::assertSame('There is no content repository with the ID unknown', self::json($response)['detail']);
+        }
     }
 
     #[Test]
-    public function rejectsInvalidNodeAddresses(): void
+    public function rejectsInvalidParameters(): void
     {
         $token = $this->token('nobody-machine', 'nodes.read');
-        // not even an object, its schema rejects it
-        self::assertSame(400, $this->get(self::nodePath('not-json'), $token)->getStatusCode());
-        // an encoded slash stays in the path segment
-        $response = $this->get(self::nodePath(str_replace('{}', '{"path":"a/b"}', self::NODE_ADDRESS)), $token);
-        self::assertSame(404, $response->getStatusCode(), (string)$response->getBody());
-        self::assertStringStartsWith('There is no node', self::json($response)['detail']);
+        // their schemas reject them
+        self::assertSame(400, $this->get(self::nodePath('Not_An_Id'), $token)->getStatusCode());
+        self::assertSame(400, $this->get('/api/cr/Not-An-Id/nodes/some-node', $token)->getStatusCode());
+        foreach (['workspaceName' => 'Not A Workspace', 'dimensionSpacePoint' => 'de'] as $name => $value) {
+            self::assertSame(400, $this->get(self::nodePath('some-node', [$name => $value]), $token)->getStatusCode(), $name);
+            self::assertSame(400, $this->get(self::listPath([$name => $value]), $token)->getStatusCode(), $name);
+        }
 
-        foreach (['{not json}', '{"contentRepositoryId":"default"}', '{"contentRepositoryId":"default","workspaceName":"live","dimensionSpacePoint":"en","aggregateId":"some-node"}'] as $nodeAddress) {
-            $response = $this->get(self::nodePath($nodeAddress), $token);
-            self::assertSame(400, $response->getStatusCode(), $nodeAddress . ': ' . $response->getBody());
-            self::assertStringStartsWith('The node address is invalid', self::json($response)['detail']);
+        // syntax errors before the content repository is looked up
+        foreach (['{not json}', '{"language":["de"]}'] as $dimensionSpacePoint) {
+            foreach ([self::nodePath('some-node', ['dimensionSpacePoint' => $dimensionSpacePoint]), self::listPath(['dimensionSpacePoint' => $dimensionSpacePoint])] as $path) {
+                $response = $this->get($path, $token);
+                self::assertSame(400, $response->getStatusCode(), $path . ': ' . $response->getBody());
+                self::assertStringStartsWith('dimensionSpacePoint is invalid', self::json($response)['detail']);
+            }
         }
     }
 
@@ -55,14 +60,14 @@ class NodesTest extends EndpointTestCase
     {
         $token = $this->token('nobody-machine', 'nodes.read');
 
-        self::assertSame(404, $this->get(self::nodePath(self::NODE_ADDRESS) . '?include=references,children.references,variants,variants.references', $token)->getStatusCode());
+        self::assertSame(404, $this->get(self::nodePath('some-node', ['include' => 'references,children.references,variants,variants.references']), $token)->getStatusCode());
 
-        $response = $this->get(self::nodePath(self::NODE_ADDRESS) . '?include=references,parent,children.children', $token);
+        $response = $this->get(self::nodePath('some-node', ['include' => 'references,parent,children.children']), $token);
         self::assertSame(400, $response->getStatusCode(), (string)$response->getBody());
         self::assertSame('Can\'t include parent, children.children, only: references, children, children.references, variants, variants.references', self::json($response)['detail']);
 
         // not a list of paths, its schema rejects it
-        self::assertSame(400, $this->get(self::nodePath(self::NODE_ADDRESS) . '?include=references,', $token)->getStatusCode());
+        self::assertSame(400, $this->get(self::nodePath('some-node', ['include' => 'references,']), $token)->getStatusCode());
     }
 
     #[Test]
@@ -70,51 +75,31 @@ class NodesTest extends EndpointTestCase
     {
         $token = $this->token('nobody-machine', 'nodes.read');
 
-        $response = $this->get(self::listPath(['filter' => ['parent' => self::NODE_ADDRESS, 'ancestor' => self::NODE_ADDRESS]]), $token);
+        $response = $this->get(self::listPath(['filter' => ['parent' => 'some-node', 'ancestor' => 'other-node']]), $token);
         self::assertSame(400, $response->getStatusCode(), (string)$response->getBody());
         self::assertSame('At most one of filter[parent], filter[ancestor] and filter[referencing] is allowed', self::json($response)['detail']);
 
-        // without one it's the default site, there is no site in the Testing context
-        foreach (['/api/nodes', self::listPath(['filter' => ['nodeType' => 'Neos.Neos:Document']])] as $path) {
-            $response = $this->get($path, $token);
-            self::assertSame(404, $response->getStatusCode(), $path . ': ' . $response->getBody());
-            self::assertSame('There is no site to list the nodes of, give filter[parent], filter[ancestor] or filter[referencing]', self::json($response)['detail']);
-        }
-        foreach (['parent', 'ancestor', 'referencing'] as $entryPoint) {
-            $response = $this->get(self::listPath(['filter' => [$entryPoint => self::NODE_ADDRESS]]), $token);
-            self::assertSame(404, $response->getStatusCode(), $entryPoint . ': ' . $response->getBody());
-            self::assertStringStartsWith('There is no node {"contentRepositoryId":"unknown"', self::json($response)['detail']);
+        // without one it's the default site of the content repository
+        foreach ([[], ['parent' => 'some-node'], ['ancestor' => 'some-node'], ['referencing' => 'some-node'], ['nodeType' => 'Neos.Neos:Document']] as $filter) {
+            $response = $this->get(self::listPath(['filter' => $filter, 'workspaceName' => 'live', 'dimensionSpacePoint' => '{"language":"de"}']), $token);
+            self::assertSame(404, $response->getStatusCode(), json_encode($filter) . ': ' . $response->getBody());
         }
 
-        // the node address has its own workspace and dimension space point
-        foreach (['workspace' => 'live', 'dimensionSpacePoint' => '{"language":"de"}'] as $member => $value) {
-            $response = $this->get(self::listPath(['filter' => ['ancestor' => self::NODE_ADDRESS, $member => $value]]), $token);
-            self::assertSame(400, $response->getStatusCode(), $member . ': ' . $response->getBody());
-            self::assertSame('filter[workspace] and filter[dimensionSpacePoint] only apply without filter[parent], filter[ancestor] and filter[referencing], whose node address has its own', self::json($response)['detail']);
-        }
-        $response = $this->get(self::listPath(['filter' => ['workspace' => 'live', 'dimensionSpacePoint' => '{"language":"de"}']]), $token);
-        self::assertSame(404, $response->getStatusCode(), (string)$response->getBody());
-        // invalid ones, their schemas reject them
-        self::assertSame(400, $this->get(self::listPath(['filter' => ['workspace' => 'Not A Workspace']]), $token)->getStatusCode());
-        self::assertSame(400, $this->get(self::listPath(['filter' => ['dimensionSpacePoint' => 'de']]), $token)->getStatusCode());
-
-        $response = $this->get(self::listPath(['filter' => ['parent' => self::NODE_ADDRESS, 'referenceName' => 'relatedPages']]), $token);
+        $response = $this->get(self::listPath(['filter' => ['parent' => 'some-node', 'referenceName' => 'relatedPages']]), $token);
         self::assertSame(400, $response->getStatusCode(), (string)$response->getBody());
         self::assertSame('filter[referenceName] needs filter[referencing]', self::json($response)['detail']);
 
-        $response = $this->get(self::listPath(['filter' => ['parent' => '{not json}']]), $token);
-        self::assertSame(400, $response->getStatusCode(), (string)$response->getBody());
-        self::assertStringStartsWith('The node address is invalid', self::json($response)['detail']);
-
-        // unknown filter members, its schema rejects them
-        self::assertSame(400, $this->get(self::listPath(['filter' => ['parent' => self::NODE_ADDRESS, 'unknown' => 'x']]), $token)->getStatusCode());
+        // not an aggregate id, unknown filter members, the workspace and dimension space point aren't filters: its schema rejects them
+        foreach ([['parent' => '{"aggregateId":"some-node"}'], ['parent' => 'some-node', 'unknown' => 'x'], ['workspaceName' => 'live'], ['dimensionSpacePoint' => '{}']] as $filter) {
+            self::assertSame(400, $this->get(self::listPath(['filter' => $filter]), $token)->getStatusCode(), json_encode($filter));
+        }
     }
 
     #[Test]
     public function rejectsInvalidFiltersSortsAndPages(): void
     {
         $token = $this->token('nobody-machine', 'nodes.read');
-        $filter = ['parent' => self::NODE_ADDRESS];
+        $filter = ['parent' => 'some-node'];
 
         $response = $this->get(self::listPath(['filter' => $filter + ['property' => 'title = ']]), $token);
         self::assertSame(400, $response->getStatusCode(), (string)$response->getBody());
@@ -142,19 +127,21 @@ class NodesTest extends EndpointTestCase
     #[Test]
     public function documentsFiltersAndPagesAsDeepObjects(): void
     {
-        $parameters = array_column(self::json($this->get('/api/openapi.json', null))['paths']['/nodes']['get']['parameters'], null, 'name');
+        $parameters = array_column(self::json($this->get('/api/openapi.json', null))['paths']['/cr/{contentRepositoryId}/nodes']['get']['parameters'], null, 'name');
 
         foreach (['filter', 'page'] as $name) {
             self::assertSame('deepObject', $parameters[$name]['style'] ?? null, $name);
             self::assertTrue($parameters[$name]['explode'] ?? null, $name);
         }
-        self::assertArrayNotHasKey('style', $parameters['sort']);
+        foreach (['sort', 'workspaceName', 'dimensionSpacePoint'] as $name) {
+            self::assertArrayNotHasKey('style', $parameters[$name], $name);
+        }
     }
 
     #[Test]
     public function requiresTheScope(): void
     {
-        foreach ([self::nodePath(self::NODE_ADDRESS), self::listPath(['filter' => ['parent' => self::NODE_ADDRESS]])] as $path) {
+        foreach ([self::nodePath('some-node'), self::listPath(['filter' => ['parent' => 'some-node']])] as $path) {
             $response = $this->get($path, $this->token('nobody-machine', 'me.read'));
 
             self::assertSame(403, $response->getStatusCode(), (string)$response->getBody());
@@ -165,8 +152,8 @@ class NodesTest extends EndpointTestCase
     #[Test]
     public function requiresAToken(): void
     {
-        self::assertSame(401, $this->get(self::nodePath(self::NODE_ADDRESS), null)->getStatusCode());
-        self::assertSame(401, $this->get('/api/nodes', null)->getStatusCode());
+        self::assertSame(401, $this->get(self::nodePath('some-node'), null)->getStatusCode());
+        self::assertSame(401, $this->get(self::listPath([]), null)->getStatusCode());
     }
 
     /**
@@ -174,11 +161,22 @@ class NodesTest extends EndpointTestCase
      */
     private static function listPath(array $query): string
     {
-        return '/api/nodes?' . http_build_query($query, '', '&', PHP_QUERY_RFC3986);
+        return '/api/cr/unknown/nodes' . self::query($query);
     }
 
-    private static function nodePath(string $nodeAddress): string
+    /**
+     * @param array<string, mixed> $query
+     */
+    private static function nodePath(string $aggregateId, array $query = []): string
     {
-        return '/api/nodes/' . rawurlencode($nodeAddress);
+        return '/api/cr/unknown/nodes/' . rawurlencode($aggregateId) . self::query($query);
+    }
+
+    /**
+     * @param array<string, mixed> $query
+     */
+    private static function query(array $query): string
+    {
+        return $query !== [] ? '?' . http_build_query($query, '', '&', PHP_QUERY_RFC3986) : '';
     }
 }

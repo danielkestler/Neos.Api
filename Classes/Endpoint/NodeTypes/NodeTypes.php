@@ -37,7 +37,7 @@ final readonly class NodeTypes
     }
 
     #[Operation(
-        path: '/contentrepositories/{contentRepositoryId}/nodetypes',
+        path: '/cr/{contentRepositoryId}/nodetypes',
         method: 'GET',
         summary: 'List the node types',
         description: 'All node types of the content repository, abstract ones included, sorted by name, or with filter[superType] only the ones of that type. Their properties, references and configuration are null unless included, getNodeType has them all. The labels are translated to the Accept-Language.',
@@ -87,7 +87,7 @@ final readonly class NodeTypes
     }
 
     #[Operation(
-        path: '/contentrepositories/{contentRepositoryId}/nodetypes/{nodeTypeName}',
+        path: '/cr/{contentRepositoryId}/nodetypes/{nodeTypeName}',
         method: 'GET',
         summary: 'Get a node type',
         description: 'A node type with its properties, references and whole configuration, merged with its super types\'. The labels are translated to the Accept-Language, the ones in the configuration as well.',

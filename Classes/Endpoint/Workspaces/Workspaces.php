@@ -36,7 +36,7 @@ final readonly class Workspaces
     }
 
     #[Operation(
-        path: '/contentrepositories/{contentRepositoryId}/workspaces',
+        path: '/cr/{contentRepositoryId}/workspaces',
         method: 'GET',
         summary: 'List the workspaces',
         description: 'The workspaces of the content repository the account may read, by its workspace roles or as the owner, sorted by name, with their Neos metadata and what the account may do in them. Neos administrators may manage every workspace, but read only the ones a role grants them.',

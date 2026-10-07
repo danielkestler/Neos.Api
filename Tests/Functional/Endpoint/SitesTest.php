@@ -68,7 +68,8 @@ class SitesTest extends EndpointTestCase
             ],
             'primaryDomain' => 'https://www.example.com',
             // there is no content repository in the Testing context
-            'nodeAddress' => null,
+            'nodeAggregateId' => null,
+            'defaultDimensionSpacePoint' => '{"language":"en_US"}',
         ], $sites[1]);
         self::assertFalse($sites[0]['online']);
     }

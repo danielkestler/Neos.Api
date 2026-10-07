@@ -46,7 +46,7 @@ final readonly class ListingLinks implements ProvidesSchema
     public static function schema(): Schema
     {
         static $schema = null;
-        $link = static fn (string $description) => StringSchema::create(description: $description, examples: ['https://example.com/api/nodes?page%5Boffset%5D=25&page%5Blimit%5D=25']);
+        $link = static fn (string $description) => StringSchema::create(description: $description, examples: ['https://example.com/api/cr/default/nodes?page%5Boffset%5D=25&page%5Blimit%5D=25']);
         return $schema ??= ObjectSchema::create(
             description: 'The URLs of the pages, the request with another page[offset]',
             properties: ObjectProperties::create(

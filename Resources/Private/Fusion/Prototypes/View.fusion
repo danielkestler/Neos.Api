@@ -1,7 +1,7 @@
 ##
-# A view of the API: GET /api/views/{viewName}?nodeAddress={nodeAddress} renders it for a node (without one, for the default
-# site's site node in live and the default dimensions), once it is made available
-# under the name in the Neos.Api.views settings
+# A view of the API: GET /api/views/{viewName}?contentRepositoryId=…&aggregateId=…&workspaceName=…&dimensionSpacePoint=…
+# renders it for a node (without one, for the default site's site node; live and the site's default dimension space
+# point unless given), once it is made available under the name in the Neos.Api.views settings
 #
 # It is a data structure, every key becomes a property of the JSON object. The context is the same as in the
 # frontend: node, documentNode and site, with the globals request and renderingMode (frontend unless the request
@@ -12,7 +12,7 @@
 #       items = Neos.Fusion:Map {
 #           items = ${q(site).children('[instanceof Neos.Neos:Document]').get()}
 #           itemRenderer = Neos.Fusion:DataStructure {
-#               nodeAddress = ${Neos.Node.serializedNodeAddress(item)}
+#               aggregateId = ${item.aggregateId.value}
 #               label = ${q(item).label()}
 #           }
 #       }

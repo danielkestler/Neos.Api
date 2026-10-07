@@ -74,7 +74,7 @@ final readonly class Sites
         path: '/sites',
         method: 'GET',
         summary: 'List all sites',
-        description: 'All Neos sites, including the offline ones, ordered by name. nodeAddress is the site node in the live workspace and the site\'s default dimension space point, the entry point for GET /nodes: to read it in another language, change the dimensionSpacePoint in it.',
+        description: 'All Neos sites, including the offline ones, ordered by name. nodeAggregateId is the site node, the entry point for GET /cr/{contentRepositoryId}/nodes/{aggregateId} and filter[parent] or filter[ancestor] of GET /cr/{contentRepositoryId}/nodes, defaultDimensionSpacePoint the dimension space point the frontend renders the home page in: give it as dimensionSpacePoint there, the default is the one of the content repository\'s default site.',
         operationId: 'listSites',
         security: [
             ApiAuthContextProvider::SCOPES => [ApiScopes::SITES_READ],

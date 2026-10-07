@@ -10,7 +10,6 @@ use Neos\ContentRepository\Core\Projection\ContentGraph\ContentSubgraphInterface
 use Neos\ContentRepository\Core\Projection\ContentGraph\Node;
 use Neos\ContentRepository\Core\SharedModel\ContentRepository\ContentRepositoryId;
 use Neos\ContentRepository\Core\SharedModel\Exception\WorkspaceDoesNotExist;
-use Neos\ContentRepository\Core\SharedModel\Node\NodeAddress;
 use Neos\ContentRepository\Core\SharedModel\Workspace\WorkspaceName;
 use Neos\ContentRepositoryRegistry\ContentRepositoryRegistry;
 use Neos\Flow\Annotations as Flow;
@@ -62,25 +61,26 @@ final readonly class ContentSubgraphs
     }
 
     /**
-     * The node at the address as the account sees it, null if there is none or the account may not read it, see
-     * find(). It carries the visibility it was found with, ContentRepositoryRegistry::subgraphForNode() is its subgraph
+     * The site node of the site in the live workspace and the site's default dimension space point, the one the
+     * frontend renders for its home page. Null if there is none or the account may not read it, see find()
      */
-    public function findNode(NodeAddress $address, bool $excludeDisabled): ?Node
+    public function findSiteNode(Site $site, bool $excludeDisabled): ?Node
     {
-        return $this->find($address->contentRepositoryId, $address->workspaceName, $address->dimensionSpacePoint, $excludeDisabled)
-            ?->findNodeById($address->aggregateId);
+        $configuration = $site->getConfiguration();
+        $subgraph = $this->find($configuration->contentRepositoryId, WorkspaceName::forLive(), $configuration->defaultDimensionSpacePoint, $excludeDisabled);
+        return $subgraph !== null ? $this->findSiteNodeIn($subgraph, $site) : null;
     }
 
     /**
-     * The site node of the site in the workspace and dimension space point, by default the live workspace and the
-     * site's default dimension space point, the one the frontend renders for its home page. Null if there is none or
-     * the account may not read it, see find()
+     * The site node of the site in the subgraph, null if there is none or the subgraph is of another content
+     * repository
      */
-    public function findSiteNode(Site $site, bool $excludeDisabled, ?WorkspaceName $workspaceName = null, ?DimensionSpacePoint $dimensionSpacePoint = null): ?Node
+    public function findSiteNodeIn(ContentSubgraphInterface $subgraph, Site $site): ?Node
     {
-        $configuration = $site->getConfiguration();
-        $subgraph = $this->find($configuration->contentRepositoryId, $workspaceName ?? WorkspaceName::forLive(), $dimensionSpacePoint ?? $configuration->defaultDimensionSpacePoint, $excludeDisabled);
-        $sitesNode = $subgraph?->findRootNodeByType(NodeTypeNameFactory::forSites());
+        if (!$subgraph->getContentRepositoryId()->equals($site->getConfiguration()->contentRepositoryId)) {
+            return null;
+        }
+        $sitesNode = $subgraph->findRootNodeByType(NodeTypeNameFactory::forSites());
         return $sitesNode !== null ? $subgraph->findNodeByPath($site->getNodeName()->toNodeName(), $sitesNode->aggregateId) : null;
     }
 

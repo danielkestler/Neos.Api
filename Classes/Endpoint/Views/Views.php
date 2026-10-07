@@ -3,7 +3,11 @@ declare(strict_types=1);
 
 namespace Neos\Api\Endpoint\Views;
 
-use Neos\Api\Endpoint\Nodes\Schema\NodeAddress;
+use Neos\Api\Endpoint\ContentRepositories\Schema\ContentRepositoryId;
+use Neos\Api\Endpoint\Nodes\Schema\DimensionSpacePoint;
+use Neos\Api\Endpoint\Nodes\Schema\NodeAggregateId;
+use Neos\Api\Endpoint\Nodes\SubgraphResolver;
+use Neos\Api\Endpoint\Workspaces\Schema\WorkspaceName;
 use Neos\Api\Endpoint\Views\Response\RenderedView;
 use Neos\Api\Endpoint\Views\Schema\RenderingModeName;
 use Neos\Api\Endpoint\Views\Schema\View;
@@ -11,6 +15,7 @@ use Neos\Api\Endpoint\Views\Schema\ViewName;
 use Neos\Api\Endpoint\Views\Schema\ViewList;
 use Neos\Api\Endpoint\Views\Schema\ViewListing;
 use Neos\Api\Infrastructure\ContentRepository\ContentSubgraphs;
+use Neos\Api\Infrastructure\ContentRepository\SiteFinder;
 use Neos\Api\Infrastructure\Fusion\ViewRenderer;
 use Neos\Api\Security\AccountPrivileges;
 use Neos\Api\Security\ApiAuthContextProvider;
@@ -19,14 +24,12 @@ use Neos\Api\Security\ApiScopes;
 use Neos\Api\Shared\Response\BadRequest;
 use Neos\Api\Shared\Response\Forbidden;
 use Neos\Api\Shared\Response\NotFound;
+use Neos\ContentRepository\Core\Projection\ContentGraph\ContentSubgraphInterface;
 use Neos\ContentRepository\Core\Projection\ContentGraph\Filter\FindClosestNodeFilter;
 use Neos\ContentRepository\Core\Projection\ContentGraph\Node;
 use Neos\ContentRepository\Core\SharedModel;
-use Neos\ContentRepository\Core\SharedModel\Workspace\WorkspaceName;
-use Neos\ContentRepositoryRegistry\ContentRepositoryRegistry;
 use Neos\Flow\Annotations as Flow;
 use Neos\Neos\Domain\Model\RenderingMode;
-use Neos\Neos\Domain\Repository\SiteRepository;
 use Neos\Neos\Domain\Service\RenderingModeService;
 use Neos\Neos\Domain\Service\NodeTypeNameFactory;
 use Neos\OpenApi\Attributes\AuthContext;
@@ -64,8 +67,8 @@ final readonly class Views
      */
     public function __construct(
         private ContentSubgraphs $contentSubgraphs,
-        private ContentRepositoryRegistry $contentRepositoryRegistry,
-        private SiteRepository $siteRepository,
+        private SubgraphResolver $subgraphResolver,
+        private SiteFinder $siteFinder,
         private RenderingModeService $renderingModeService,
         private AccountPrivileges $accountPrivileges,
         private ViewRenderer $viewRenderer,
@@ -102,7 +105,7 @@ final readonly class Views
         path: '/views/{viewName}',
         method: 'GET',
         summary: 'Render a view',
-        description: 'Renders the view\'s Fusion prototype for a node with the Fusion of the node\'s site. Without a node, it is rendered for the site node of the default site (Neos.Neos.defaultSiteNodeName, else the first online site) in the live workspace and the site\'s default dimension space point, as the frontend renders its home page. In the frontend rendering mode and the live workspace, disabled nodes are left out as in the frontend, otherwise they are visible to accounts that may see them, as in the preview of the Neos backend. Rendering modes other than frontend need the privilege Neos.Neos:Backend.GeneralAccess, as in Neos. The shape of the data is up to the view.',
+        description: 'Renders the view\'s Fusion prototype for a node with the Fusion of the node\'s site. Without a node, it is rendered for the site node of the default site (Neos.Neos.defaultSiteNodeName, else the first online site; with contentRepositoryId the content repository\'s default site, as for getNode), as the frontend renders its home page. The workspace is live and the dimension space point the default site\'s default one unless given. In the frontend rendering mode and the live workspace, disabled nodes are left out as in the frontend, otherwise they are visible to accounts that may see them, as in the preview of the Neos backend. Rendering modes other than frontend need the privilege Neos.Neos:Backend.GeneralAccess, as in Neos. The shape of the data is up to the view.',
         operationId: 'renderView',
         security: [
             ApiAuthContextProvider::SCOPES => [ApiScopes::VIEWS_READ],
@@ -112,8 +115,14 @@ final readonly class Views
         ViewName $viewName,
         ServerRequestInterface $request,
         #[AuthContext] ApiCaller $caller,
-        #[Parameter(in: 'query', description: 'The address of the node to render the view for, URL-encoded. The site node of the default site if omitted')]
-        NodeAddress|null $nodeAddress = null,
+        #[Parameter(in: 'query', description: 'The content repository of the node, the one of the default site if omitted')]
+        ContentRepositoryId|null $contentRepositoryId = null,
+        #[Parameter(in: 'query', description: 'The aggregate id of the node to render the view for. The site node of the default site if omitted')]
+        NodeAggregateId|null $aggregateId = null,
+        #[Parameter(in: 'query', description: 'The workspace to read the node in, live if omitted')]
+        WorkspaceName|null $workspaceName = null,
+        #[Parameter(in: 'query', description: 'The dimension space point to read the node in, as JSON. If omitted, the default one of the content repository\'s default site, as for getNode')]
+        DimensionSpacePoint|null $dimensionSpacePoint = null,
         #[Parameter(in: 'query', description: 'The rendering mode, the Fusion global renderingMode. frontend if omitted, the Neos UI uses e.g. inPlace')]
         RenderingModeName|null $renderingMode = null,
     ): RenderedView|NotFound|BadRequest|Forbidden {
@@ -129,15 +138,16 @@ final readonly class Views
         if ($mode->name !== RenderingMode::FRONTEND && !$this->accountPrivileges->isGranted($caller->account, self::BACKEND_ACCESS)) {
             return Forbidden::because(sprintf('The rendering mode %s needs the privilege %s', $mode->name, self::BACKEND_ACCESS));
         }
-        if ($nodeAddress === null) {
-            $nodes = $this->defaultSiteNode($mode);
-        } else {
-            try {
-                $nodes = $this->addressedNode($nodeAddress->toNodeAddress(), $mode);
-            } catch (\InvalidArgumentException | \TypeError $exception) {
-                return BadRequest::because(sprintf('The node address is invalid: %s', $exception->getMessage()));
-            }
+        $id = $contentRepositoryId?->toContentRepositoryId() ?? $this->siteFinder->findDefault()?->getConfiguration()->contentRepositoryId;
+        if ($id === null) {
+            return NotFound::because('There is no site to render the view for, give contentRepositoryId and aggregateId');
         }
+        $workspace = $workspaceName?->toWorkspaceName() ?? SharedModel\Workspace\WorkspaceName::forLive();
+        $subgraph = $this->subgraphResolver->resolve($id, $workspace, $dimensionSpacePoint, self::excludeDisabled($workspace, $mode));
+        if (!$subgraph instanceof ContentSubgraphInterface) {
+            return $subgraph;
+        }
+        $nodes = $aggregateId !== null ? $this->node($subgraph, $aggregateId) : $this->defaultSiteNode($subgraph);
         if ($nodes instanceof NotFound) {
             return $nodes;
         }
@@ -152,37 +162,37 @@ final readonly class Views
     /**
      * @return array{Node, Node}|NotFound the node and its site node
      */
-    private function addressedNode(SharedModel\Node\NodeAddress $address, RenderingMode $renderingMode): array|NotFound
+    private function node(ContentSubgraphInterface $subgraph, NodeAggregateId $aggregateId): array|NotFound
     {
-        $node = $this->contentSubgraphs->findNode($address, self::excludeDisabled($address->workspaceName, $renderingMode));
+        $node = $subgraph->findNodeById($aggregateId->toNodeAggregateId());
         if ($node === null) {
-            return NotFound::because(sprintf('There is no node %s', $address->toJson()));
+            return NotFound::because(sprintf('There is no node %s in the workspace %s and the dimension space point %s', $aggregateId->value, $subgraph->getWorkspaceName()->value, $subgraph->getDimensionSpacePoint()->toJson()));
         }
-        $site = $this->contentRepositoryRegistry->subgraphForNode($node)->findClosestNode($address->aggregateId, FindClosestNodeFilter::create(nodeTypes: NodeTypeNameFactory::NAME_SITE));
+        $site = $subgraph->findClosestNode($node->aggregateId, FindClosestNodeFilter::create(nodeTypes: NodeTypeNameFactory::NAME_SITE));
         if ($site === null) {
-            return NotFound::because(sprintf('The node %s belongs to no site, so there is no Fusion to render it with', $address->toJson()));
+            return NotFound::because(sprintf('The node %s belongs to no site, so there is no Fusion to render it with', $aggregateId->value));
         }
         return [$node, $site];
     }
 
     /**
-     * The site node of the default site in the live workspace and the site's default dimension space point, which
-     * the frontend renders for the home page
+     * The site node of the content repository's default site, which the frontend renders for the home page
      *
      * @return array{Node, Node}|NotFound the site node twice, as the node and its site node
      */
-    private function defaultSiteNode(RenderingMode $renderingMode): array|NotFound
+    private function defaultSiteNode(ContentSubgraphInterface $subgraph): array|NotFound
     {
-        $site = $this->siteRepository->findDefault();
+        $site = $this->siteFinder->findDefault($subgraph->getContentRepositoryId());
         if ($site === null) {
-            return NotFound::because('There is no site to render the view for, give a nodeAddress');
+            return NotFound::because(sprintf('There is no site in the content repository %s to render the view for, give an aggregateId', $subgraph->getContentRepositoryId()->value));
         }
-        $siteNode = $this->contentSubgraphs->findSiteNode($site, self::excludeDisabled(WorkspaceName::forLive(), $renderingMode));
+        $siteNode = $this->contentSubgraphs->findSiteNodeIn($subgraph, $site);
         if ($siteNode === null) {
             return NotFound::because(sprintf(
-                'The default site %s has no site node in the live workspace and its default dimension space point %s, configure Neos.Neos.sites.*.contentDimensions.defaultDimensionSpacePoint or give a nodeAddress',
+                'The default site %s has no site node in the workspace %s and the dimension space point %s',
                 $site->getNodeName()->value,
-                $site->getConfiguration()->defaultDimensionSpacePoint->toJson(),
+                $subgraph->getWorkspaceName()->value,
+                $subgraph->getDimensionSpacePoint()->toJson(),
             ));
         }
         return [$siteNode, $siteNode];
@@ -192,7 +202,7 @@ final readonly class Views
      * As the frontend (frontend rendering mode in live: never with disabled nodes), otherwise as the preview of the
      * Neos backend
      */
-    private static function excludeDisabled(WorkspaceName $workspaceName, RenderingMode $renderingMode): bool
+    private static function excludeDisabled(SharedModel\Workspace\WorkspaceName $workspaceName, RenderingMode $renderingMode): bool
     {
         return $workspaceName->isLive() && $renderingMode->name === RenderingMode::FRONTEND;
     }

@@ -25,7 +25,7 @@ class ContentRepositoriesTest extends EndpointTestCase
     public function listsTheContentRepositoriesForEditors(): void
     {
         $this->requireContentRepository();
-        $response = $this->get('/api/contentrepositories', $this->token('editor-machine', 'contentrepositories.read'));
+        $response = $this->get('/api/cr', $this->token('editor-machine', 'contentrepositories.read'));
 
         self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
         $contentRepositories = self::json($response)['data'];
@@ -40,12 +40,12 @@ class ContentRepositoriesTest extends EndpointTestCase
     public function getsAContentRepository(): void
     {
         $this->requireContentRepository();
-        $response = $this->get('/api/contentrepositories/default', $this->token('editor-machine', 'contentrepositories.read'));
+        $response = $this->get('/api/cr/default', $this->token('editor-machine', 'contentrepositories.read'));
 
         self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
         self::assertSame('default', self::json($response)['id']);
 
-        $response = $this->get('/api/contentrepositories/default', $this->token('editor-machine', 'contentrepositories.read'), ['Accept-Language' => 'de']);
+        $response = $this->get('/api/cr/default', $this->token('editor-machine', 'contentrepositories.read'), ['Accept-Language' => 'de']);
         self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
         self::assertSame('de', $response->getHeaderLine('Content-Language'));
         self::assertSame(['Authorization', 'Accept-Language'], $response->getHeader('Vary'));
@@ -54,24 +54,24 @@ class ContentRepositoriesTest extends EndpointTestCase
     #[Test]
     public function unknownContentRepositoriesAreNotFound(): void
     {
-        $response = $this->get('/api/contentrepositories/unknown', $this->token('editor-machine', 'contentrepositories.read'));
+        $response = $this->get('/api/cr/unknown', $this->token('editor-machine', 'contentrepositories.read'));
 
         self::assertSame(404, $response->getStatusCode(), (string)$response->getBody());
         self::assertSame('application/problem+json', $response->getHeaderLine('Content-Type'));
         // with the header, which is an optional parameter
-        self::assertSame(404, $this->get('/api/contentrepositories/unknown', $this->token('editor-machine', 'contentrepositories.read'), ['Accept-Language' => 'de'])->getStatusCode());
+        self::assertSame(404, $this->get('/api/cr/unknown', $this->token('editor-machine', 'contentrepositories.read'), ['Accept-Language' => 'de'])->getStatusCode());
     }
 
     #[Test]
     public function rejectsInvalidIds(): void
     {
-        self::assertSame(400, $this->get('/api/contentrepositories/Not-An-Id', $this->token('editor-machine', 'contentrepositories.read'))->getStatusCode());
+        self::assertSame(400, $this->get('/api/cr/Not-An-Id', $this->token('editor-machine', 'contentrepositories.read'))->getStatusCode());
     }
 
     #[Test]
     public function isDeniedToAccountsWithoutThePrivilege(): void
     {
-        $response = $this->get('/api/contentrepositories', $this->token('nobody-machine', 'contentrepositories.read'));
+        $response = $this->get('/api/cr', $this->token('nobody-machine', 'contentrepositories.read'));
 
         self::assertSame(403, $response->getStatusCode(), (string)$response->getBody());
         self::assertStringContainsString('Neos.Api:ContentRepositories.Read', self::json($response)['detail']);
@@ -80,7 +80,7 @@ class ContentRepositoriesTest extends EndpointTestCase
     #[Test]
     public function requiresTheScope(): void
     {
-        $response = $this->get('/api/contentrepositories', $this->token('editor-machine', 'me.read'));
+        $response = $this->get('/api/cr', $this->token('editor-machine', 'me.read'));
 
         self::assertSame(403, $response->getStatusCode(), (string)$response->getBody());
         self::assertStringContainsString('contentrepositories.read', self::json($response)['detail']);
@@ -89,7 +89,7 @@ class ContentRepositoriesTest extends EndpointTestCase
     #[Test]
     public function requiresAToken(): void
     {
-        self::assertSame(401, $this->get('/api/contentrepositories', null)->getStatusCode());
+        self::assertSame(401, $this->get('/api/cr', null)->getStatusCode());
     }
 
     private function requireContentRepository(): void

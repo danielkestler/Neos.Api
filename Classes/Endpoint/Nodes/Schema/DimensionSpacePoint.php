@@ -10,8 +10,7 @@ use Neos\JsonSchema\StringSchema;
 use Neos\Schematic\Schematic;
 
 /**
- * A dimension space point in the JSON form of Neos\ContentRepository\Core\DimensionSpace\DimensionSpacePoint, as in a
- * node address
+ * A dimension space point in the JSON form of Neos\ContentRepository\Core\DimensionSpace\DimensionSpacePoint
  */
 final readonly class DimensionSpacePoint implements ProvidesSchema
 {
@@ -23,6 +22,11 @@ final readonly class DimensionSpacePoint implements ProvidesSchema
     public static function fromString(string $value): self
     {
         return Schematic::instantiate(self::class, $value)->valueOrThrow();
+    }
+
+    public static function from(DimensionSpace\AbstractDimensionSpacePoint $dimensionSpacePoint): self
+    {
+        return self::fromString($dimensionSpacePoint->toJson());
     }
 
     /**
@@ -37,7 +41,7 @@ final readonly class DimensionSpacePoint implements ProvidesSchema
     {
         static $schema = null;
         return $schema ??= StringSchema::create(
-            description: 'A point in the content dimensions, as JSON with a value for each dimension: {"language":"de"}, {} without dimensions. GET /contentrepositories lists the dimensions and their values',
+            description: 'A point in the content dimensions, as JSON with a value for each dimension: {"language":"de"}, {} without dimensions. GET /cr/{contentRepositoryId} lists the dimensions and their values',
             examples: ['{"language":"de"}'],
             minLength: 2,
             pattern: '^\{.*\}$',

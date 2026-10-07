@@ -3,10 +3,11 @@ declare(strict_types=1);
 
 namespace Neos\Api\Endpoint\Nodes\Schema;
 
+use Neos\Api\Endpoint\ContentRepositories\Schema\ContentRepositoryId;
 use Neos\Api\Endpoint\NodeTypes\Schema\NodeTypeName;
+use Neos\Api\Endpoint\Workspaces\Schema\WorkspaceName;
 use Neos\Api\Infrastructure\ContentRepository\NodeSerializer;
 use Neos\ContentRepository\Core\Projection\ContentGraph;
-use Neos\ContentRepository\Core\SharedModel;
 use Neos\JsonSchema\BooleanSchema;
 use Neos\JsonSchema\Nullable;
 use Neos\JsonSchema\ObjectSchema;
@@ -31,7 +32,9 @@ final readonly class Node implements ProvidesSchema
      * @param NodeList|null $variants as $children
      */
     public function __construct(
-        public NodeAddress $nodeAddress,
+        public ContentRepositoryId $contentRepositoryId,
+        public WorkspaceName $workspaceName,
+        public DimensionSpacePoint $dimensionSpacePoint,
         public NodeAggregateId $aggregateId,
         public NodeName|null $name,
         public NodeTypeName $nodeType,
@@ -51,7 +54,9 @@ final readonly class Node implements ProvidesSchema
     public static function from(ContentGraph\Node $node, NodeSerializer $nodeSerializer, bool $includeReferences, NodeList|null $children = null, NodeList|null $variants = null): self
     {
         return new self(
-            NodeAddress::from(SharedModel\Node\NodeAddress::fromNode($node)),
+            ContentRepositoryId::fromString($node->contentRepositoryId->value),
+            WorkspaceName::fromString($node->workspaceName->value),
+            DimensionSpacePoint::from($node->dimensionSpacePoint),
             NodeAggregateId::fromString($node->aggregateId->value),
             $node->name !== null ? NodeName::fromString($node->name->value) : null,
             NodeTypeName::fromString($node->nodeTypeName->value),
@@ -74,7 +79,10 @@ final readonly class Node implements ProvidesSchema
         return $schema ??= ObjectSchema::create(
             description: 'A node in a workspace and dimension space point',
             properties: ObjectProperties::create(
-                nodeAddress: NodeAddress::schema(),
+                contentRepositoryId: ContentRepositoryId::schema(),
+                workspaceName: WorkspaceName::schema(),
+                // the point the node was read in, see isShineThrough
+                dimensionSpacePoint: DimensionSpacePoint::schema(),
                 aggregateId: NodeAggregateId::schema(),
                 name: Nullable::wrap(NodeName::schema()),
                 nodeType: NodeTypeName::schema(),
@@ -99,7 +107,7 @@ final readonly class Node implements ProvidesSchema
                 variants: Nullable::wrap(NodeList::schema()),
             ),
             additionalProperties: false,
-            required: ['nodeAddress', 'aggregateId', 'name', 'nodeType', 'label', 'classification', 'isHidden', 'isHiddenByAncestor', 'isShineThrough', 'timestamps', 'properties', 'references', 'children', 'variants'],
+            required: ['contentRepositoryId', 'workspaceName', 'dimensionSpacePoint', 'aggregateId', 'name', 'nodeType', 'label', 'classification', 'isHidden', 'isHiddenByAncestor', 'isShineThrough', 'timestamps', 'properties', 'references', 'children', 'variants'],
         );
     }
 

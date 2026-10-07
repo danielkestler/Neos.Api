@@ -24,7 +24,7 @@ class WorkspacesTest extends EndpointTestCase
     public function workspacesOfUnknownContentRepositoriesAreNotFound(): void
     {
         // every account may list workspaces, which ones is up to its workspace roles
-        $response = $this->get('/api/contentrepositories/unknown/workspaces', $this->token('nobody-machine', 'workspaces.read'));
+        $response = $this->get('/api/cr/unknown/workspaces', $this->token('nobody-machine', 'workspaces.read'));
 
         self::assertSame(404, $response->getStatusCode(), (string)$response->getBody());
         self::assertSame('There is no content repository with the ID unknown', self::json($response)['detail']);
@@ -33,13 +33,13 @@ class WorkspacesTest extends EndpointTestCase
     #[Test]
     public function rejectsInvalidContentRepositoryIds(): void
     {
-        self::assertSame(400, $this->get('/api/contentrepositories/Not-An-Id/workspaces', $this->token('nobody-machine', 'workspaces.read'))->getStatusCode());
+        self::assertSame(400, $this->get('/api/cr/Not-An-Id/workspaces', $this->token('nobody-machine', 'workspaces.read'))->getStatusCode());
     }
 
     #[Test]
     public function documentsTheOperationUnderItsOwnTag(): void
     {
-        $operation = self::json($this->get('/api/openapi.json', null))['paths']['/contentrepositories/{contentRepositoryId}/workspaces']['get'];
+        $operation = self::json($this->get('/api/openapi.json', null))['paths']['/cr/{contentRepositoryId}/workspaces']['get'];
         self::assertSame('listWorkspaces', $operation['operationId']);
         self::assertSame(['Workspaces'], $operation['tags']);
     }
@@ -47,7 +47,7 @@ class WorkspacesTest extends EndpointTestCase
     #[Test]
     public function requiresTheScope(): void
     {
-        $response = $this->get('/api/contentrepositories/default/workspaces', $this->token('nobody-machine', 'nodes.read'));
+        $response = $this->get('/api/cr/default/workspaces', $this->token('nobody-machine', 'nodes.read'));
 
         self::assertSame(403, $response->getStatusCode(), (string)$response->getBody());
         self::assertStringContainsString('workspaces.read', self::json($response)['detail']);
@@ -56,6 +56,6 @@ class WorkspacesTest extends EndpointTestCase
     #[Test]
     public function requiresAToken(): void
     {
-        self::assertSame(401, $this->get('/api/contentrepositories/default/workspaces', null)->getStatusCode());
+        self::assertSame(401, $this->get('/api/cr/default/workspaces', null)->getStatusCode());
     }
 }
