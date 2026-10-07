@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 namespace Neos\Api\Endpoint\Nodes\Schema;
 
-use Neos\Api\Endpoint\ContentRepositories\Schema\NodeTypeName;
+use Neos\Api\Endpoint\NodeTypes\Schema\NodeTypeName;
 use Neos\Api\Infrastructure\ContentRepository\NodeSerializer;
 use Neos\ContentRepository\Core\Projection\ContentGraph;
 use Neos\ContentRepository\Core\SharedModel;

@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-namespace Neos\Api\Endpoint\ContentRepositories\Schema;
+namespace Neos\Api\Endpoint\NodeTypes\Schema;
 
 use Neos\Api\Infrastructure\I18n\Labels;
 use Neos\ContentRepository\Core;

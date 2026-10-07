@@ -25,7 +25,7 @@ class NodeTypesTest extends EndpointTestCase
     public function listsTheNodeTypesWithoutTheirConfiguration(): void
     {
         $this->requireContentRepository();
-        $response = $this->get('/api/nodetypes', $this->token('editor-machine', 'nodetypes.read'));
+        $response = $this->get('/api/contentrepositories/default/nodetypes', $this->token('editor-machine', 'nodetypes.read'));
 
         self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
         $nodeTypes = array_column(self::json($response)['data'], null, 'name');
@@ -46,7 +46,7 @@ class NodeTypesTest extends EndpointTestCase
     public function includesPropertiesReferencesAndConfigurationInTheList(): void
     {
         $this->requireContentRepository();
-        $response = $this->get('/api/nodetypes?include=properties,references,configuration', $this->token('editor-machine', 'nodetypes.read'));
+        $response = $this->get('/api/contentrepositories/default/nodetypes?include=properties,references,configuration', $this->token('editor-machine', 'nodetypes.read'));
 
         self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
         $document = array_column(self::json($response)['data'], null, 'name')['Neos.Neos:Document'];
@@ -60,7 +60,7 @@ class NodeTypesTest extends EndpointTestCase
     #[Test]
     public function rejectsUnknownIncludes(): void
     {
-        $response = $this->get('/api/nodetypes?include=properties,children', $this->token('editor-machine', 'nodetypes.read'));
+        $response = $this->get('/api/contentrepositories/default/nodetypes?include=properties,children', $this->token('editor-machine', 'nodetypes.read'));
 
         self::assertSame(400, $response->getStatusCode(), (string)$response->getBody());
         self::assertStringContainsString('children', self::json($response)['detail']);
@@ -70,7 +70,7 @@ class NodeTypesTest extends EndpointTestCase
     public function filtersBySuperType(): void
     {
         $this->requireContentRepository();
-        $response = $this->get('/api/nodetypes?filter[superType]=Neos.Neos:Document', $this->token('editor-machine', 'nodetypes.read'));
+        $response = $this->get('/api/contentrepositories/default/nodetypes?filter[superType]=Neos.Neos:Document', $this->token('editor-machine', 'nodetypes.read'));
 
         self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
         $names = array_column(self::json($response)['data'], 'name');
@@ -78,25 +78,25 @@ class NodeTypesTest extends EndpointTestCase
         self::assertContains('Neos.Neos:Shortcut', $names);
         self::assertNotContains('Neos.Neos:Content', $names);
 
-        self::assertSame(400, $this->get('/api/nodetypes?filter[superType]=Vendor.Unknown:Type', $this->token('editor-machine', 'nodetypes.read'))->getStatusCode());
+        self::assertSame(400, $this->get('/api/contentrepositories/default/nodetypes?filter[superType]=Vendor.Unknown:Type', $this->token('editor-machine', 'nodetypes.read'))->getStatusCode());
     }
 
     #[Test]
     public function documentsTheFilterAsDeepObject(): void
     {
-        $parameters = array_column(self::json($this->get('/api/openapi.json', null))['paths']['/nodetypes']['get']['parameters'], null, 'name');
+        $parameters = array_column(self::json($this->get('/api/openapi.json', null))['paths']['/contentrepositories/{contentRepositoryId}/nodetypes']['get']['parameters'], null, 'name');
         self::assertSame('deepObject', $parameters['filter']['style'] ?? null);
         self::assertArrayNotHasKey('superType', $parameters);
 
         // unknown filter members, its schema rejects them before any content repository is asked
-        self::assertSame(400, $this->get('/api/nodetypes?filter[nodeType]=Neos.Neos:Document', $this->token('editor-machine', 'nodetypes.read'))->getStatusCode());
+        self::assertSame(400, $this->get('/api/contentrepositories/default/nodetypes?filter[nodeType]=Neos.Neos:Document', $this->token('editor-machine', 'nodetypes.read'))->getStatusCode());
     }
 
     #[Test]
     public function getsANodeTypeWithEverything(): void
     {
         $this->requireContentRepository();
-        $response = $this->get('/api/nodetypes/Neos.Neos:Document', $this->token('editor-machine', 'nodetypes.read'), ['Accept-Language' => 'de']);
+        $response = $this->get('/api/contentrepositories/default/nodetypes/Neos.Neos:Document', $this->token('editor-machine', 'nodetypes.read'), ['Accept-Language' => 'de']);
 
         self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
         $nodeType = self::json($response);
@@ -112,7 +112,7 @@ class NodeTypesTest extends EndpointTestCase
     public function unknownNodeTypesAreNotFound(): void
     {
         $this->requireContentRepository();
-        $response = $this->get('/api/nodetypes/Vendor.Unknown:Type', $this->token('editor-machine', 'nodetypes.read'));
+        $response = $this->get('/api/contentrepositories/default/nodetypes/Vendor.Unknown:Type', $this->token('editor-machine', 'nodetypes.read'));
 
         self::assertSame(404, $response->getStatusCode(), (string)$response->getBody());
         self::assertSame('application/problem+json', $response->getHeaderLine('Content-Type'));
@@ -121,21 +121,21 @@ class NodeTypesTest extends EndpointTestCase
     #[Test]
     public function unknownContentRepositoriesAreNotFound(): void
     {
-        self::assertSame(404, $this->get('/api/nodetypes?contentRepositoryId=unknown', $this->token('editor-machine', 'nodetypes.read'))->getStatusCode());
-        self::assertSame(404, $this->get('/api/nodetypes/Neos.Neos:Document?contentRepositoryId=unknown', $this->token('editor-machine', 'nodetypes.read'))->getStatusCode());
+        self::assertSame(404, $this->get('/api/contentrepositories/unknown/nodetypes', $this->token('editor-machine', 'nodetypes.read'))->getStatusCode());
+        self::assertSame(404, $this->get('/api/contentrepositories/unknown/nodetypes/Neos.Neos:Document', $this->token('editor-machine', 'nodetypes.read'))->getStatusCode());
     }
 
     #[Test]
     public function rejectsInvalidNames(): void
     {
-        self::assertSame(400, $this->get('/api/nodetypes/NoColon', $this->token('editor-machine', 'nodetypes.read'))->getStatusCode());
-        self::assertSame(400, $this->get('/api/nodetypes?contentRepositoryId=Not-An-Id', $this->token('editor-machine', 'nodetypes.read'))->getStatusCode());
+        self::assertSame(400, $this->get('/api/contentrepositories/default/nodetypes/NoColon', $this->token('editor-machine', 'nodetypes.read'))->getStatusCode());
+        self::assertSame(400, $this->get('/api/contentrepositories/Not-An-Id/nodetypes', $this->token('editor-machine', 'nodetypes.read'))->getStatusCode());
     }
 
     #[Test]
     public function isDeniedToAccountsWithoutThePrivilege(): void
     {
-        $response = $this->get('/api/nodetypes', $this->token('nobody-machine', 'nodetypes.read'));
+        $response = $this->get('/api/contentrepositories/default/nodetypes', $this->token('nobody-machine', 'nodetypes.read'));
 
         self::assertSame(403, $response->getStatusCode(), (string)$response->getBody());
         self::assertStringContainsString('Neos.Api:NodeTypes.Read', self::json($response)['detail']);
@@ -144,7 +144,7 @@ class NodeTypesTest extends EndpointTestCase
     #[Test]
     public function requiresTheScope(): void
     {
-        $response = $this->get('/api/nodetypes', $this->token('editor-machine', 'me.read'));
+        $response = $this->get('/api/contentrepositories/default/nodetypes', $this->token('editor-machine', 'me.read'));
 
         self::assertSame(403, $response->getStatusCode(), (string)$response->getBody());
         self::assertStringContainsString('nodetypes.read', self::json($response)['detail']);
@@ -153,7 +153,7 @@ class NodeTypesTest extends EndpointTestCase
     #[Test]
     public function requiresAToken(): void
     {
-        self::assertSame(401, $this->get('/api/nodetypes', null)->getStatusCode());
+        self::assertSame(401, $this->get('/api/contentrepositories/default/nodetypes', null)->getStatusCode());
     }
 
     private function requireContentRepository(): void
