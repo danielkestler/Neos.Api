@@ -422,6 +422,42 @@ class NodesTest extends EndpointTestCase
         self::assertSame(401, $this->put($path, null, $body)->getStatusCode());
     }
 
+    #[Test]
+    public function movesNodesOnlyInAGivenWorkspace(): void
+    {
+        $token = $this->token('editor-machine', 'nodes.update');
+        $path = self::movePath('some-node', ['workspaceName' => 'user-editor']);
+
+        foreach ([['parentNodeAggregateId' => 'other-node'], ['succeedingSiblingNodeAggregateId' => 'other-node'], ['parentNodeAggregateId' => 'other-node', 'succeedingSiblingNodeAggregateId' => 'third-node']] as $body) {
+            $response = $this->post($path, $token, $body);
+            self::assertSame(404, $response->getStatusCode(), json_encode($body) . ': ' . $response->getBody());
+            self::assertSame('There is no content repository with the ID unknown', self::json($response)['detail']);
+        }
+
+        // no default workspace for changes
+        self::assertSame(400, $this->post(self::movePath('some-node', []), $token, ['parentNodeAggregateId' => 'other-node'])->getStatusCode());
+
+        $response = $this->post($path, $token, ['nodeName' => 'x']);
+        self::assertSame(400, $response->getStatusCode(), (string)$response->getBody());
+        $response = $this->post($path, $token, ['parentNodeAggregateId' => null]);
+        self::assertSame(400, $response->getStatusCode(), (string)$response->getBody());
+        self::assertSame('Give parentNodeAggregateId or succeedingSiblingNodeAggregateId, or both', self::json($response)['detail']);
+        self::assertSame(400, $this->post($path, $token, ['parentNodeAggregateId' => 'Not_An_Id'])->getStatusCode());
+    }
+
+    #[Test]
+    public function movingRequiresTheScopeAndThePrivilege(): void
+    {
+        $path = self::movePath('some-node', ['workspaceName' => 'user-editor']);
+        $body = ['parentNodeAggregateId' => 'other-node'];
+
+        $response = $this->post($path, $this->token('editor-machine', 'nodes.read'), $body);
+        self::assertSame(403, $response->getStatusCode(), (string)$response->getBody());
+        self::assertStringContainsString('nodes.update', self::json($response)['detail']);
+        self::assertSame(403, $this->post($path, $this->token('nobody-machine', 'nodes.update'), $body)->getStatusCode());
+        self::assertSame(401, $this->post($path, null, $body)->getStatusCode());
+    }
+
     /**
      * @param array<string, mixed> $query
      */
@@ -468,6 +504,14 @@ class NodesTest extends EndpointTestCase
     private static function nodeTypePath(string $nodeAggregateId, array $query): string
     {
         return '/api/cr/unknown/nodes/' . rawurlencode($nodeAggregateId) . '/nodetype' . self::query($query);
+    }
+
+    /**
+     * @param array<string, mixed> $query
+     */
+    private static function movePath(string $nodeAggregateId, array $query): string
+    {
+        return '/api/cr/unknown/nodes/' . rawurlencode($nodeAggregateId) . '/move' . self::query($query);
     }
 
     /**

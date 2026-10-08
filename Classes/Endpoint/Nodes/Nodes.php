@@ -10,6 +10,7 @@ use Neos\Api\Endpoint\Nodes\Parameter\PropertyCriteria;
 use Neos\Api\Endpoint\Nodes\Parameter\ReferenceFilter;
 use Neos\Api\Endpoint\Nodes\Parameter\SearchTerm;
 use Neos\Api\Endpoint\Nodes\RequestBody\NodeCreate;
+use Neos\Api\Endpoint\Nodes\RequestBody\NodeMove;
 use Neos\Api\Endpoint\Nodes\RequestBody\NodePropertiesUpdate;
 use Neos\Api\Endpoint\Nodes\RequestBody\NodeTag;
 use Neos\Api\Endpoint\Nodes\RequestBody\NodeTypeChange;
@@ -46,6 +47,8 @@ use Neos\Api\Shared\Schema\ListingMeta;
 use Neos\ContentRepository\Core\DimensionSpace\OriginDimensionSpacePoint;
 use Neos\ContentRepository\Core\Feature\NodeCreation\Command\CreateNodeAggregateWithNode;
 use Neos\ContentRepository\Core\Feature\NodeModification\Command\SetNodeProperties;
+use Neos\ContentRepository\Core\Feature\NodeMove\Command\MoveNodeAggregate;
+use Neos\ContentRepository\Core\Feature\NodeMove\Dto\RelationDistributionStrategy;
 use Neos\ContentRepository\Core\Feature\NodeTypeChange\Command\ChangeNodeAggregateType;
 use Neos\ContentRepository\Core\Feature\NodeTypeChange\Dto\NodeAggregateTypeChangeChildConstraintConflictResolutionMarkWithTagStrategy;
 use Neos\ContentRepository\Core\Feature\Security\Exception\AccessDenied;
@@ -63,10 +66,15 @@ use Neos\ContentRepository\Core\SharedModel;
 use Neos\ContentRepository\Core\SharedModel\Exception\DimensionSpacePointIsNotYetOccupied;
 use Neos\ContentRepository\Core\SharedModel\Exception\NodeAggregateCurrentlyExists;
 use Neos\ContentRepository\Core\SharedModel\Exception\NodeAggregateDoesCurrentlyNotCoverDimensionSpacePoint;
+use Neos\ContentRepository\Core\SharedModel\Exception\NodeAggregateDoesCurrentlyNotCoverDimensionSpacePointSet;
+use Neos\ContentRepository\Core\SharedModel\Exception\NodeAggregateIsDescendant;
+use Neos\ContentRepository\Core\SharedModel\Exception\NodeAggregateIsNoChild;
+use Neos\ContentRepository\Core\SharedModel\Exception\NodeAggregateIsNoSibling;
 use Neos\ContentRepository\Core\SharedModel\Exception\NodeAggregateIsRoot;
 use Neos\ContentRepository\Core\SharedModel\Exception\NodeAggregateIsTethered;
 use Neos\ContentRepository\Core\SharedModel\Exception\NodeAggregateIsUntethered;
 use Neos\ContentRepository\Core\SharedModel\Exception\NodeConstraintException;
+use Neos\ContentRepository\Core\SharedModel\Exception\NodeNameIsAlreadyCovered;
 use Neos\ContentRepository\Core\SharedModel\Exception\NodeTypeIsAbstract;
 use Neos\ContentRepository\Core\SharedModel\Exception\NodeTypeIsOfTypeRoot;
 use Neos\ContentRepository\Core\SharedModel\Exception\PropertyCannotBeSet;
@@ -576,6 +584,103 @@ final readonly class Nodes
             }
         }
         return $this->reread($node);
+    }
+
+    #[Operation(
+        path: '/cr/{contentRepositoryId}/nodes/{nodeAggregateId}/move',
+        method: 'POST',
+        summary: 'Move a node',
+        description: 'Moves the node with everything below it in the workspace (MoveNodeAggregate), as the Neos backend does: below parentNodeAggregateId as its last child, or before succeedingSiblingNodeAggregateId (below its parent, or below parentNodeAggregateId if given, of which it must be a child). In other dimension space points the node type\'s options.moveNodeStrategy decides: gatherAll (Neos\' default for documents, and if there is none) moves all of its variants, scatter (for content) only the one in this very point, not even in the points that fall back to it (e.g. en_UK showing en_US), gatherSpecializations the ones in this point and its specializations. Neither parent nor sibling is a 400, an unknown one a 404. A root or tethered node, a parent that doesn\'t allow the node, one inside the node itself, or a sibling that isn\'t a child of the parent are a 422, a parent that isn\'t in all the points to move in or has a child of the same name a 409. Whether the account may move the node is up to its workspace roles and node privileges (else a 403), as in the Neos backend. The response is the node as getNode returns it without include.',
+        operationId: 'moveNode',
+        security: [
+            ApiAuthContextProvider::SCOPES => [ApiScopes::NODES_UPDATE],
+        ],
+    )]
+    public function move(
+        ContentRepositoryId $contentRepositoryId,
+        NodeAggregateId $nodeAggregateId,
+        #[Parameter(in: 'query', description: 'The workspace to move the node in, required: changing live directly is rarely what is meant')]
+        WorkspaceName $workspaceName,
+        #[RequestBody(description: 'Where to move the node')] NodeMove $target,
+        #[Parameter(in: 'query', description: 'The dimension space point to move the node in, the others as its moveNodeStrategy says, as JSON. If omitted, as for getNode')]
+        DimensionSpacePoint|null $dimensionSpacePoint = null,
+    ): Node|NotFound|BadRequest|Forbidden|Conflict|UnprocessableContent {
+        if ($target->parentNodeAggregateId === null && $target->succeedingSiblingNodeAggregateId === null) {
+            return BadRequest::because('Give parentNodeAggregateId or succeedingSiblingNodeAggregateId, or both');
+        }
+        $node = $this->nodeIn($contentRepositoryId, $nodeAggregateId, $workspaceName, $dimensionSpacePoint);
+        if (!$node instanceof ContentGraph\Node) {
+            return $node;
+        }
+        if ($target->succeedingSiblingNodeAggregateId?->value === $node->aggregateId->value) {
+            return UnprocessableContent::because('A node can\'t be moved before itself');
+        }
+        $subgraph = $this->contentRepositoryRegistry->subgraphForNode($node);
+        $sibling = $target->succeedingSiblingNodeAggregateId !== null ? $this->findNode($subgraph, $target->succeedingSiblingNodeAggregateId) : null;
+        if ($sibling instanceof NotFound) {
+            return $sibling;
+        }
+        $parent = $target->parentNodeAggregateId !== null ? $this->findNode($subgraph, $target->parentNodeAggregateId) : $subgraph->findParentNode($sibling->aggregateId);
+        if ($parent instanceof NotFound) {
+            return $parent;
+        }
+        if ($parent === null) {
+            return UnprocessableContent::because(sprintf('The node %s is a root node, nodes can\'t be moved before it', $sibling->aggregateId->value));
+        }
+        $contentRepository = $this->contentRepositoryRegistry->get($node->contentRepositoryId);
+        $strategy = $this->moveNodeStrategy($contentRepository->getNodeTypeManager()->getNodeType($node->nodeTypeName));
+        try {
+            // as Neos UI: the parent only if it changes, and the other neighbour, which the content repository uses in points the sibling isn't in
+            $contentRepository->handle(MoveNodeAggregate::create(
+                $node->workspaceName,
+                $node->dimensionSpacePoint,
+                $node->aggregateId,
+                $strategy,
+                $subgraph->findParentNode($node->aggregateId)?->aggregateId->equals($parent->aggregateId) === true ? null : $parent->aggregateId,
+                $this->precedingSibling($subgraph, $parent, $node, $sibling),
+                $sibling?->aggregateId,
+            ));
+        } catch (AccessDenied) {
+            return Forbidden::because(sprintf('You may not move the node %s in the workspace %s', $node->aggregateId->value, $node->workspaceName->value));
+        } catch (NodeAggregateDoesCurrentlyNotCoverDimensionSpacePointSet | NodeNameIsAlreadyCovered $exception) {
+            return Conflict::because($exception->getMessage());
+        } catch (NodeAggregateIsRoot | NodeAggregateIsTethered | NodeConstraintException | NodeAggregateIsDescendant | NodeAggregateIsNoChild | NodeAggregateIsNoSibling $exception) {
+            return UnprocessableContent::because($exception->getMessage());
+        }
+        return $this->reread($node);
+    }
+
+    /**
+     * How the node's other variants move along, as Neos UI: the node type's options.moveNodeStrategy, which Neos UI's
+     * node types configure (gatherAll for documents, scatter for content), gatherAll without one, the safe choice
+     */
+    private function moveNodeStrategy(?NodeType\NodeType $nodeType): RelationDistributionStrategy
+    {
+        $configured = $nodeType?->getConfiguration('options.moveNodeStrategy');
+        if ($configured === null) {
+            return RelationDistributionStrategy::STRATEGY_GATHER_ALL;
+        }
+        return is_string($configured) && ($strategy = RelationDistributionStrategy::tryFrom($configured)) !== null
+            ? $strategy
+            : throw new \RuntimeException(sprintf('The node type %s has an invalid options.moveNodeStrategy %s', $nodeType?->name->value, json_encode($configured)), 1791462318);
+    }
+
+    /**
+     * The child of the parent before the sibling, or its last child without one, leaving out the node itself: where the
+     * node goes in points the sibling isn't in. Null if there is none, also if the sibling isn't a child of the parent
+     */
+    private function precedingSibling(ContentSubgraphInterface $subgraph, ContentGraph\Node $parent, ContentGraph\Node $node, ?ContentGraph\Node $sibling): ?SharedModel\Node\NodeAggregateId
+    {
+        $preceding = null;
+        foreach ($subgraph->findChildNodes($parent->aggregateId, FindChildNodesFilter::create()) as $child) {
+            if ($sibling !== null && $child->aggregateId->equals($sibling->aggregateId)) {
+                return $preceding;
+            }
+            if (!$child->aggregateId->equals($node->aggregateId)) {
+                $preceding = $child->aggregateId;
+            }
+        }
+        return $sibling === null ? $preceding : null;
     }
 
     /**
