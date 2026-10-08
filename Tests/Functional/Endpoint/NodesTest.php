@@ -287,6 +287,44 @@ class NodesTest extends EndpointTestCase
         self::assertSame(401, $this->post($path, null, $body)->getStatusCode());
     }
 
+    #[Test]
+    public function deletesNodesOnlyInAGivenWorkspace(): void
+    {
+        $token = $this->token('editor-machine', 'nodes.delete');
+
+        foreach ([['workspaceName' => 'user-editor'], ['workspaceName' => 'user-editor', 'dimensionSpacePoint' => '{"language":"de"}']] as $query) {
+            $response = $this->delete(self::nodePath('some-node', $query), $token);
+            self::assertSame(404, $response->getStatusCode(), (string)$response->getBody());
+            self::assertSame('There is no content repository with the ID unknown', self::json($response)['detail']);
+        }
+
+        // no default workspace for changes
+        $response = $this->delete(self::nodePath('some-node'), $token);
+        self::assertSame(400, $response->getStatusCode(), (string)$response->getBody());
+        self::assertStringContainsString('workspaceName', (string)$response->getBody());
+        self::assertSame(400, $this->delete(self::nodePath('Not_An_Id', ['workspaceName' => 'user-editor']), $token)->getStatusCode());
+
+        $delete = self::json($this->get('/api/openapi.json', null))['paths']['/cr/{contentRepositoryId}/nodes/{nodeAggregateId}']['delete'];
+        self::assertSame('deleteNode', $delete['operationId']);
+        self::assertArrayHasKey('204', $delete['responses']);
+    }
+
+    #[Test]
+    public function deletingRequiresTheScopeAndThePrivilege(): void
+    {
+        $path = self::nodePath('some-node', ['workspaceName' => 'user-editor']);
+
+        // changing isn't enough
+        $response = $this->delete($path, $this->token('editor-machine', 'nodes.update'));
+        self::assertSame(403, $response->getStatusCode(), (string)$response->getBody());
+        self::assertStringContainsString('nodes.delete', self::json($response)['detail']);
+
+        // only editors may delete nodes
+        self::assertSame(403, $this->delete($path, $this->token('nobody-machine', 'nodes.delete'))->getStatusCode());
+
+        self::assertSame(401, $this->delete($path, null)->getStatusCode());
+    }
+
     /**
      * @param array<string, mixed> $query
      */

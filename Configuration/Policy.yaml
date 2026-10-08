@@ -52,6 +52,9 @@ privilegeTargets:
     "Neos.Api:Nodes.Create":
       label: "Create nodes where you can edit"
       matcher: "nodes.create"
+    "Neos.Api:Nodes.Delete":
+      label: "Delete the nodes you can edit"
+      matcher: "nodes.delete"
     "Neos.Api:Workspaces.Read":
       label: "List the workspaces you can read and the changes in them"
       matcher: "workspaces.read"
@@ -86,6 +89,8 @@ roles:
       - privilegeTarget: "Neos.Api:Nodes.Update"
         permission: GRANT
       - privilegeTarget: "Neos.Api:Nodes.Create"
+        permission: GRANT
+      - privilegeTarget: "Neos.Api:Nodes.Delete"
         permission: GRANT
       - privilegeTarget: "Neos.Api:DataSources.Read"
         permission: GRANT

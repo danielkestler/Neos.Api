@@ -41,6 +41,7 @@ use Neos\ContentRepository\Core\DimensionSpace\OriginDimensionSpacePoint;
 use Neos\ContentRepository\Core\Feature\NodeCreation\Command\CreateNodeAggregateWithNode;
 use Neos\ContentRepository\Core\Feature\NodeModification\Command\SetNodeProperties;
 use Neos\ContentRepository\Core\Feature\Security\Exception\AccessDenied;
+use Neos\ContentRepository\Core\Feature\SubtreeTagging\Command\TagSubtree;
 use Neos\ContentRepository\Core\NodeType;
 use Neos\ContentRepository\Core\Projection\ContentGraph;
 use Neos\ContentRepository\Core\Projection\ContentGraph\ContentSubgraphInterface;
@@ -49,11 +50,15 @@ use Neos\ContentRepository\Core\SharedModel;
 use Neos\ContentRepository\Core\SharedModel\Exception\DimensionSpacePointIsNotYetOccupied;
 use Neos\ContentRepository\Core\SharedModel\Exception\NodeAggregateCurrentlyExists;
 use Neos\ContentRepository\Core\SharedModel\Exception\NodeAggregateDoesCurrentlyNotCoverDimensionSpacePoint;
+use Neos\ContentRepository\Core\SharedModel\Exception\NodeAggregateIsRoot;
+use Neos\ContentRepository\Core\SharedModel\Exception\NodeAggregateIsTethered;
 use Neos\ContentRepository\Core\SharedModel\Exception\NodeConstraintException;
 use Neos\ContentRepository\Core\SharedModel\Exception\NodeTypeIsAbstract;
 use Neos\ContentRepository\Core\SharedModel\Exception\NodeTypeIsOfTypeRoot;
 use Neos\ContentRepository\Core\SharedModel\Exception\PropertyCannotBeSet;
+use Neos\ContentRepository\Core\SharedModel\Node\NodeVariantSelectionStrategy;
 use Neos\ContentRepositoryRegistry\ContentRepositoryRegistry;
+use Neos\Neos\Domain\SubtreeTagging\NeosSubtreeTag;
 use Neos\OpenApi\Attributes\Operation;
 use Neos\OpenApi\Attributes\Parameter;
 use Neos\OpenApi\Attributes\RequestBody;
@@ -313,6 +318,51 @@ final readonly class Nodes
         // the node is read-only, read it again
         $changed = $this->findNode($this->contentRepositoryRegistry->subgraphForNode($node), $nodeAggregateId);
         return $changed instanceof ContentGraph\Node ? $this->node($changed, IncludePaths::none()) : $changed;
+    }
+
+    #[Operation(
+        path: '/cr/{contentRepositoryId}/nodes/{nodeAggregateId}',
+        method: 'DELETE',
+        summary: 'Delete a node',
+        description: 'Removes the node with everything below it in the workspace and dimension space point and the points that fall back to it (e.g. en_UK showing en_US), not in the others, as the Neos backend does: it is soft removed (tagged removed), and becomes a hard removal once it is published and no other workspace has changes to it, after a grace period (Neos.Neos.softRemoval.garbageCollectionGracePeriod). Removed nodes are read nowhere, a removed node is a 404 as an unknown one. A node shown with the content of another point is removed in this one only, it doesn\'t show the other\'s content again. Tethered nodes (e.g. a page\'s main collection) can only be removed with their parent, they and root nodes are a 422. Whether the account may remove the node is up to its workspace roles and node privileges (else a 403), as in the Neos backend.',
+        operationId: 'deleteNode',
+        security: [
+            ApiAuthContextProvider::SCOPES => [ApiScopes::NODES_DELETE],
+        ],
+    )]
+    public function delete(
+        ContentRepositoryId $contentRepositoryId,
+        NodeAggregateId $nodeAggregateId,
+        #[Parameter(in: 'query', description: 'The workspace to delete the node in, required: changing live directly is rarely what is meant')]
+        WorkspaceName $workspaceName,
+        #[Parameter(in: 'query', description: 'The dimension space point to delete the node in (and the points that fall back to it), as JSON. If omitted, as for getNode')]
+        DimensionSpacePoint|null $dimensionSpacePoint = null,
+    ): NotFound|BadRequest|Forbidden|UnprocessableContent|null {
+        $subgraph = $this->subgraph($contentRepositoryId, $workspaceName, $dimensionSpacePoint);
+        if (!$subgraph instanceof ContentSubgraphInterface) {
+            return $subgraph;
+        }
+        $node = $this->findNode($subgraph, $nodeAggregateId);
+        if (!$node instanceof ContentGraph\Node) {
+            return $node;
+        }
+        try {
+            // Neos soft removes, never RemoveNodeAggregate in a workspace, see NeosSubtreeTag::removed()
+            $this->contentRepositoryRegistry->get($node->contentRepositoryId)->handle(TagSubtree::create(
+                $node->workspaceName,
+                $node->aggregateId,
+                $node->dimensionSpacePoint,
+                NodeVariantSelectionStrategy::STRATEGY_ALL_SPECIALIZATIONS,
+                NeosSubtreeTag::removed(),
+            ));
+        } catch (AccessDenied) {
+            return Forbidden::because(sprintf('You may not delete the node %s in the workspace %s', $node->aggregateId->value, $node->workspaceName->value));
+        } catch (NodeAggregateIsTethered) {
+            return UnprocessableContent::because(sprintf('The node %s is tethered to its parent, it can only be deleted with it', $node->aggregateId->value));
+        } catch (NodeAggregateIsRoot) {
+            return UnprocessableContent::because(sprintf('The node %s is a root node, which can\'t be deleted', $node->aggregateId->value));
+        }
+        return null;
     }
 
     /**

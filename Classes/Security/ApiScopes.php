@@ -26,6 +26,7 @@ final class ApiScopes
     public const string NODES_READ = 'nodes.read';
     public const string NODES_UPDATE = 'nodes.update';
     public const string NODES_CREATE = 'nodes.create';
+    public const string NODES_DELETE = 'nodes.delete';
     public const string WORKSPACES_READ = 'workspaces.read';
     public const string DATASOURCES_READ = 'datasources.read';
 }
