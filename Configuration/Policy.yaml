@@ -46,6 +46,9 @@ privilegeTargets:
     "Neos.Api:Nodes.Read":
       label: "Read the nodes you can read"
       matcher: "nodes.read"
+    "Neos.Api:Nodes.Update":
+      label: "Change the properties of the nodes you can edit"
+      matcher: "nodes.update"
     "Neos.Api:Workspaces.Read":
       label: "List the workspaces you can read and the changes in them"
       matcher: "workspaces.read"
@@ -76,6 +79,9 @@ roles:
   # as Neos grants Neos.Neos:Backend.DataSource
   "Neos.Neos:AbstractEditor":
     privileges:
+      # which nodes may be changed in which workspaces is up to the account's workspace roles and node privileges
+      - privilegeTarget: "Neos.Api:Nodes.Update"
+        permission: GRANT
       - privilegeTarget: "Neos.Api:DataSources.Read"
         permission: GRANT
 

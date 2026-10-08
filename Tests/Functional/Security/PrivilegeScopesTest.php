@@ -33,6 +33,7 @@ class PrivilegeScopesTest extends FunctionalTestCase
             'nodetypes.read' => 'List and read the node types and their configuration',
             'views.read' => 'Render views of the nodes you can read',
             'nodes.read' => 'Read the nodes you can read',
+            'nodes.update' => 'Change the properties of the nodes you can edit',
             'workspaces.read' => 'List the workspaces you can read and the changes in them',
             'datasources.read' => 'Get the data of the data sources, e.g. the options of select boxes',
         ], $privilegeScopes->scopes());
@@ -48,7 +49,7 @@ class PrivilegeScopesTest extends FunctionalTestCase
         self::assertSame('Change the Neos users', $scopeRegistry->describe('users.update'));
 
         $response = $this->browser->request('http://localhost/.well-known/oauth-protected-resource/api');
-        self::assertSame(['me.read', 'users.read', 'users.update', 'users.create', 'users.delete', 'sites.read', 'sites.update', 'sites.create', 'sites.delete', 'contentrepositories.read', 'nodetypes.read', 'views.read', 'nodes.read', 'workspaces.read', 'datasources.read'], json_decode((string)$response->getBody(), true, flags: JSON_THROW_ON_ERROR)['scopes_supported']);
+        self::assertSame(['me.read', 'users.read', 'users.update', 'users.create', 'users.delete', 'sites.read', 'sites.update', 'sites.create', 'sites.delete', 'contentrepositories.read', 'nodetypes.read', 'views.read', 'nodes.read', 'nodes.update', 'workspaces.read', 'datasources.read'], json_decode((string)$response->getBody(), true, flags: JSON_THROW_ON_ERROR)['scopes_supported']);
     }
 
     #[Test]

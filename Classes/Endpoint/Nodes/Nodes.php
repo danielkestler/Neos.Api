@@ -9,6 +9,7 @@ use Neos\Api\Endpoint\Nodes\Parameter\NodeTypeCriteria;
 use Neos\Api\Endpoint\Nodes\Parameter\PropertyCriteria;
 use Neos\Api\Endpoint\Nodes\Parameter\ReferenceFilter;
 use Neos\Api\Endpoint\Nodes\Parameter\SearchTerm;
+use Neos\Api\Endpoint\Nodes\RequestBody\NodePropertiesUpdate;
 use Neos\Api\Endpoint\Nodes\Schema\DimensionSpacePoint;
 use Neos\Api\Endpoint\Nodes\Schema\Node;
 use Neos\Api\Endpoint\Nodes\Schema\NodeAggregateId;
@@ -16,7 +17,9 @@ use Neos\Api\Endpoint\Nodes\Schema\NodeList;
 use Neos\Api\Endpoint\Nodes\Schema\PaginatedNodeListing;
 use Neos\Api\Endpoint\Workspaces\Schema\WorkspaceName;
 use Neos\Api\Infrastructure\ContentRepository\ContentSubgraphs;
+use Neos\Api\Infrastructure\ContentRepository\InvalidPropertyValue;
 use Neos\Api\Infrastructure\ContentRepository\NodeSerializer;
+use Neos\Api\Infrastructure\ContentRepository\PropertyValues;
 use Neos\Api\Infrastructure\ContentRepository\SiteFinder;
 use Neos\Api\Security\ApiAuthContextProvider;
 use Neos\Api\Security\ApiScopes;
@@ -25,16 +28,25 @@ use Neos\Api\Shared\Parameter\Limit;
 use Neos\Api\Shared\Parameter\Offset;
 use Neos\Api\Shared\Parameter\Sort;
 use Neos\Api\Shared\Response\BadRequest;
+use Neos\Api\Shared\Response\Conflict;
+use Neos\Api\Shared\Response\Forbidden;
 use Neos\Api\Shared\Response\NotFound;
+use Neos\Api\Shared\Response\UnprocessableContent;
 use Neos\Api\Shared\Schema\ListingLinks;
 use Neos\Api\Shared\Schema\ListingMeta;
+use Neos\ContentRepository\Core\DimensionSpace\OriginDimensionSpacePoint;
+use Neos\ContentRepository\Core\Feature\NodeModification\Command\SetNodeProperties;
+use Neos\ContentRepository\Core\Feature\Security\Exception\AccessDenied;
 use Neos\ContentRepository\Core\Projection\ContentGraph;
 use Neos\ContentRepository\Core\Projection\ContentGraph\ContentSubgraphInterface;
 use Neos\ContentRepository\Core\Projection\ContentGraph\Filter\FindChildNodesFilter;
 use Neos\ContentRepository\Core\SharedModel;
+use Neos\ContentRepository\Core\SharedModel\Exception\DimensionSpacePointIsNotYetOccupied;
+use Neos\ContentRepository\Core\SharedModel\Exception\PropertyCannotBeSet;
 use Neos\ContentRepositoryRegistry\ContentRepositoryRegistry;
 use Neos\OpenApi\Attributes\Operation;
 use Neos\OpenApi\Attributes\Parameter;
+use Neos\OpenApi\Attributes\RequestBody;
 use Psr\Http\Message\ServerRequestInterface;
 
 /**
@@ -53,6 +65,7 @@ final readonly class Nodes
         private SubgraphResolver $subgraphResolver,
         private SiteFinder $siteFinder,
         private NodeSerializer $nodeSerializer,
+        private PropertyValues $propertyValues,
     ) {
     }
 
@@ -156,6 +169,70 @@ final readonly class Nodes
         }
         $node = $this->findNode($subgraph, $nodeAggregateId);
         return $node instanceof ContentGraph\Node ? $this->node($node, $include) : $node;
+    }
+
+    #[Operation(
+        path: '/cr/{contentRepositoryId}/nodes/{nodeAggregateId}/properties',
+        method: 'PATCH',
+        summary: 'Change the properties of a node',
+        description: 'Sets the given properties of the node in the workspace and dimension space point (SetNodeProperties) and leaves the others as they are, null unsets one. The body is the properties by name, the response the node as getNode returns it without include. Properties the node type doesn\'t declare or values that don\'t fit their type are a 422. A node shown with the content of another dimension space point (isShineThrough) is a 409: create a variant in this one first. Whether the account may change the node in the workspace is up to its workspace roles and node privileges (else a 403), as in the Neos backend.',
+        operationId: 'updateNodeProperties',
+        security: [
+            ApiAuthContextProvider::SCOPES => [ApiScopes::NODES_UPDATE],
+        ],
+    )]
+    public function updateProperties(
+        ContentRepositoryId $contentRepositoryId,
+        NodeAggregateId $nodeAggregateId,
+        #[Parameter(in: 'query', description: 'The workspace to change the node in, required: changing live directly is rarely what is meant')]
+        WorkspaceName $workspaceName,
+        #[RequestBody(description: 'The properties to change by name')] NodePropertiesUpdate $properties,
+        ServerRequestInterface $request,
+        #[Parameter(in: 'query', description: 'The dimension space point to change the node in, as JSON. If omitted, as for getNode')]
+        DimensionSpacePoint|null $dimensionSpacePoint = null,
+    ): Node|NotFound|BadRequest|Forbidden|Conflict|UnprocessableContent {
+        $subgraph = $this->subgraph($contentRepositoryId, $workspaceName, $dimensionSpacePoint);
+        if (!$subgraph instanceof ContentSubgraphInterface) {
+            return $subgraph;
+        }
+        $node = $this->findNode($subgraph, $nodeAggregateId);
+        if (!$node instanceof ContentGraph\Node) {
+            return $node;
+        }
+        $contentRepository = $this->contentRepositoryRegistry->get($node->contentRepositoryId);
+        $nodeType = $contentRepository->getNodeTypeManager()->getNodeType($node->nodeTypeName);
+        if ($nodeType === null) {
+            return UnprocessableContent::because(sprintf('The node type %s of the node doesn\'t exist anymore', $node->nodeTypeName->value));
+        }
+        // NodePropertiesUpdate only validated the body, a map schematic can't build
+        /** @var array<string, mixed> $values */
+        $values = json_decode((string)$request->getBody(), true, flags: JSON_THROW_ON_ERROR);
+        try {
+            $propertyValues = $this->propertyValues->toWrite($nodeType, $values);
+        } catch (InvalidPropertyValue $exception) {
+            return UnprocessableContent::because($exception->getMessage());
+        }
+        // the content repository rejects a command without changes
+        if ($values !== []) {
+            try {
+                // in the requested point, not the node's origin: the content repository decides whether it may be changed there
+                $contentRepository->handle(SetNodeProperties::create($node->workspaceName, $node->aggregateId, OriginDimensionSpacePoint::fromDimensionSpacePoint($node->dimensionSpacePoint), $propertyValues));
+            } catch (AccessDenied) {
+                return Forbidden::because(sprintf('You may not change the node %s in the workspace %s', $node->aggregateId->value, $node->workspaceName->value));
+            } catch (DimensionSpacePointIsNotYetOccupied) {
+                return Conflict::because(sprintf(
+                    'The node is shown in the dimension space point %s with the content of %s, create a variant in %1$s first',
+                    $node->dimensionSpacePoint->toJson(),
+                    $node->originDimensionSpacePoint->toJson(),
+                ));
+            } catch (PropertyCannotBeSet $exception) {
+                // PropertyValues checks the same, in case they disagree
+                return UnprocessableContent::because($exception->getMessage());
+            }
+        }
+        // the node is read-only, read it again
+        $changed = $this->findNode($this->contentRepositoryRegistry->subgraphForNode($node), $nodeAggregateId);
+        return $changed instanceof ContentGraph\Node ? $this->node($changed, IncludePaths::none()) : $changed;
     }
 
     /**

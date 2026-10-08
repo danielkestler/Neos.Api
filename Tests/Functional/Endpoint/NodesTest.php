@@ -15,8 +15,11 @@ class NodesTest extends EndpointTestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->objectManager->get(UserService::class)->createUser('nobody', 'password', 'Nora', 'Nobody', []);
+        $userService = $this->objectManager->get(UserService::class);
+        $userService->createUser('nobody', 'password', 'Nora', 'Nobody', []);
+        $userService->createUser('editor', 'password', 'Edith', 'Editor', ['Neos.Neos:Editor']);
         $this->addMachineClient('nobody-machine', 'nobody');
+        $this->addMachineClient('editor-machine', 'editor');
         $this->persistenceManager->persistAll();
     }
 
@@ -171,6 +174,58 @@ class NodesTest extends EndpointTestCase
         self::assertSame(401, $this->get(self::listPath([]), null)->getStatusCode());
     }
 
+    #[Test]
+    public function updatesPropertiesOnlyInAGivenWorkspace(): void
+    {
+        $token = $this->token('editor-machine', 'nodes.update');
+        $body = ['title' => 'Home', 'teaser' => null];
+
+        $response = $this->patch(self::propertiesPath('some-node', ['workspaceName' => 'user-editor']), $token, $body);
+        self::assertSame(404, $response->getStatusCode(), (string)$response->getBody());
+        self::assertSame('There is no content repository with the ID unknown', self::json($response)['detail']);
+        self::assertSame(404, $this->patch(self::propertiesPath('some-node', ['workspaceName' => 'user-editor', 'dimensionSpacePoint' => '{"language":"de"}']), $token, $body)->getStatusCode());
+
+        // no default workspace for changes
+        $response = $this->patch(self::propertiesPath('some-node'), $token, $body);
+        self::assertSame(400, $response->getStatusCode(), (string)$response->getBody());
+        self::assertStringContainsString('workspaceName', (string)$response->getBody());
+
+        $parameters = array_column(self::json($this->get('/api/openapi.json', null))['paths']['/cr/{contentRepositoryId}/nodes/{nodeAggregateId}/properties']['patch']['parameters'], null, 'name');
+        self::assertTrue($parameters['workspaceName']['required']);
+        self::assertFalse($parameters['dimensionSpacePoint']['required'] ?? false);
+    }
+
+    #[Test]
+    public function rejectsInvalidPropertyUpdates(): void
+    {
+        $token = $this->token('editor-machine', 'nodes.update');
+        $path = self::propertiesPath('some-node', ['workspaceName' => 'user-editor']);
+
+        // the body's schema rejects anything but a map, e.g. a list
+        self::assertSame(400, $this->patch($path, $token, ['title', 'Home'])->getStatusCode());
+
+        $response = $this->patch(self::propertiesPath('some-node', ['workspaceName' => 'user-editor', 'dimensionSpacePoint' => '{not json}']), $token, ['title' => 'Home']);
+        self::assertSame(400, $response->getStatusCode(), (string)$response->getBody());
+        self::assertStringStartsWith('dimensionSpacePoint is invalid', self::json($response)['detail']);
+    }
+
+    #[Test]
+    public function updatingPropertiesRequiresTheScopeAndThePrivilege(): void
+    {
+        $path = self::propertiesPath('some-node', ['workspaceName' => 'user-editor']);
+        $body = ['title' => 'Home'];
+
+        // reading isn't enough
+        $response = $this->patch($path, $this->token('editor-machine', 'nodes.read'), $body);
+        self::assertSame(403, $response->getStatusCode(), (string)$response->getBody());
+        self::assertStringContainsString('nodes.update', self::json($response)['detail']);
+
+        // only editors may change nodes
+        self::assertSame(403, $this->patch($path, $this->token('nobody-machine', 'nodes.update'), $body)->getStatusCode());
+
+        self::assertSame(401, $this->patch($path, null, $body)->getStatusCode());
+    }
+
     /**
      * @param array<string, mixed> $query
      */
@@ -185,6 +240,14 @@ class NodesTest extends EndpointTestCase
     private static function nodePath(string $nodeAggregateId, array $query = []): string
     {
         return '/api/cr/unknown/nodes/' . rawurlencode($nodeAggregateId) . self::query($query);
+    }
+
+    /**
+     * @param array<string, mixed> $query
+     */
+    private static function propertiesPath(string $nodeAggregateId, array $query = []): string
+    {
+        return '/api/cr/unknown/nodes/' . rawurlencode($nodeAggregateId) . '/properties' . self::query($query);
     }
 
     /**
