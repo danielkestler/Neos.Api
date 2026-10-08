@@ -12,6 +12,7 @@ use Neos\Api\Endpoint\Nodes\Parameter\SearchTerm;
 use Neos\Api\Endpoint\Nodes\RequestBody\NodeCreate;
 use Neos\Api\Endpoint\Nodes\RequestBody\NodeMove;
 use Neos\Api\Endpoint\Nodes\RequestBody\NodePropertiesUpdate;
+use Neos\Api\Endpoint\Nodes\RequestBody\NodeReferencesUpdate;
 use Neos\Api\Endpoint\Nodes\RequestBody\NodeTag;
 use Neos\Api\Endpoint\Nodes\RequestBody\NodeTypeChange;
 use Neos\Api\Endpoint\Nodes\Response\NodeCreated;
@@ -47,6 +48,7 @@ use Neos\Api\Shared\Schema\ListingMeta;
 use Neos\ContentRepository\Core\DimensionSpace\OriginDimensionSpacePoint;
 use Neos\ContentRepository\Core\Feature\NodeCreation\Command\CreateNodeAggregateWithNode;
 use Neos\ContentRepository\Core\Feature\NodeModification\Command\SetNodeProperties;
+use Neos\ContentRepository\Core\Feature\NodeReferencing\Command\SetNodeReferences;
 use Neos\ContentRepository\Core\Feature\NodeMove\Command\MoveNodeAggregate;
 use Neos\ContentRepository\Core\Feature\NodeMove\Dto\RelationDistributionStrategy;
 use Neos\ContentRepository\Core\Feature\NodeTypeChange\Command\ChangeNodeAggregateType;
@@ -64,6 +66,7 @@ use Neos\ContentRepository\Core\Projection\ContentGraph\ContentSubgraphInterface
 use Neos\ContentRepository\Core\Projection\ContentGraph\Filter\FindChildNodesFilter;
 use Neos\ContentRepository\Core\SharedModel;
 use Neos\ContentRepository\Core\SharedModel\Exception\DimensionSpacePointIsNotYetOccupied;
+use Neos\ContentRepository\Core\SharedModel\Exception\NodeAggregateCurrentlyDoesNotExist;
 use Neos\ContentRepository\Core\SharedModel\Exception\NodeAggregateCurrentlyExists;
 use Neos\ContentRepository\Core\SharedModel\Exception\NodeAggregateDoesCurrentlyNotCoverDimensionSpacePoint;
 use Neos\ContentRepository\Core\SharedModel\Exception\NodeAggregateDoesCurrentlyNotCoverDimensionSpacePointSet;
@@ -78,6 +81,7 @@ use Neos\ContentRepository\Core\SharedModel\Exception\NodeNameIsAlreadyCovered;
 use Neos\ContentRepository\Core\SharedModel\Exception\NodeTypeIsAbstract;
 use Neos\ContentRepository\Core\SharedModel\Exception\NodeTypeIsOfTypeRoot;
 use Neos\ContentRepository\Core\SharedModel\Exception\PropertyCannotBeSet;
+use Neos\ContentRepository\Core\SharedModel\Exception\ReferenceCannotBeSet;
 use Neos\ContentRepository\Core\SharedModel\Node\NodeVariantSelectionStrategy;
 use Neos\ContentRepositoryRegistry\ContentRepositoryRegistry;
 use Neos\Neos\Domain\SubtreeTagging\NeosSubtreeTag;
@@ -342,6 +346,64 @@ final readonly class Nodes
         // the node is read-only, read it again
         $changed = $this->findNode($this->contentRepositoryRegistry->subgraphForNode($node), $nodeAggregateId);
         return $changed instanceof ContentGraph\Node ? $this->node($changed, IncludePaths::none()) : $changed;
+    }
+
+    #[Operation(
+        path: '/cr/{contentRepositoryId}/nodes/{nodeAggregateId}/references',
+        method: 'PATCH',
+        summary: 'Change the references of a node',
+        description: 'Sets the given references of the node in the workspace and dimension space point (SetNodeReferences): each name\'s list replaces all of its references, in its order, an empty list removes them, the names left out stay as they are. The body is the references by name as Node has them, e.g. {"relatedPages": [{"nodeAggregateId": "…"}]}, a reference\'s properties are optional and in the form of node properties. References the node type doesn\'t declare, targets that don\'t exist or aren\'t in the dimension space point, ones the reference doesn\'t allow (its node types or maxItems), or properties that can\'t be written are a 422. A node shown with the content of another dimension space point (isShineThrough) is a 409: create a variant in this one first. Whether the account may change the node is up to its workspace roles and node privileges (else a 403), as in the Neos backend. The response is the node with its references, as getNode returns it with include=references.',
+        operationId: 'updateNodeReferences',
+        security: [
+            ApiAuthContextProvider::SCOPES => [ApiScopes::NODES_UPDATE],
+        ],
+    )]
+    public function updateReferences(
+        ContentRepositoryId $contentRepositoryId,
+        NodeAggregateId $nodeAggregateId,
+        #[Parameter(in: 'query', description: 'The workspace to change the node in, required: changing live directly is rarely what is meant')]
+        WorkspaceName $workspaceName,
+        #[RequestBody(description: 'The references to change by name')] NodeReferencesUpdate $references,
+        ServerRequestInterface $request,
+        #[Parameter(in: 'query', description: 'The dimension space point to change the node in, as JSON. If omitted, as for getNode')]
+        DimensionSpacePoint|null $dimensionSpacePoint = null,
+    ): Node|NotFound|BadRequest|Forbidden|Conflict|UnprocessableContent {
+        $node = $this->nodeIn($contentRepositoryId, $nodeAggregateId, $workspaceName, $dimensionSpacePoint);
+        if (!$node instanceof ContentGraph\Node) {
+            return $node;
+        }
+        $contentRepository = $this->contentRepositoryRegistry->get($node->contentRepositoryId);
+        $nodeType = $contentRepository->getNodeTypeManager()->getNodeType($node->nodeTypeName);
+        if ($nodeType === null) {
+            return UnprocessableContent::because(sprintf('The node type %s of the node doesn\'t exist anymore', $node->nodeTypeName->value));
+        }
+        // NodeReferencesUpdate only validated the body, a map schematic can't build
+        /** @var array<string, mixed> $values */
+        $values = json_decode((string)$request->getBody(), true, flags: JSON_THROW_ON_ERROR);
+        try {
+            $referencesToWrite = $this->propertyValues->referencesToWrite($nodeType, $values);
+        } catch (InvalidPropertyValue $exception) {
+            return UnprocessableContent::because($exception->getMessage());
+        }
+        // the content repository rejects a command without changes
+        if ($values !== []) {
+            try {
+                // in the requested point, as updateProperties: the content repository decides whether it may be changed there
+                $contentRepository->handle(SetNodeReferences::create($node->workspaceName, $node->aggregateId, OriginDimensionSpacePoint::fromDimensionSpacePoint($node->dimensionSpacePoint), $referencesToWrite));
+            } catch (AccessDenied) {
+                return Forbidden::because(sprintf('You may not change the node %s in the workspace %s', $node->aggregateId->value, $node->workspaceName->value));
+            } catch (DimensionSpacePointIsNotYetOccupied) {
+                return Conflict::because(sprintf(
+                    'The node is shown in the dimension space point %s with the content of %s, create a variant in %1$s first',
+                    $node->dimensionSpacePoint->toJson(),
+                    $node->originDimensionSpacePoint->toJson(),
+                ));
+            } catch (ReferenceCannotBeSet | NodeAggregateCurrentlyDoesNotExist | NodeAggregateDoesCurrentlyNotCoverDimensionSpacePoint | NodeAggregateIsRoot $exception) {
+                return UnprocessableContent::because($exception->getMessage());
+            }
+        }
+        $changed = $this->findNode($this->contentRepositoryRegistry->subgraphForNode($node), $nodeAggregateId);
+        return $changed instanceof ContentGraph\Node ? $this->node($changed, IncludePaths::fromString('references')) : $changed;
     }
 
     #[Operation(

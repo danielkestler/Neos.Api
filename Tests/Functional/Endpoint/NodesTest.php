@@ -458,6 +458,35 @@ class NodesTest extends EndpointTestCase
         self::assertSame(401, $this->post($path, null, $body)->getStatusCode());
     }
 
+    #[Test]
+    public function updatesReferencesOnlyInAGivenWorkspace(): void
+    {
+        $token = $this->token('editor-machine', 'nodes.update');
+        $body = ['relatedPages' => [['nodeAggregateId' => 'other-node']], 'teasers' => []];
+
+        $response = $this->patch(self::referencesPath('some-node', ['workspaceName' => 'user-editor']), $token, $body);
+        self::assertSame(404, $response->getStatusCode(), (string)$response->getBody());
+        self::assertSame('There is no content repository with the ID unknown', self::json($response)['detail']);
+
+        // no default workspace for changes
+        self::assertSame(400, $this->patch(self::referencesPath('some-node', []), $token, $body)->getStatusCode());
+        // the body's schema rejects anything but a map, e.g. a list
+        self::assertSame(400, $this->patch(self::referencesPath('some-node', ['workspaceName' => 'user-editor']), $token, [['nodeAggregateId' => 'other-node']])->getStatusCode());
+    }
+
+    #[Test]
+    public function updatingReferencesRequiresTheScopeAndThePrivilege(): void
+    {
+        $path = self::referencesPath('some-node', ['workspaceName' => 'user-editor']);
+        $body = ['relatedPages' => []];
+
+        $response = $this->patch($path, $this->token('editor-machine', 'nodes.read'), $body);
+        self::assertSame(403, $response->getStatusCode(), (string)$response->getBody());
+        self::assertStringContainsString('nodes.update', self::json($response)['detail']);
+        self::assertSame(403, $this->patch($path, $this->token('nobody-machine', 'nodes.update'), $body)->getStatusCode());
+        self::assertSame(401, $this->patch($path, null, $body)->getStatusCode());
+    }
+
     /**
      * @param array<string, mixed> $query
      */
@@ -512,6 +541,14 @@ class NodesTest extends EndpointTestCase
     private static function movePath(string $nodeAggregateId, array $query): string
     {
         return '/api/cr/unknown/nodes/' . rawurlencode($nodeAggregateId) . '/move' . self::query($query);
+    }
+
+    /**
+     * @param array<string, mixed> $query
+     */
+    private static function referencesPath(string $nodeAggregateId, array $query): string
+    {
+        return '/api/cr/unknown/nodes/' . rawurlencode($nodeAggregateId) . '/references' . self::query($query);
     }
 
     /**

@@ -4,6 +4,11 @@ declare(strict_types=1);
 namespace Neos\Api\Infrastructure\ContentRepository;
 
 use Neos\ContentRepository\Core\Feature\NodeModification\Dto\PropertyValuesToWrite;
+use Neos\ContentRepository\Core\Feature\NodeReferencing\Dto\NodeReferencesForName;
+use Neos\ContentRepository\Core\Feature\NodeReferencing\Dto\NodeReferencesToWrite;
+use Neos\ContentRepository\Core\Feature\NodeReferencing\Dto\NodeReferenceToWrite;
+use Neos\ContentRepository\Core\SharedModel\Node\NodeAggregateId;
+use Neos\ContentRepository\Core\SharedModel\Node\ReferenceName;
 use Neos\ContentRepository\Core\NodeType\NodeType;
 use Neos\Flow\Annotations as Flow;
 use Neos\Media\Domain\Model\AssetInterface;
@@ -11,8 +16,8 @@ use Neos\Media\Domain\Model\ImageInterface;
 use Neos\Media\Domain\Repository\AssetRepository;
 
 /**
- * The counterpart of NodeSerializer::properties(): property values in the form the API reads them, converted to what
- * the content repository writes, by the type the node type declares
+ * The counterpart of NodeSerializer::properties() and ::references(): property values and references in the form the API
+ * reads them, converted to what the content repository writes, by the types the node type declares
  *
  * The content repository's own converters are internal, so the types are converted here: string, integer, float, boolean
  * and array as JSON values, dates as RFC 3339 strings, assets (also in a list) as {"id": "…"}. Other types (value
@@ -46,6 +51,63 @@ final readonly class PropertyValues
             $converted[$name] = $value !== null ? $this->convert($name, $nodeType->getPropertyType($name), $value) : null;
         }
         return PropertyValuesToWrite::fromArray($converted);
+    }
+
+    /**
+     * References by name as Node has them, each name replaced by its list, an empty list removes them:
+     * {"relatedPages": [{"nodeAggregateId": "…", "properties": {…}}]}, properties optional and converted by the types
+     * the reference declares
+     *
+     * @param array<mixed> $values
+     * @throws InvalidPropertyValue
+     */
+    public function referencesToWrite(NodeType $nodeType, array $values): NodeReferencesToWrite
+    {
+        $referencesForNames = [];
+        foreach ($values as $name => $references) {
+            $name = (string)$name;
+            if (!$nodeType->hasReference($name)) {
+                throw new InvalidPropertyValue(sprintf('The node type %s has no reference %s', $nodeType->name->value, $name));
+            }
+            if (!is_array($references) || !array_is_list($references)) {
+                throw new InvalidPropertyValue(sprintf('The references %s must be a list of {"nodeAggregateId": "…", "properties": {…}}', $name));
+            }
+            /** @var array<string, array{type?: string}> $declaredProperties */
+            $declaredProperties = $nodeType->getReferences()[$name]['properties'] ?? [];
+            $referencesForNames[] = NodeReferencesForName::fromReferences(
+                ReferenceName::fromString($name),
+                array_map(fn (mixed $reference) => $this->reference($name, $declaredProperties, $reference), $references),
+            );
+        }
+        return NodeReferencesToWrite::create(...$referencesForNames);
+    }
+
+    /**
+     * @param array<string, array{type?: string}> $declaredProperties
+     */
+    private function reference(string $name, array $declaredProperties, mixed $reference): NodeReferenceToWrite
+    {
+        $properties = is_array($reference) ? $reference['properties'] ?? [] : null;
+        if (!is_array($reference) || !is_string($reference['nodeAggregateId'] ?? null) || !is_array($properties) || array_diff(array_keys($reference), ['nodeAggregateId', 'properties']) !== []) {
+            throw new InvalidPropertyValue(sprintf('A reference %s must be {"nodeAggregateId": "…", "properties": {…}}, properties optional', $name));
+        }
+        try {
+            $target = NodeAggregateId::fromString($reference['nodeAggregateId']);
+        } catch (\InvalidArgumentException) {
+            throw new InvalidPropertyValue(sprintf('"%s" is no node aggregate id, in the references %s', $reference['nodeAggregateId'], $name));
+        }
+        $converted = [];
+        foreach ($properties as $propertyName => $value) {
+            $propertyName = (string)$propertyName;
+            $type = $declaredProperties[$propertyName]['type'] ?? null;
+            if ($type === null) {
+                throw new InvalidPropertyValue(sprintf('The reference %s has no property %s', $name, $propertyName));
+            }
+            $converted[$propertyName] = $value !== null ? $this->convert($propertyName, $type, $value) : null;
+        }
+        return $converted === []
+            ? NodeReferenceToWrite::fromTarget($target)
+            : NodeReferenceToWrite::fromTargetAndProperties($target, PropertyValuesToWrite::fromArray($converted));
     }
 
     private function convert(string $name, string $type, mixed $value): mixed
