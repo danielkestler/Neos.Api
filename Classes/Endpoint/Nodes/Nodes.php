@@ -15,6 +15,7 @@ use Neos\Api\Endpoint\Nodes\RequestBody\NodePropertiesUpdate;
 use Neos\Api\Endpoint\Nodes\RequestBody\NodeReferencesUpdate;
 use Neos\Api\Endpoint\Nodes\RequestBody\NodeTag;
 use Neos\Api\Endpoint\Nodes\RequestBody\NodeTypeChange;
+use Neos\Api\Endpoint\Nodes\RequestBody\NodeVariantCreate;
 use Neos\Api\Endpoint\Nodes\Response\NodeCreated;
 use Neos\Api\Endpoint\Nodes\Schema\DimensionSpacePoint;
 use Neos\Api\Endpoint\Nodes\Schema\Node;
@@ -45,6 +46,7 @@ use Neos\Api\Shared\Response\NotFound;
 use Neos\Api\Shared\Response\UnprocessableContent;
 use Neos\Api\Shared\Schema\ListingLinks;
 use Neos\Api\Shared\Schema\ListingMeta;
+use Neos\ContentRepository\Core\ContentRepository;
 use Neos\ContentRepository\Core\DimensionSpace\OriginDimensionSpacePoint;
 use Neos\ContentRepository\Core\Feature\NodeCreation\Command\CreateNodeAggregateWithNode;
 use Neos\ContentRepository\Core\Feature\NodeModification\Command\SetNodeProperties;
@@ -52,6 +54,8 @@ use Neos\ContentRepository\Core\Feature\NodeReferencing\Command\SetNodeReference
 use Neos\ContentRepository\Core\Feature\NodeMove\Command\MoveNodeAggregate;
 use Neos\ContentRepository\Core\Feature\NodeMove\Dto\RelationDistributionStrategy;
 use Neos\ContentRepository\Core\Feature\NodeTypeChange\Command\ChangeNodeAggregateType;
+use Neos\ContentRepository\Core\Feature\NodeVariation\Command\CreateNodeVariant;
+use Neos\ContentRepository\Core\Feature\NodeVariation\Exception\DimensionSpacePointIsAlreadyOccupied;
 use Neos\ContentRepository\Core\Feature\NodeTypeChange\Dto\NodeAggregateTypeChangeChildConstraintConflictResolutionMarkWithTagStrategy;
 use Neos\ContentRepository\Core\Feature\Security\Exception\AccessDenied;
 use Neos\ContentRepository\Core\Feature\SubtreeTagging\Command\TagSubtree;
@@ -84,6 +88,7 @@ use Neos\ContentRepository\Core\SharedModel\Exception\PropertyCannotBeSet;
 use Neos\ContentRepository\Core\SharedModel\Exception\ReferenceCannotBeSet;
 use Neos\ContentRepository\Core\SharedModel\Node\NodeVariantSelectionStrategy;
 use Neos\ContentRepositoryRegistry\ContentRepositoryRegistry;
+use Neos\Neos\Domain\Service\NodeTypeNameFactory;
 use Neos\Neos\Domain\SubtreeTagging\NeosSubtreeTag;
 use Neos\OpenApi\Attributes\AuthContext;
 use Neos\OpenApi\Attributes\Operation;
@@ -743,6 +748,83 @@ final readonly class Nodes
             }
         }
         return $sibling === null ? $preceding : null;
+    }
+
+    #[Operation(
+        path: '/cr/{contentRepositoryId}/nodes/{nodeAggregateId}/variants',
+        method: 'POST',
+        summary: 'Create a variant of a node',
+        description: 'Copies the node as read in the workspace and dimension space point (its origin\'s content, e.g. en_US for a node shining through in en_UK) to the dimension space point of the body, a variant of its own there (CreateNodeVariant), as the Neos backend does: its tethered child nodes are varied with it, and so are its ancestors that aren\'t in that point yet (as when translating a document), top-down, so it has a parent there. A tethered node is varied with its nearest ancestor that isn\'t tethered. With copyContent, the content below it (not documents) is varied as well. Each variant is a command of its own, if one fails, the ones before it stay. A node that has a variant in that point already is a 409, a root node a 422. Whether the account may create the variants is up to its workspace roles and node privileges (else a 403), as in the Neos backend. The response is the node in the new point as getNode returns it without include.',
+        operationId: 'createNodeVariant',
+        security: [
+            ApiAuthContextProvider::SCOPES => [ApiScopes::NODES_CREATE],
+        ],
+    )]
+    public function createVariant(
+        ContentRepositoryId $contentRepositoryId,
+        NodeAggregateId $nodeAggregateId,
+        #[Parameter(in: 'query', description: 'The workspace to create the variant in, required: changing live directly is rarely what is meant')]
+        WorkspaceName $workspaceName,
+        #[RequestBody(description: 'Where to create the variant')] NodeVariantCreate $variant,
+        #[Parameter(in: 'query', description: 'The dimension space point to read the node in, whose content is copied, as JSON. If omitted, as for getNode')]
+        DimensionSpacePoint|null $dimensionSpacePoint = null,
+    ): NodeCreated|NotFound|BadRequest|Forbidden|Conflict|UnprocessableContent {
+        $node = $this->nodeIn($contentRepositoryId, $nodeAggregateId, $workspaceName, $dimensionSpacePoint);
+        if (!$node instanceof ContentGraph\Node) {
+            return $node;
+        }
+        $target = $this->subgraph($contentRepositoryId, $workspaceName, $variant->dimensionSpacePoint);
+        if (!$target instanceof ContentSubgraphInterface) {
+            return $target;
+        }
+        $source = $this->contentRepositoryRegistry->subgraphForNode($node);
+        $contentRepository = $this->contentRepositoryRegistry->get($node->contentRepositoryId);
+        $contentGraph = $contentRepository->getContentGraph($node->workspaceName);
+        $targetOrigin = OriginDimensionSpacePoint::fromDimensionSpacePoint($target->getDimensionSpacePoint());
+        // as Neos UI: a tethered node is varied with its parent
+        $varied = $node;
+        while ($varied->classification->isTethered() && ($parent = $source->findParentNode($varied->aggregateId)) !== null && !$parent->classification->isRoot()) {
+            $varied = $parent;
+        }
+        if ($contentGraph->findNodeAggregateById($varied->aggregateId)?->occupiesDimensionSpacePoint($targetOrigin) === true) {
+            return Conflict::because(sprintf('The node %s has a variant in the dimension space point %s already', $varied->aggregateId->value, $targetOrigin->toJson()));
+        }
+        // as Neos' NodesController::adoptNodeAndParents(): the ancestors not in the target point yet first, top-down
+        $toVary = [$varied];
+        for ($ancestor = $source->findParentNode($varied->aggregateId); $ancestor !== null && $target->findNodeById($ancestor->aggregateId) === null; $ancestor = $source->findParentNode($ancestor->aggregateId)) {
+            array_unshift($toVary, $ancestor);
+        }
+        try {
+            foreach ($toVary as $sourceNode) {
+                $contentRepository->handle(CreateNodeVariant::create($node->workspaceName, $sourceNode->aggregateId, $sourceNode->originDimensionSpacePoint, $targetOrigin));
+            }
+            if ($variant->copyContent === true) {
+                $this->varyContentBelow($varied, $source, $contentGraph, $targetOrigin, $contentRepository);
+            }
+        } catch (AccessDenied) {
+            return Forbidden::because(sprintf('You may not create variants of the node %s in the workspace %s', $varied->aggregateId->value, $node->workspaceName->value));
+        } catch (DimensionSpacePointIsAlreadyOccupied | NodeAggregateDoesCurrentlyNotCoverDimensionSpacePoint $exception) {
+            return Conflict::because($exception->getMessage());
+        } catch (NodeAggregateIsRoot | NodeAggregateIsTethered $exception) {
+            return UnprocessableContent::because($exception->getMessage());
+        }
+        $created = $this->findNode($target, $nodeAggregateId);
+        return $created instanceof ContentGraph\Node ? new NodeCreated($this->node($created, IncludePaths::none())) : $created;
+    }
+
+    /**
+     * The content below the node (not documents, not tethered nodes, which come with their parent), as Neos'
+     * NodesController::createNodeVariantsForChildNodes(), leaving out the ones in the target point already
+     */
+    private function varyContentBelow(ContentGraph\Node $parent, ContentSubgraphInterface $source, ContentGraphInterface $contentGraph, OriginDimensionSpacePoint $targetOrigin, ContentRepository $contentRepository): void
+    {
+        $content = FindChildNodesFilter::create(nodeTypes: ContentGraph\Filter\NodeType\NodeTypeCriteria::fromFilterString('!' . NodeTypeNameFactory::NAME_DOCUMENT));
+        foreach ($source->findChildNodes($parent->aggregateId, $content) as $child) {
+            if ($child->classification->isRegular() && $contentGraph->findNodeAggregateById($child->aggregateId)?->occupiesDimensionSpacePoint($targetOrigin) !== true) {
+                $contentRepository->handle(CreateNodeVariant::create($child->workspaceName, $child->aggregateId, $child->originDimensionSpacePoint, $targetOrigin));
+            }
+            $this->varyContentBelow($child, $source, $contentGraph, $targetOrigin, $contentRepository);
+        }
     }
 
     /**

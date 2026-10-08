@@ -487,6 +487,37 @@ class NodesTest extends EndpointTestCase
         self::assertSame(401, $this->patch($path, null, $body)->getStatusCode());
     }
 
+    #[Test]
+    public function createsVariantsOnlyInAGivenWorkspace(): void
+    {
+        $token = $this->token('editor-machine', 'nodes.create');
+        $path = self::variantsPath('some-node', ['workspaceName' => 'user-editor']);
+
+        $response = $this->post($path, $token, ['dimensionSpacePoint' => '{"language":"de"}', 'copyContent' => true]);
+        self::assertSame(404, $response->getStatusCode(), (string)$response->getBody());
+        self::assertSame('There is no content repository with the ID unknown', self::json($response)['detail']);
+
+        // no default workspace for changes
+        self::assertSame(400, $this->post(self::variantsPath('some-node', []), $token, ['dimensionSpacePoint' => '{"language":"de"}'])->getStatusCode());
+        // their schemas reject them: no target, not a point
+        foreach ([[], ['dimensionSpacePoint' => 'de'], ['dimensionSpacePoint' => '{"language":"de"}', 'copyContent' => 'yes']] as $body) {
+            self::assertSame(400, $this->post($path, $token, $body)->getStatusCode(), json_encode($body));
+        }
+    }
+
+    #[Test]
+    public function creatingVariantsRequiresTheScopeAndThePrivilege(): void
+    {
+        $path = self::variantsPath('some-node', ['workspaceName' => 'user-editor']);
+        $body = ['dimensionSpacePoint' => '{"language":"de"}'];
+
+        $response = $this->post($path, $this->token('editor-machine', 'nodes.update'), $body);
+        self::assertSame(403, $response->getStatusCode(), (string)$response->getBody());
+        self::assertStringContainsString('nodes.create', self::json($response)['detail']);
+        self::assertSame(403, $this->post($path, $this->token('nobody-machine', 'nodes.create'), $body)->getStatusCode());
+        self::assertSame(401, $this->post($path, null, $body)->getStatusCode());
+    }
+
     /**
      * @param array<string, mixed> $query
      */
@@ -549,6 +580,14 @@ class NodesTest extends EndpointTestCase
     private static function referencesPath(string $nodeAggregateId, array $query): string
     {
         return '/api/cr/unknown/nodes/' . rawurlencode($nodeAggregateId) . '/references' . self::query($query);
+    }
+
+    /**
+     * @param array<string, mixed> $query
+     */
+    private static function variantsPath(string $nodeAggregateId, array $query): string
+    {
+        return '/api/cr/unknown/nodes/' . rawurlencode($nodeAggregateId) . '/variants' . self::query($query);
     }
 
     /**
