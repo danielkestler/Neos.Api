@@ -1,5 +1,5 @@
 ##
-# A view of the API: GET /api/views/{viewName}?contentRepositoryId=…&aggregateId=…&workspaceName=…&dimensionSpacePoint=…
+# A view of the API: GET /api/views/{viewName}?contentRepositoryId=…&nodeAggregateId=…&workspaceName=…&dimensionSpacePoint=…
 # renders it for a node (without one, for the default site's site node; live and the site's default dimension space
 # point unless given), once it is made available under the name in the Neos.Api.views settings
 #
@@ -12,7 +12,7 @@
 #       items = Neos.Fusion:Map {
 #           items = ${q(site).children('[instanceof Neos.Neos:Document]').get()}
 #           itemRenderer = Neos.Fusion:DataStructure {
-#               aggregateId = ${item.aggregateId.value}
+#               nodeAggregateId = ${item.aggregateId.value}
 #               label = ${q(item).label()}
 #           }
 #       }

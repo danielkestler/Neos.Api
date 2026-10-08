@@ -88,7 +88,7 @@ class DataSourcesTest extends EndpointTestCase
         foreach ([['contentRepositoryId' => 'default'], ['workspaceName' => 'live'], ['dimensionSpacePoint' => '{}']] as $query) {
             $response = $this->get(self::path(self::ECHO, $query), $token);
             self::assertSame(400, $response->getStatusCode(), json_encode($query) . ': ' . $response->getBody());
-            self::assertSame('contentRepositoryId, workspaceName and dimensionSpacePoint are where to read the node, give aggregateId as well', self::json($response)['detail']);
+            self::assertSame('contentRepositoryId, workspaceName and dimensionSpacePoint are where to read the node, give nodeAggregateId as well', self::json($response)['detail']);
         }
     }
 
@@ -96,10 +96,10 @@ class DataSourcesTest extends EndpointTestCase
     public function rejectsInvalidParameters(): void
     {
         $token = $this->token('editor-machine', 'datasources.read');
-        $node = ['contentRepositoryId' => 'unknown', 'aggregateId' => 'some-node'];
+        $node = ['contentRepositoryId' => 'unknown', 'nodeAggregateId' => 'some-node'];
 
         // their schemas reject them
-        foreach ([['aggregateId' => 'Not_An_Id'], ['contentRepositoryId' => 'Not-An-Id'], ['workspaceName' => 'Not A Workspace'], ['arguments' => 'not-an-object']] as $query) {
+        foreach ([['nodeAggregateId' => 'Not_An_Id'], ['contentRepositoryId' => 'Not-An-Id'], ['workspaceName' => 'Not A Workspace'], ['arguments' => 'not-an-object']] as $query) {
             self::assertSame(400, $this->get(self::path(self::ECHO, $query + $node), $token)->getStatusCode(), json_encode($query));
         }
 
@@ -112,7 +112,7 @@ class DataSourcesTest extends EndpointTestCase
     #[Test]
     public function nodesOfUnknownContentRepositoriesAreNotFound(): void
     {
-        $response = $this->get(self::path(self::ECHO, ['contentRepositoryId' => 'unknown', 'aggregateId' => 'some-node']), $this->token('editor-machine', 'datasources.read'));
+        $response = $this->get(self::path(self::ECHO, ['contentRepositoryId' => 'unknown', 'nodeAggregateId' => 'some-node']), $this->token('editor-machine', 'datasources.read'));
 
         self::assertSame(404, $response->getStatusCode(), (string)$response->getBody());
         self::assertSame('There is no content repository with the ID unknown', self::json($response)['detail']);
@@ -122,7 +122,7 @@ class DataSourcesTest extends EndpointTestCase
     public function withoutAContentRepositoryTheDefaultSiteIsNeeded(): void
     {
         // there is no site in the Testing context
-        $response = $this->get(self::path(self::ECHO, ['aggregateId' => 'some-node']), $this->token('editor-machine', 'datasources.read'));
+        $response = $this->get(self::path(self::ECHO, ['nodeAggregateId' => 'some-node']), $this->token('editor-machine', 'datasources.read'));
 
         self::assertSame(404, $response->getStatusCode(), (string)$response->getBody());
         self::assertSame('There is no default site to read the node in, give contentRepositoryId', self::json($response)['detail']);

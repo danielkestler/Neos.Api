@@ -8,7 +8,7 @@ prototype(Neos.Api:NodeItem) < prototype(Neos.Fusion:Component) {
     childNodeTypes = ''
 
     renderer = Neos.Fusion:DataStructure {
-        aggregateId = ${props.node.aggregateId.value}
+        nodeAggregateId = ${props.node.aggregateId.value}
         # null for nodes without a name
         name = ${props.node.name.value}
         nodeType = ${props.node.nodeTypeName.value}

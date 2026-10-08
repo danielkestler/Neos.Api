@@ -74,9 +74,9 @@ class NodesTest extends EndpointTestCase
     public function filtersByHierarchyOrReference(): void
     {
         $token = $this->token('nobody-machine', 'nodes.read');
-        $hierarchy = ['type' => 'parent', 'aggregateId' => 'some-node'];
+        $hierarchy = ['type' => 'parent', 'nodeAggregateId' => 'some-node'];
 
-        $response = $this->get(self::listPath(['filterByHierarchy' => $hierarchy, 'filterByReference' => ['aggregateId' => 'other-node']]), $token);
+        $response = $this->get(self::listPath(['filterByHierarchy' => $hierarchy, 'filterByReference' => ['nodeAggregateId' => 'other-node']]), $token);
         self::assertSame(400, $response->getStatusCode(), (string)$response->getBody());
         self::assertSame('filterByHierarchy and filterByReference can\'t be combined', self::json($response)['detail']);
 
@@ -84,9 +84,9 @@ class NodesTest extends EndpointTestCase
         foreach ([
             [],
             ['filterByHierarchy' => $hierarchy],
-            ['filterByHierarchy' => ['type' => 'ancestor', 'aggregateId' => 'some-node']],
-            ['filterByReference' => ['aggregateId' => 'some-node']],
-            ['filterByReference' => ['aggregateId' => 'some-node', 'name' => 'relatedPages']],
+            ['filterByHierarchy' => ['type' => 'ancestor', 'nodeAggregateId' => 'some-node']],
+            ['filterByReference' => ['nodeAggregateId' => 'some-node']],
+            ['filterByReference' => ['nodeAggregateId' => 'some-node', 'name' => 'relatedPages']],
             ['filterByNodeType' => 'Neos.Neos:Document,!Neos.Neos:Shortcut', 'search' => 'neos'],
         ] as $query) {
             $response = $this->get(self::listPath($query + ['workspaceName' => 'live', 'dimensionSpacePoint' => '{"language":"de"}']), $token);
@@ -95,13 +95,13 @@ class NodesTest extends EndpointTestCase
 
         // their schemas reject them: an unknown type, missing or unknown members, not an aggregate id, empty strings
         foreach ([
-            ['filterByHierarchy' => ['type' => 'child', 'aggregateId' => 'some-node']],
-            ['filterByHierarchy' => ['aggregateId' => 'some-node']],
+            ['filterByHierarchy' => ['type' => 'child', 'nodeAggregateId' => 'some-node']],
+            ['filterByHierarchy' => ['nodeAggregateId' => 'some-node']],
             ['filterByHierarchy' => ['type' => 'parent']],
             ['filterByHierarchy' => $hierarchy + ['unknown' => 'x']],
-            ['filterByHierarchy' => ['type' => 'parent', 'aggregateId' => 'Not_An_Id']],
+            ['filterByHierarchy' => ['type' => 'parent', 'nodeAggregateId' => 'Not_An_Id']],
             ['filterByReference' => ['name' => 'relatedPages']],
-            ['filterByReference' => ['aggregateId' => 'some-node', 'name' => '']],
+            ['filterByReference' => ['nodeAggregateId' => 'some-node', 'name' => '']],
             ['filterByNodeType' => ''],
             ['filterByProperty' => ''],
             ['search' => ''],
@@ -114,7 +114,7 @@ class NodesTest extends EndpointTestCase
     public function rejectsInvalidFiltersSortsAndPages(): void
     {
         $token = $this->token('nobody-machine', 'nodes.read');
-        $filter = ['filterByHierarchy' => ['type' => 'parent', 'aggregateId' => 'some-node']];
+        $filter = ['filterByHierarchy' => ['type' => 'parent', 'nodeAggregateId' => 'some-node']];
 
         $response = $this->get(self::listPath($filter + ['filterByProperty' => 'title = ']), $token);
         self::assertSame(400, $response->getStatusCode(), (string)$response->getBody());
@@ -156,7 +156,7 @@ class NodesTest extends EndpointTestCase
     #[Test]
     public function requiresTheScope(): void
     {
-        foreach ([self::nodePath('some-node'), self::listPath(['filterByHierarchy' => ['type' => 'parent', 'aggregateId' => 'some-node']])] as $path) {
+        foreach ([self::nodePath('some-node'), self::listPath(['filterByHierarchy' => ['type' => 'parent', 'nodeAggregateId' => 'some-node']])] as $path) {
             $response = $this->get($path, $this->token('nobody-machine', 'me.read'));
 
             self::assertSame(403, $response->getStatusCode(), (string)$response->getBody());
@@ -182,9 +182,9 @@ class NodesTest extends EndpointTestCase
     /**
      * @param array<string, mixed> $query
      */
-    private static function nodePath(string $aggregateId, array $query = []): string
+    private static function nodePath(string $nodeAggregateId, array $query = []): string
     {
-        return '/api/cr/unknown/nodes/' . rawurlencode($aggregateId) . self::query($query);
+        return '/api/cr/unknown/nodes/' . rawurlencode($nodeAggregateId) . self::query($query);
     }
 
     /**

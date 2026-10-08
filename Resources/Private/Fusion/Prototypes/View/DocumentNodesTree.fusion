@@ -1,6 +1,6 @@
 ##
 # The document node of the node with its child document nodes, e.g. for a document tree that loads level by level:
-# render it again for a child's aggregateId (in the same workspace and dimension space point) to get the next level
+# render it again for a child's nodeAggregateId (in the same workspace and dimension space point) to get the next level
 #
 #   {"node": {…the document node…}, "children": [{…a child document node…}, …]}
 #

@@ -90,7 +90,7 @@ final readonly class NodeQuery
      */
     public function entryPoint(): ?NodeAggregateId
     {
-        return $this->hierarchy?->aggregateId ?? $this->reference?->aggregateId;
+        return $this->hierarchy?->nodeAggregateId ?? $this->reference?->nodeAggregateId;
     }
 
     /**

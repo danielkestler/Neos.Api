@@ -5,7 +5,7 @@ Neos:
       clientId: "neos-api-docs"
       swaggerUiVersion: "5.33.0"
 
-    # The views GET /views/{viewName}?aggregateId={aggregateId} renders, only these are exposed. The prototype inherits from
+    # The views GET /views/{viewName}?nodeAggregateId={nodeAggregateId} renders, only these are exposed. The prototype inherits from
     # Neos.Api:View and is looked up in the Fusion of the node's site, e.g.
     #   mainNavigation:
     #     prototype: 'Vendor.Site:Api.MainNavigation'

@@ -73,9 +73,9 @@ final readonly class Nodes
         WorkspaceName|null $workspaceName = null,
         #[Parameter(in: 'query', description: 'The dimension space point to read the nodes in, as JSON. If omitted, the default one of the content repository\'s default site (Neos.Neos.defaultSiteNodeName if it is in the content repository, else its first online site by name), the only one of a content repository without a site')]
         DimensionSpacePoint|null $dimensionSpacePoint = null,
-        #[Parameter(in: 'query', description: 'The nodes below a node: filterByHierarchy[type] parent (its direct child nodes) or ancestor (all nodes below it) and filterByHierarchy[aggregateId]. Not with filterByReference')]
+        #[Parameter(in: 'query', description: 'The nodes below a node: filterByHierarchy[type] parent (its direct child nodes) or ancestor (all nodes below it) and filterByHierarchy[nodeAggregateId]. Not with filterByReference')]
         HierarchyFilter|null $filterByHierarchy = null,
-        #[Parameter(in: 'query', description: 'The nodes that reference a node: filterByReference[aggregateId], optionally filterByReference[name] for the references of that name only. Not with filterByHierarchy')]
+        #[Parameter(in: 'query', description: 'The nodes that reference a node: filterByReference[nodeAggregateId], optionally filterByReference[name] for the references of that name only. Not with filterByHierarchy')]
         ReferenceFilter|null $filterByReference = null,
         #[Parameter(in: 'query', description: 'Only nodes of these node types or ones inheriting from them, comma-separated, a ! in front excludes a type and the ones inheriting from it. Unknown node types are a 400')]
         NodeTypeCriteria|null $filterByNodeType = null,
@@ -126,7 +126,7 @@ final readonly class Nodes
     }
 
     #[Operation(
-        path: '/cr/{contentRepositoryId}/nodes/{aggregateId}',
+        path: '/cr/{contentRepositoryId}/nodes/{nodeAggregateId}',
         method: 'GET',
         summary: 'Get a node',
         description: 'A node in the workspace and dimension space point with its properties and what is included: with include=references its references, with children its direct child nodes in their order, with variants the node in its other origin dimension space points (its content variants, not the points that only fall back to it), in the order of the content dimensions. children.references and variants.references include their references as well. Hidden nodes are visible to accounts that may see them in every workspace, live included, as in the Neos backend; isHidden tells them apart.',
@@ -137,7 +137,7 @@ final readonly class Nodes
     )]
     public function get(
         ContentRepositoryId $contentRepositoryId,
-        NodeAggregateId $aggregateId,
+        NodeAggregateId $nodeAggregateId,
         #[Parameter(in: 'query', description: 'The workspace to read the node in, live if omitted')]
         WorkspaceName|null $workspaceName = null,
         #[Parameter(in: 'query', description: 'The dimension space point to read the node in, as JSON. If omitted, the default one of the content repository\'s default site (Neos.Neos.defaultSiteNodeName if it is in the content repository, else its first online site by name), the only one of a content repository without a site')]
@@ -154,7 +154,7 @@ final readonly class Nodes
         if (!$subgraph instanceof ContentSubgraphInterface) {
             return $subgraph;
         }
-        $node = $this->findNode($subgraph, $aggregateId);
+        $node = $this->findNode($subgraph, $nodeAggregateId);
         return $node instanceof ContentGraph\Node ? $this->node($node, $include) : $node;
     }
 
@@ -174,12 +174,12 @@ final readonly class Nodes
     /**
      * The node in the subgraph, a 404 if there is none the account may read
      */
-    private function findNode(ContentSubgraphInterface $subgraph, NodeAggregateId $aggregateId): ContentGraph\Node|NotFound
+    private function findNode(ContentSubgraphInterface $subgraph, NodeAggregateId $nodeAggregateId): ContentGraph\Node|NotFound
     {
-        return $subgraph->findNodeById($aggregateId->toNodeAggregateId())
+        return $subgraph->findNodeById($nodeAggregateId->toNodeAggregateId())
             ?? NotFound::because(sprintf(
                 'There is no node %s in the workspace %s and the dimension space point %s',
-                $aggregateId->value,
+                $nodeAggregateId->value,
                 $subgraph->getWorkspaceName()->value,
                 $subgraph->getDimensionSpacePoint()->toJson(),
             ));

@@ -12,7 +12,7 @@ use PHPUnit\Framework\Attributes\Test;
  */
 class ViewsTest extends EndpointTestCase
 {
-    private const array NODE = ['contentRepositoryId' => 'unknown', 'aggregateId' => 'some-node'];
+    private const array NODE = ['contentRepositoryId' => 'unknown', 'nodeAggregateId' => 'some-node'];
 
     protected function setUp(): void
     {
@@ -52,7 +52,7 @@ class ViewsTest extends EndpointTestCase
     {
         $token = $this->token('editor-machine', 'views.read');
         // their schemas reject them
-        foreach ([['aggregateId' => 'Not_An_Id'], ['contentRepositoryId' => 'Not-An-Id'], ['workspaceName' => 'Not A Workspace'], ['dimensionSpacePoint' => 'de']] as $query) {
+        foreach ([['nodeAggregateId' => 'Not_An_Id'], ['contentRepositoryId' => 'Not-An-Id'], ['workspaceName' => 'Not A Workspace'], ['dimensionSpacePoint' => 'de']] as $query) {
             self::assertSame(400, $this->get(self::viewPath('navigation', $query + self::NODE), $token)->getStatusCode(), json_encode($query));
         }
 
@@ -78,11 +78,11 @@ class ViewsTest extends EndpointTestCase
     public function withoutAContentRepositoryTheDefaultSiteIsNeeded(): void
     {
         // there is no site in the Testing context
-        foreach ([[], ['aggregateId' => 'some-node']] as $query) {
+        foreach ([[], ['nodeAggregateId' => 'some-node']] as $query) {
             $response = $this->get(self::viewPath('navigation', $query), $this->token('editor-machine', 'views.read'));
 
             self::assertSame(404, $response->getStatusCode(), (string)$response->getBody());
-            self::assertSame('There is no site to render the view for, give contentRepositoryId and aggregateId', self::json($response)['detail']);
+            self::assertSame('There is no site to render the view for, give contentRepositoryId and nodeAggregateId', self::json($response)['detail']);
         }
     }
 

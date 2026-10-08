@@ -27,7 +27,7 @@ final readonly class Node implements ProvidesSchema
 {
     /**
      * @param array<string, mixed> $properties
-     * @param array<string, list<array{aggregateId: string, properties: array<string, mixed>|\stdClass}>>|\stdClass|null $references
+     * @param array<string, list<array{nodeAggregateId: string, properties: array<string, mixed>|\stdClass}>>|\stdClass|null $references
      * @param NodeList|null $children typed iterable, not NodeList, see there
      * @param NodeList|null $variants as $children
      */
@@ -35,7 +35,7 @@ final readonly class Node implements ProvidesSchema
         public ContentRepositoryId $contentRepositoryId,
         public WorkspaceName $workspaceName,
         public DimensionSpacePoint $dimensionSpacePoint,
-        public NodeAggregateId $aggregateId,
+        public NodeAggregateId $nodeAggregateId,
         public NodeName|null $name,
         public NodeTypeName $nodeType,
         public string $label,
@@ -83,7 +83,7 @@ final readonly class Node implements ProvidesSchema
                 workspaceName: WorkspaceName::schema(),
                 // the point the node was read in, see isShineThrough
                 dimensionSpacePoint: DimensionSpacePoint::schema(),
-                aggregateId: NodeAggregateId::schema(),
+                nodeAggregateId: NodeAggregateId::schema(),
                 name: Nullable::wrap(NodeName::schema()),
                 nodeType: NodeTypeName::schema(),
                 label: StringSchema::create(description: 'The label as plain text, as the Neos backend shows it'),
@@ -98,8 +98,8 @@ final readonly class Node implements ProvidesSchema
                     additionalProperties: true,
                 ),
                 references: Nullable::wrap(ObjectSchema::create(
-                    description: 'Only if included (e.g. include=references or children.references), else null: the references the node type declares, each with the referenced nodes in their order (an empty list if there are none) as {"aggregateId": "…", "properties": {…}}, the properties of the reference serialized as the node\'s',
-                    examples: [['relatedPages' => [['aggregateId' => 'a3474e1d-dd60-4a84-82b1-18d2f21891a3', 'properties' => new \stdClass()]]]],
+                    description: 'Only if included (e.g. include=references or children.references), else null: the references the node type declares, each with the referenced nodes in their order (an empty list if there are none) as {"nodeAggregateId": "…", "properties": {…}}, the properties of the reference serialized as the node\'s',
+                    examples: [['relatedPages' => [['nodeAggregateId' => 'a3474e1d-dd60-4a84-82b1-18d2f21891a3', 'properties' => new \stdClass()]]]],
                     additionalProperties: true,
                 )),
                 // the very schema of NodeList, a copy with another description would be no branch the serializer knows
@@ -107,7 +107,7 @@ final readonly class Node implements ProvidesSchema
                 variants: Nullable::wrap(NodeList::schema()),
             ),
             additionalProperties: false,
-            required: ['contentRepositoryId', 'workspaceName', 'dimensionSpacePoint', 'aggregateId', 'name', 'nodeType', 'label', 'classification', 'isHidden', 'isHiddenByAncestor', 'isShineThrough', 'timestamps', 'properties', 'references', 'children', 'variants'],
+            required: ['contentRepositoryId', 'workspaceName', 'dimensionSpacePoint', 'nodeAggregateId', 'name', 'nodeType', 'label', 'classification', 'isHidden', 'isHiddenByAncestor', 'isShineThrough', 'timestamps', 'properties', 'references', 'children', 'variants'],
         );
     }
 
@@ -116,7 +116,7 @@ final readonly class Node implements ProvidesSchema
      * stdClass as {}
      *
      * @param array<string, list<ContentGraph\Reference>> $references
-     * @return array<string, list<array{aggregateId: string, properties: array<string, mixed>|\stdClass}>>|\stdClass
+     * @return array<string, list<array{nodeAggregateId: string, properties: array<string, mixed>|\stdClass}>>|\stdClass
      */
     private static function references(array $references, NodeSerializer $nodeSerializer): array|\stdClass
     {
@@ -126,7 +126,7 @@ final readonly class Node implements ProvidesSchema
         return array_map(static fn (array $named) => array_map(static function (ContentGraph\Reference $reference) use ($nodeSerializer) {
             $properties = $reference->properties !== null ? $nodeSerializer->properties($reference->properties) : [];
             return [
-                'aggregateId' => $reference->node->aggregateId->value,
+                'nodeAggregateId' => $reference->node->aggregateId->value,
                 'properties' => $properties === [] ? new \stdClass() : $properties,
             ];
         }, $named), $references);

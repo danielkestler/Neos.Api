@@ -118,7 +118,7 @@ final readonly class Views
         #[Parameter(in: 'query', description: 'The content repository of the node, the one of the default site if omitted')]
         ContentRepositoryId|null $contentRepositoryId = null,
         #[Parameter(in: 'query', description: 'The aggregate id of the node to render the view for. The site node of the default site if omitted')]
-        NodeAggregateId|null $aggregateId = null,
+        NodeAggregateId|null $nodeAggregateId = null,
         #[Parameter(in: 'query', description: 'The workspace to read the node in, live if omitted')]
         WorkspaceName|null $workspaceName = null,
         #[Parameter(in: 'query', description: 'The dimension space point to read the node in, as JSON. If omitted, the default one of the content repository\'s default site, as for getNode')]
@@ -140,14 +140,14 @@ final readonly class Views
         }
         $id = $contentRepositoryId?->toContentRepositoryId() ?? $this->siteFinder->findDefault()?->getConfiguration()->contentRepositoryId;
         if ($id === null) {
-            return NotFound::because('There is no site to render the view for, give contentRepositoryId and aggregateId');
+            return NotFound::because('There is no site to render the view for, give contentRepositoryId and nodeAggregateId');
         }
         $workspace = $workspaceName?->toWorkspaceName() ?? SharedModel\Workspace\WorkspaceName::forLive();
         $subgraph = $this->subgraphResolver->resolve($id, $workspace, $dimensionSpacePoint, self::excludeDisabled($workspace, $mode));
         if (!$subgraph instanceof ContentSubgraphInterface) {
             return $subgraph;
         }
-        $nodes = $aggregateId !== null ? $this->node($subgraph, $aggregateId) : $this->defaultSiteNode($subgraph);
+        $nodes = $nodeAggregateId !== null ? $this->node($subgraph, $nodeAggregateId) : $this->defaultSiteNode($subgraph);
         if ($nodes instanceof NotFound) {
             return $nodes;
         }
@@ -162,15 +162,15 @@ final readonly class Views
     /**
      * @return array{Node, Node}|NotFound the node and its site node
      */
-    private function node(ContentSubgraphInterface $subgraph, NodeAggregateId $aggregateId): array|NotFound
+    private function node(ContentSubgraphInterface $subgraph, NodeAggregateId $nodeAggregateId): array|NotFound
     {
-        $node = $subgraph->findNodeById($aggregateId->toNodeAggregateId());
+        $node = $subgraph->findNodeById($nodeAggregateId->toNodeAggregateId());
         if ($node === null) {
-            return NotFound::because(sprintf('There is no node %s in the workspace %s and the dimension space point %s', $aggregateId->value, $subgraph->getWorkspaceName()->value, $subgraph->getDimensionSpacePoint()->toJson()));
+            return NotFound::because(sprintf('There is no node %s in the workspace %s and the dimension space point %s', $nodeAggregateId->value, $subgraph->getWorkspaceName()->value, $subgraph->getDimensionSpacePoint()->toJson()));
         }
         $site = $subgraph->findClosestNode($node->aggregateId, FindClosestNodeFilter::create(nodeTypes: NodeTypeNameFactory::NAME_SITE));
         if ($site === null) {
-            return NotFound::because(sprintf('The node %s belongs to no site, so there is no Fusion to render it with', $aggregateId->value));
+            return NotFound::because(sprintf('The node %s belongs to no site, so there is no Fusion to render it with', $nodeAggregateId->value));
         }
         return [$node, $site];
     }
@@ -184,7 +184,7 @@ final readonly class Views
     {
         $site = $this->siteFinder->findDefault($subgraph->getContentRepositoryId());
         if ($site === null) {
-            return NotFound::because(sprintf('There is no site in the content repository %s to render the view for, give an aggregateId', $subgraph->getContentRepositoryId()->value));
+            return NotFound::because(sprintf('There is no site in the content repository %s to render the view for, give an nodeAggregateId', $subgraph->getContentRepositoryId()->value));
         }
         $siteNode = $this->contentSubgraphs->findSiteNodeIn($subgraph, $site);
         if ($siteNode === null) {

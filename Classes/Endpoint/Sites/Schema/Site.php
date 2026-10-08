@@ -24,7 +24,7 @@ final readonly class Site implements ProvidesSchema
      * @param DomainList $domains ordered by host name
      * @param bool $online whether the site is online, offline sites are left out of the backend menu and the fallback when no domain matches
      * @param string|null $primaryDomain the URL of the domain the site is linked with: the primary domain if it is active, else the first active one, null if there is none
-     * @param NodeAggregateId|null $nodeAggregateId the site node, for GET /cr/{contentRepositoryId}/nodes/{aggregateId}, null if there is none the account may read in the live workspace and the site's default dimension space point or the content repository isn't set up
+     * @param NodeAggregateId|null $nodeAggregateId the site node, for GET /cr/{contentRepositoryId}/nodes/{nodeAggregateId}, null if there is none the account may read in the live workspace and the site's default dimension space point or the content repository isn't set up
      * @param DimensionSpacePoint $defaultDimensionSpacePoint the dimension space point the frontend renders the site's home page in
      */
     public function __construct(
