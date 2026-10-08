@@ -10,8 +10,8 @@ use Neos\ContentRepository\Core\Projection\ContentGraph\ContentSubgraphInterface
 use Neos\ContentRepository\Core\Projection\ContentGraph\Node;
 use Neos\ContentRepository\Core\SharedModel\ContentRepository\ContentRepositoryId;
 use Neos\ContentRepository\Core\SharedModel\Exception\WorkspaceDoesNotExist;
+use Neos\ContentRepository\Core\SharedModel\Node\NodeAggregateId;
 use Neos\ContentRepository\Core\SharedModel\Workspace\WorkspaceName;
-use Neos\ContentRepositoryRegistry\ContentRepositoryRegistry;
 use Neos\Flow\Annotations as Flow;
 use Neos\Flow\Security\Context;
 use Neos\Neos\Domain\Model\Site;
@@ -27,7 +27,6 @@ final readonly class ContentSubgraphs
 {
     public function __construct(
         private ContentRepositoryFinder $contentRepositoryFinder,
-        private ContentRepositoryRegistry $contentRepositoryRegistry,
         private ContentRepositoryAuthorizationService $contentRepositoryAuthorizationService,
         private Context $securityContext,
     ) {
@@ -93,17 +92,38 @@ final readonly class ContentSubgraphs
      */
     public function findVariants(Node $node, bool $excludeDisabled): array
     {
-        $contentRepository = $this->contentRepositoryRegistry->get($node->contentRepositoryId);
-        $nodeAggregate = $contentRepository->getContentGraph($node->workspaceName)->findNodeAggregateById($node->aggregateId);
+        return array_values(array_filter(
+            $this->findAllVariants($node->contentRepositoryId, $node->workspaceName, $node->aggregateId, $excludeDisabled) ?? [],
+            static fn (Node $variant) => !$variant->originDimensionSpacePoint->equals($node->originDimensionSpacePoint),
+        ));
+    }
+
+    /**
+     * The aggregate in each dimension space point it occupies, in the order of the content dimensions, each read in
+     * that point as the account sees it, so a variant the account may not see is left out. Null if the content
+     * repository or workspace doesn't exist or the account may not read it, see find()
+     *
+     * @return list<Node>|null
+     */
+    public function findAllVariants(ContentRepositoryId $contentRepositoryId, WorkspaceName $workspaceName, NodeAggregateId $nodeAggregateId, bool $excludeDisabled): ?array
+    {
+        $contentRepository = $this->contentRepositoryFinder->find($contentRepositoryId);
+        if ($contentRepository === null) {
+            return null;
+        }
+        try {
+            $nodeAggregate = $contentRepository->getContentGraph($workspaceName)->findNodeAggregateById($nodeAggregateId);
+        } catch (WorkspaceDoesNotExist | AccessDenied) {
+            return null;
+        }
         $variants = [];
         // the occupied points are in no particular order
         foreach ($contentRepository->getVariationGraph()->getDimensionSpacePoints() as $dimensionSpacePoint) {
-            $origin = OriginDimensionSpacePoint::fromDimensionSpacePoint($dimensionSpacePoint);
-            if ($nodeAggregate?->occupiesDimensionSpacePoint($origin) !== true || $origin->equals($node->originDimensionSpacePoint)) {
+            if ($nodeAggregate?->occupiesDimensionSpacePoint(OriginDimensionSpacePoint::fromDimensionSpacePoint($dimensionSpacePoint)) !== true) {
                 continue;
             }
-            $variant = $this->find($node->contentRepositoryId, $node->workspaceName, $dimensionSpacePoint, $excludeDisabled)
-                ?->findNodeById($node->aggregateId);
+            $variant = $this->find($contentRepositoryId, $workspaceName, $dimensionSpacePoint, $excludeDisabled)
+                ?->findNodeById($nodeAggregateId);
             if ($variant !== null) {
                 $variants[] = $variant;
             }

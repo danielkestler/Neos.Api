@@ -21,11 +21,13 @@ use Neos\Api\Endpoint\Nodes\Schema\DimensionSpacePoint;
 use Neos\Api\Endpoint\Nodes\Schema\Node;
 use Neos\Api\Endpoint\Nodes\Schema\NodeAggregateId;
 use Neos\Api\Endpoint\Nodes\Schema\NodeList;
+use Neos\Api\Endpoint\Nodes\Schema\NodeListing;
 use Neos\Api\Endpoint\Nodes\Schema\PaginatedNodeListing;
 use Neos\Api\Endpoint\Nodes\Schema\SubtreeTag;
 use Neos\Api\Endpoint\Workspaces\ReadableWorkspace;
 use Neos\Api\Endpoint\Workspaces\Schema\WorkspaceName;
 use Neos\Api\Endpoint\Workspaces\WorkspaceResolver;
+use Neos\Api\Infrastructure\ContentRepository\ContentRepositoryFinder;
 use Neos\Api\Infrastructure\ContentRepository\ContentSubgraphs;
 use Neos\Api\Infrastructure\ContentRepository\InvalidPropertyValue;
 use Neos\Api\Infrastructure\ContentRepository\NodeSerializer;
@@ -115,6 +117,7 @@ final readonly class Nodes
         private PropertyValues $propertyValues,
         private UriPathSegments $uriPathSegments,
         private WorkspaceResolver $workspaceResolver,
+        private ContentRepositoryFinder $contentRepositoryFinder,
     ) {
     }
 
@@ -748,6 +751,45 @@ final readonly class Nodes
             }
         }
         return $sibling === null ? $preceding : null;
+    }
+
+    #[Operation(
+        path: '/cr/{contentRepositoryId}/nodes/{nodeAggregateId}/variants',
+        method: 'GET',
+        summary: 'List the variants of a node',
+        description: 'The node in each dimension space point it has a variant of its own in (not the points that only fall back to one), each read in its point, in the order of the content dimensions: all of them, unlike getNode\'s include=variants, which are the others. Variants the account may not read are left out, a node without any it may read is a 404. include works as in getNode, for each variant. Hidden nodes are visible as in getNode.',
+        operationId: 'listNodeVariants',
+        security: [
+            ApiAuthContextProvider::SCOPES => [ApiScopes::NODES_READ],
+        ],
+    )]
+    public function listVariants(
+        ContentRepositoryId $contentRepositoryId,
+        NodeAggregateId $nodeAggregateId,
+        #[Parameter(in: 'query', description: 'The workspace to read the variants in, live if omitted')]
+        WorkspaceName|null $workspaceName = null,
+        #[Parameter(in: 'query', description: 'What to include beyond each variant\'s own fields, comma-separated: references, children, children.references')]
+        IncludePaths|null $include = null,
+    ): NodeListing|NotFound|BadRequest {
+        $include ??= IncludePaths::none();
+        $unsupported = $include->unsupported(['references', 'children', 'children.references']);
+        if ($unsupported !== null) {
+            return $unsupported;
+        }
+        $workspace = $workspaceName?->toWorkspaceName() ?? SharedModel\Workspace\WorkspaceName::forLive();
+        $variants = $this->contentSubgraphs->findAllVariants($contentRepositoryId->toContentRepositoryId(), $workspace, $nodeAggregateId->toNodeAggregateId(), excludeDisabled: false);
+        if ($variants === null) {
+            return $this->contentRepositoryFinder->find($contentRepositoryId->toContentRepositoryId()) === null
+                ? NotFound::because(sprintf('There is no content repository with the ID %s', $contentRepositoryId->value))
+                : NotFound::because(sprintf('There is no workspace %s in the content repository %s', $workspace->value, $contentRepositoryId->value));
+        }
+        if ($variants === []) {
+            return NotFound::because(sprintf('There is no node %s in the workspace %s', $nodeAggregateId->value, $workspace->value));
+        }
+        return new NodeListing(
+            new NodeList(...array_map(fn (ContentGraph\Node $variant) => $this->node($variant, $include), $variants)),
+            new ListingMeta(count($variants)),
+        );
     }
 
     #[Operation(

@@ -518,6 +518,22 @@ class NodesTest extends EndpointTestCase
         self::assertSame(401, $this->post($path, null, $body)->getStatusCode());
     }
 
+    #[Test]
+    public function listsVariants(): void
+    {
+        $token = $this->token('nobody-machine', 'nodes.read');
+
+        foreach ([[], ['workspaceName' => 'user-editor', 'include' => 'references,children.references']] as $query) {
+            $response = $this->get(self::variantsPath('some-node', $query), $token);
+            self::assertSame(404, $response->getStatusCode(), (string)$response->getBody());
+            self::assertSame('There is no content repository with the ID unknown', self::json($response)['detail']);
+        }
+        // variants have no variants
+        self::assertSame(400, $this->get(self::variantsPath('some-node', ['include' => 'variants']), $token)->getStatusCode());
+        self::assertSame(403, $this->get(self::variantsPath('some-node', []), $this->token('nobody-machine', 'me.read'))->getStatusCode());
+        self::assertSame(401, $this->get(self::variantsPath('some-node', []), null)->getStatusCode());
+    }
+
     /**
      * @param array<string, mixed> $query
      */
