@@ -391,6 +391,37 @@ class NodesTest extends EndpointTestCase
         self::assertSame(401, $this->post($path, null, [])->getStatusCode());
     }
 
+    #[Test]
+    public function changesNodeTypesOnlyInAGivenWorkspace(): void
+    {
+        $token = $this->token('editor-machine', 'nodes.update');
+        $body = ['nodeType' => 'Neos.Neos:Shortcut'];
+
+        $response = $this->put(self::nodeTypePath('some-node', ['workspaceName' => 'user-editor']), $token, $body);
+        self::assertSame(404, $response->getStatusCode(), (string)$response->getBody());
+        self::assertSame('There is no content repository with the ID unknown', self::json($response)['detail']);
+
+        // no default workspace for changes
+        self::assertSame(400, $this->put(self::nodeTypePath('some-node', []), $token, $body)->getStatusCode());
+        // their schemas reject them
+        foreach ([[], ['nodeType' => ''], $body + ['strategy' => 'delete']] as $invalid) {
+            self::assertSame(400, $this->put(self::nodeTypePath('some-node', ['workspaceName' => 'user-editor']), $token, $invalid)->getStatusCode(), json_encode($invalid));
+        }
+    }
+
+    #[Test]
+    public function changingNodeTypesRequiresTheScopeAndThePrivilege(): void
+    {
+        $path = self::nodeTypePath('some-node', ['workspaceName' => 'user-editor']);
+        $body = ['nodeType' => 'Neos.Neos:Shortcut'];
+
+        $response = $this->put($path, $this->token('editor-machine', 'nodes.read'), $body);
+        self::assertSame(403, $response->getStatusCode(), (string)$response->getBody());
+        self::assertStringContainsString('nodes.update', self::json($response)['detail']);
+        self::assertSame(403, $this->put($path, $this->token('nobody-machine', 'nodes.update'), $body)->getStatusCode());
+        self::assertSame(401, $this->put($path, null, $body)->getStatusCode());
+    }
+
     /**
      * @param array<string, mixed> $query
      */
@@ -429,6 +460,14 @@ class NodesTest extends EndpointTestCase
     private static function restorePath(string $nodeAggregateId, array $query): string
     {
         return '/api/cr/unknown/nodes/' . rawurlencode($nodeAggregateId) . '/restore' . self::query($query);
+    }
+
+    /**
+     * @param array<string, mixed> $query
+     */
+    private static function nodeTypePath(string $nodeAggregateId, array $query): string
+    {
+        return '/api/cr/unknown/nodes/' . rawurlencode($nodeAggregateId) . '/nodetype' . self::query($query);
     }
 
     /**

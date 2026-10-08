@@ -12,6 +12,7 @@ use Neos\Api\Endpoint\Nodes\Parameter\SearchTerm;
 use Neos\Api\Endpoint\Nodes\RequestBody\NodeCreate;
 use Neos\Api\Endpoint\Nodes\RequestBody\NodePropertiesUpdate;
 use Neos\Api\Endpoint\Nodes\RequestBody\NodeTag;
+use Neos\Api\Endpoint\Nodes\RequestBody\NodeTypeChange;
 use Neos\Api\Endpoint\Nodes\Response\NodeCreated;
 use Neos\Api\Endpoint\Nodes\Schema\DimensionSpacePoint;
 use Neos\Api\Endpoint\Nodes\Schema\Node;
@@ -45,6 +46,8 @@ use Neos\Api\Shared\Schema\ListingMeta;
 use Neos\ContentRepository\Core\DimensionSpace\OriginDimensionSpacePoint;
 use Neos\ContentRepository\Core\Feature\NodeCreation\Command\CreateNodeAggregateWithNode;
 use Neos\ContentRepository\Core\Feature\NodeModification\Command\SetNodeProperties;
+use Neos\ContentRepository\Core\Feature\NodeTypeChange\Command\ChangeNodeAggregateType;
+use Neos\ContentRepository\Core\Feature\NodeTypeChange\Dto\NodeAggregateTypeChangeChildConstraintConflictResolutionMarkWithTagStrategy;
 use Neos\ContentRepository\Core\Feature\Security\Exception\AccessDenied;
 use Neos\ContentRepository\Core\Feature\SubtreeTagging\Command\TagSubtree;
 use Neos\ContentRepository\Core\Feature\SubtreeTagging\Command\UntagSubtree;
@@ -62,6 +65,7 @@ use Neos\ContentRepository\Core\SharedModel\Exception\NodeAggregateCurrentlyExis
 use Neos\ContentRepository\Core\SharedModel\Exception\NodeAggregateDoesCurrentlyNotCoverDimensionSpacePoint;
 use Neos\ContentRepository\Core\SharedModel\Exception\NodeAggregateIsRoot;
 use Neos\ContentRepository\Core\SharedModel\Exception\NodeAggregateIsTethered;
+use Neos\ContentRepository\Core\SharedModel\Exception\NodeAggregateIsUntethered;
 use Neos\ContentRepository\Core\SharedModel\Exception\NodeConstraintException;
 use Neos\ContentRepository\Core\SharedModel\Exception\NodeTypeIsAbstract;
 use Neos\ContentRepository\Core\SharedModel\Exception\NodeTypeIsOfTypeRoot;
@@ -524,6 +528,54 @@ final readonly class Nodes
             }
         }
         return array_values($removed);
+    }
+
+    #[Operation(
+        path: '/cr/{contentRepositoryId}/nodes/{nodeAggregateId}/nodetype',
+        method: 'PUT',
+        summary: 'Change the node type of a node',
+        description: 'Changes the node type of the node in the workspace, in all of its dimension space points (ChangeNodeAggregateType), as the Neos backend does: properties the new node type doesn\'t declare are removed, its defaults are set for the ones the node doesn\'t have, its tethered child nodes are created, and child nodes it doesn\'t allow are deleted as with deleteNode (soft, restoreNode restores them). The same node type changes nothing. An unknown, abstract or root node type, one the parent doesn\'t allow, or a root or tethered node (e.g. a page\'s main collection) are a 422, a child node with the name of one of the new type\'s tethered child nodes a 409. Whether the account may change the node is up to its workspace roles and node privileges (else a 403), as in the Neos backend. The response is the node in the dimension space point as getNode returns it without include.',
+        operationId: 'changeNodeType',
+        security: [
+            ApiAuthContextProvider::SCOPES => [ApiScopes::NODES_UPDATE],
+        ],
+    )]
+    public function changeNodeType(
+        ContentRepositoryId $contentRepositoryId,
+        NodeAggregateId $nodeAggregateId,
+        #[Parameter(in: 'query', description: 'The workspace to change the node in, required: changing live directly is rarely what is meant')]
+        WorkspaceName $workspaceName,
+        #[RequestBody(description: 'The new node type')] NodeTypeChange $change,
+        #[Parameter(in: 'query', description: 'The dimension space point to read the node in, the change is to all of them, as JSON. If omitted, as for getNode')]
+        DimensionSpacePoint|null $dimensionSpacePoint = null,
+    ): Node|NotFound|BadRequest|Forbidden|Conflict|UnprocessableContent {
+        $node = $this->nodeIn($contentRepositoryId, $nodeAggregateId, $workspaceName, $dimensionSpacePoint);
+        if (!$node instanceof ContentGraph\Node) {
+            return $node;
+        }
+        $contentRepository = $this->contentRepositoryRegistry->get($node->contentRepositoryId);
+        $nodeTypeName = NodeType\NodeTypeName::fromString($change->nodeType->value);
+        if ($contentRepository->getNodeTypeManager()->getNodeType($nodeTypeName) === null) {
+            return UnprocessableContent::because(sprintf('There is no node type %s', $nodeTypeName->value));
+        }
+        if (!$nodeTypeName->equals($node->nodeTypeName)) {
+            try {
+                // as Neos UI, which soft removes the child nodes the new node type doesn't allow, see NeosSubtreeTag::removed()
+                $contentRepository->handle(ChangeNodeAggregateType::create(
+                    $node->workspaceName,
+                    $node->aggregateId,
+                    $nodeTypeName,
+                    new NodeAggregateTypeChangeChildConstraintConflictResolutionMarkWithTagStrategy(NeosSubtreeTag::removed()),
+                ));
+            } catch (AccessDenied) {
+                return Forbidden::because(sprintf('You may not change the node %s in the workspace %s', $node->aggregateId->value, $node->workspaceName->value));
+            } catch (NodeAggregateIsUntethered $exception) {
+                return Conflict::because($exception->getMessage());
+            } catch (NodeAggregateIsRoot | NodeAggregateIsTethered | NodeTypeIsAbstract | NodeTypeIsOfTypeRoot | NodeConstraintException $exception) {
+                return UnprocessableContent::because($exception->getMessage());
+            }
+        }
+        return $this->reread($node);
     }
 
     /**

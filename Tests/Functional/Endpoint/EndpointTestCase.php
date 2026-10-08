@@ -71,6 +71,14 @@ abstract class EndpointTestCase extends FunctionalTestCase
     }
 
     /**
+     * @param array<mixed> $body
+     */
+    protected function put(string $path, ?string $bearer, array $body): ResponseInterface
+    {
+        return $this->request('PUT', $path, $bearer, $body);
+    }
+
+    /**
      * @param array<mixed>|null $body sent as JSON
      * @param array<string, string> $headers
      */
