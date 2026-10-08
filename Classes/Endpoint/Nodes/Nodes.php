@@ -11,12 +11,14 @@ use Neos\Api\Endpoint\Nodes\Parameter\ReferenceFilter;
 use Neos\Api\Endpoint\Nodes\Parameter\SearchTerm;
 use Neos\Api\Endpoint\Nodes\RequestBody\NodeCreate;
 use Neos\Api\Endpoint\Nodes\RequestBody\NodePropertiesUpdate;
+use Neos\Api\Endpoint\Nodes\RequestBody\NodeTag;
 use Neos\Api\Endpoint\Nodes\Response\NodeCreated;
 use Neos\Api\Endpoint\Nodes\Schema\DimensionSpacePoint;
 use Neos\Api\Endpoint\Nodes\Schema\Node;
 use Neos\Api\Endpoint\Nodes\Schema\NodeAggregateId;
 use Neos\Api\Endpoint\Nodes\Schema\NodeList;
 use Neos\Api\Endpoint\Nodes\Schema\PaginatedNodeListing;
+use Neos\Api\Endpoint\Nodes\Schema\SubtreeTag;
 use Neos\Api\Endpoint\Workspaces\Schema\WorkspaceName;
 use Neos\Api\Infrastructure\ContentRepository\ContentSubgraphs;
 use Neos\Api\Infrastructure\ContentRepository\InvalidPropertyValue;
@@ -42,6 +44,9 @@ use Neos\ContentRepository\Core\Feature\NodeCreation\Command\CreateNodeAggregate
 use Neos\ContentRepository\Core\Feature\NodeModification\Command\SetNodeProperties;
 use Neos\ContentRepository\Core\Feature\Security\Exception\AccessDenied;
 use Neos\ContentRepository\Core\Feature\SubtreeTagging\Command\TagSubtree;
+use Neos\ContentRepository\Core\Feature\SubtreeTagging\Command\UntagSubtree;
+use Neos\ContentRepository\Core\Feature\SubtreeTagging\Exception\SubtreeIsAlreadyTagged;
+use Neos\ContentRepository\Core\Feature\SubtreeTagging\Exception\SubtreeIsNotTagged;
 use Neos\ContentRepository\Core\NodeType;
 use Neos\ContentRepository\Core\Projection\ContentGraph;
 use Neos\ContentRepository\Core\Projection\ContentGraph\ContentSubgraphInterface;
@@ -363,6 +368,100 @@ final readonly class Nodes
             return UnprocessableContent::because(sprintf('The node %s is a root node, which can\'t be deleted', $node->aggregateId->value));
         }
         return null;
+    }
+
+    #[Operation(
+        path: '/cr/{contentRepositoryId}/nodes/{nodeAggregateId}/tags',
+        method: 'POST',
+        summary: 'Tag a node',
+        description: 'Tags the node and everything below it in the workspace and dimension space point and the points that fall back to it (TagSubtree), as the Neos backend does: disabled hides it (isHidden), other tags may be matched by node privileges. removed is a 422, deleteNode removes nodes. A tag the node has already is a 409, disabled on a tethered node (e.g. a page\'s main collection) a 422. Whether the account may change the node is up to its workspace roles and node privileges (else a 403), as in the Neos backend. The response is the node as getNode returns it without include.',
+        operationId: 'tagNode',
+        security: [
+            ApiAuthContextProvider::SCOPES => [ApiScopes::NODES_UPDATE],
+        ],
+    )]
+    public function tag(
+        ContentRepositoryId $contentRepositoryId,
+        NodeAggregateId $nodeAggregateId,
+        #[Parameter(in: 'query', description: 'The workspace to tag the node in, required: changing live directly is rarely what is meant')]
+        WorkspaceName $workspaceName,
+        #[RequestBody(description: 'The tag')] NodeTag $newTag,
+        #[Parameter(in: 'query', description: 'The dimension space point to tag the node in (and the points that fall back to it), as JSON. If omitted, as for getNode')]
+        DimensionSpacePoint|null $dimensionSpacePoint = null,
+    ): Node|NotFound|BadRequest|Forbidden|Conflict|UnprocessableContent {
+        $tag = $newTag->tag->toSubtreeTag();
+        if ($tag->equals(NeosSubtreeTag::removed())) {
+            return UnprocessableContent::because('Nodes can\'t be tagged removed, deleteNode removes them');
+        }
+        $node = $this->nodeIn($contentRepositoryId, $nodeAggregateId, $workspaceName, $dimensionSpacePoint);
+        if (!$node instanceof ContentGraph\Node) {
+            return $node;
+        }
+        try {
+            $this->contentRepositoryRegistry->get($node->contentRepositoryId)->handle(TagSubtree::create($node->workspaceName, $node->aggregateId, $node->dimensionSpacePoint, NodeVariantSelectionStrategy::STRATEGY_ALL_SPECIALIZATIONS, $tag));
+        } catch (AccessDenied) {
+            return Forbidden::because(sprintf('You may not change the node %s in the workspace %s', $node->aggregateId->value, $node->workspaceName->value));
+        } catch (SubtreeIsAlreadyTagged) {
+            return Conflict::because(sprintf('The node %s is tagged %s already', $node->aggregateId->value, $tag->value));
+        } catch (NodeAggregateIsTethered) {
+            return UnprocessableContent::because(sprintf('The node %s is tethered to its parent, it can\'t be tagged %s', $node->aggregateId->value, $tag->value));
+        }
+        return $this->reread($node);
+    }
+
+    #[Operation(
+        path: '/cr/{contentRepositoryId}/nodes/{nodeAggregateId}/tags/{tag}',
+        method: 'DELETE',
+        summary: 'Untag a node',
+        description: 'Removes the tag from the node and everything below it in the workspace and dimension space point and the points that fall back to it (UntagSubtree), as the Neos backend does: untagging disabled shows it again. A tag the node doesn\'t have itself is a 404, also one it only inherits from an ancestor (inheritedTags), untag that one instead. removed is a 422: removed nodes aren\'t found, Neos\' trash restores them. Whether the account may change the node is up to its workspace roles and node privileges (else a 403), as in the Neos backend. The response is the node as getNode returns it without include.',
+        operationId: 'untagNode',
+        security: [
+            ApiAuthContextProvider::SCOPES => [ApiScopes::NODES_UPDATE],
+        ],
+    )]
+    public function untag(
+        ContentRepositoryId $contentRepositoryId,
+        NodeAggregateId $nodeAggregateId,
+        SubtreeTag $tag,
+        #[Parameter(in: 'query', description: 'The workspace to untag the node in, required: changing live directly is rarely what is meant')]
+        WorkspaceName $workspaceName,
+        #[Parameter(in: 'query', description: 'The dimension space point to untag the node in (and the points that fall back to it), as JSON. If omitted, as for getNode')]
+        DimensionSpacePoint|null $dimensionSpacePoint = null,
+    ): Node|NotFound|BadRequest|Forbidden|UnprocessableContent {
+        // removed nodes aren't found, restoring them is up to Neos' trash
+        if ($tag->toSubtreeTag()->equals(NeosSubtreeTag::removed())) {
+            return UnprocessableContent::because('removed can\'t be untagged, removed nodes are restored from the trash');
+        }
+        $node = $this->nodeIn($contentRepositoryId, $nodeAggregateId, $workspaceName, $dimensionSpacePoint);
+        if (!$node instanceof ContentGraph\Node) {
+            return $node;
+        }
+        try {
+            $this->contentRepositoryRegistry->get($node->contentRepositoryId)->handle(UntagSubtree::create($node->workspaceName, $node->aggregateId, $node->dimensionSpacePoint, NodeVariantSelectionStrategy::STRATEGY_ALL_SPECIALIZATIONS, $tag->toSubtreeTag()));
+        } catch (AccessDenied) {
+            return Forbidden::because(sprintf('You may not change the node %s in the workspace %s', $node->aggregateId->value, $node->workspaceName->value));
+        } catch (SubtreeIsNotTagged) {
+            return NotFound::because(sprintf('The node %s isn\'t tagged %s itself', $node->aggregateId->value, $tag->value));
+        }
+        return $this->reread($node);
+    }
+
+    /**
+     * The node in the subgraph of the request, see subgraph() and findNode()
+     */
+    private function nodeIn(ContentRepositoryId $contentRepositoryId, NodeAggregateId $nodeAggregateId, ?WorkspaceName $workspaceName, ?DimensionSpacePoint $dimensionSpacePoint): ContentGraph\Node|NotFound|BadRequest
+    {
+        $subgraph = $this->subgraph($contentRepositoryId, $workspaceName, $dimensionSpacePoint);
+        return $subgraph instanceof ContentSubgraphInterface ? $this->findNode($subgraph, $nodeAggregateId) : $subgraph;
+    }
+
+    /**
+     * The node after a change, nodes are read-only
+     */
+    private function reread(ContentGraph\Node $node): Node|NotFound
+    {
+        $changed = $this->findNode($this->contentRepositoryRegistry->subgraphForNode($node), NodeAggregateId::fromString($node->aggregateId->value));
+        return $changed instanceof ContentGraph\Node ? $this->node($changed, IncludePaths::none()) : $changed;
     }
 
     /**

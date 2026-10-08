@@ -325,6 +325,46 @@ class NodesTest extends EndpointTestCase
         self::assertSame(401, $this->delete($path, null)->getStatusCode());
     }
 
+    #[Test]
+    public function tagsNodesOnlyInAGivenWorkspace(): void
+    {
+        $token = $this->token('editor-machine', 'nodes.update');
+        $workspace = ['workspaceName' => 'user-editor'];
+
+        $response = $this->post(self::tagsPath('some-node', $workspace), $token, ['tag' => 'disabled']);
+        self::assertSame(404, $response->getStatusCode(), (string)$response->getBody());
+        self::assertSame('There is no content repository with the ID unknown', self::json($response)['detail']);
+        self::assertSame(404, $this->delete(self::tagsPath('some-node', $workspace, 'disabled'), $token)->getStatusCode());
+
+        // no default workspace for changes
+        self::assertSame(400, $this->post(self::tagsPath('some-node', []), $token, ['tag' => 'disabled'])->getStatusCode());
+        self::assertSame(400, $this->delete(self::tagsPath('some-node', [], 'disabled'), $token)->getStatusCode());
+
+        // removed is up to deleteNode and the trash
+        foreach ([$this->post(self::tagsPath('some-node', $workspace), $token, ['tag' => 'removed']), $this->delete(self::tagsPath('some-node', $workspace, 'removed'), $token)] as $response) {
+            self::assertSame(422, $response->getStatusCode(), (string)$response->getBody());
+        }
+
+        // not a tag, their schemas reject them
+        foreach (['Disabled', 'with space', str_repeat('a', 37)] as $tag) {
+            self::assertSame(400, $this->post(self::tagsPath('some-node', $workspace), $token, ['tag' => $tag])->getStatusCode(), $tag);
+        }
+        self::assertSame(400, $this->delete(self::tagsPath('some-node', $workspace, 'Disabled'), $token)->getStatusCode());
+        self::assertSame(400, $this->post(self::tagsPath('some-node', $workspace), $token, [])->getStatusCode());
+    }
+
+    #[Test]
+    public function taggingRequiresTheScopeAndThePrivilege(): void
+    {
+        $workspace = ['workspaceName' => 'user-editor'];
+
+        $response = $this->post(self::tagsPath('some-node', $workspace), $this->token('editor-machine', 'nodes.read'), ['tag' => 'disabled']);
+        self::assertSame(403, $response->getStatusCode(), (string)$response->getBody());
+        self::assertStringContainsString('nodes.update', self::json($response)['detail']);
+        self::assertSame(403, $this->delete(self::tagsPath('some-node', $workspace, 'disabled'), $this->token('nobody-machine', 'nodes.update'))->getStatusCode());
+        self::assertSame(401, $this->post(self::tagsPath('some-node', $workspace), null, ['tag' => 'disabled'])->getStatusCode());
+    }
+
     /**
      * @param array<string, mixed> $query
      */
@@ -347,6 +387,14 @@ class NodesTest extends EndpointTestCase
     private static function propertiesPath(string $nodeAggregateId, array $query = []): string
     {
         return '/api/cr/unknown/nodes/' . rawurlencode($nodeAggregateId) . '/properties' . self::query($query);
+    }
+
+    /**
+     * @param array<string, mixed> $query
+     */
+    private static function tagsPath(string $nodeAggregateId, array $query, ?string $tag = null): string
+    {
+        return '/api/cr/unknown/nodes/' . rawurlencode($nodeAggregateId) . '/tags' . ($tag !== null ? '/' . rawurlencode($tag) : '') . self::query($query);
     }
 
     /**

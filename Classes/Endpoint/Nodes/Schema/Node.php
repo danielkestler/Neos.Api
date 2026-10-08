@@ -8,6 +8,7 @@ use Neos\Api\Endpoint\NodeTypes\Schema\NodeTypeName;
 use Neos\Api\Endpoint\Workspaces\Schema\WorkspaceName;
 use Neos\Api\Infrastructure\ContentRepository\NodeSerializer;
 use Neos\ContentRepository\Core\Projection\ContentGraph;
+use Neos\JsonSchema\ArraySchema;
 use Neos\JsonSchema\BooleanSchema;
 use Neos\JsonSchema\Nullable;
 use Neos\JsonSchema\ObjectSchema;
@@ -26,6 +27,8 @@ use Neos\Neos\Domain\SubtreeTagging\NeosSubtreeTag;
 final readonly class Node implements ProvidesSchema
 {
     /**
+     * @param list<string> $tags
+     * @param list<string> $inheritedTags
      * @param array<string, mixed> $properties
      * @param array<string, list<array{nodeAggregateId: string, properties: array<string, mixed>|\stdClass}>>|\stdClass|null $references
      * @param NodeList|null $children typed iterable, not NodeList, see there
@@ -43,6 +46,8 @@ final readonly class Node implements ProvidesSchema
         public bool $isHidden,
         public bool $isHiddenByAncestor,
         public bool $isShineThrough,
+        public array $tags,
+        public array $inheritedTags,
         public NodeTimestamps $timestamps,
         public array $properties,
         public array|\stdClass|null $references,
@@ -65,6 +70,8 @@ final readonly class Node implements ProvidesSchema
             $node->tags->withoutInherited()->contain(NeosSubtreeTag::disabled()),
             $node->tags->onlyInherited()->contain(NeosSubtreeTag::disabled()),
             !$node->dimensionSpacePoint->equals($node->originDimensionSpacePoint),
+            self::sorted($node->tags->withoutInherited()->toStringArray()),
+            self::sorted($node->tags->onlyInherited()->toStringArray()),
             NodeTimestamps::from($node->timestamps),
             $nodeSerializer->properties($node->properties),
             $includeReferences ? self::references($nodeSerializer->references($node), $nodeSerializer) : null,
@@ -91,6 +98,14 @@ final readonly class Node implements ProvidesSchema
                 isHidden: BooleanSchema::create(description: 'Whether the node itself is hidden'),
                 isHiddenByAncestor: BooleanSchema::create(description: 'Whether the node is inside a hidden node, which hides it as well'),
                 isShineThrough: BooleanSchema::create(description: 'Whether the node is shown with the content of another dimension space point (a fallback), e.g. en_UK showing en_US'),
+                tags: ArraySchema::create(
+                    description: 'The tags set on the node itself, sorted, e.g. disabled if it is hidden (isHidden)',
+                    items: SubtreeTag::schema(),
+                ),
+                inheritedTags: ArraySchema::create(
+                    description: 'The tags the node has from its ancestors, sorted, e.g. disabled if it is inside a hidden node (isHiddenByAncestor)',
+                    items: SubtreeTag::schema(),
+                ),
                 timestamps: NodeTimestamps::schema(),
                 properties: ObjectSchema::create(
                     description: 'The properties in their serialized form, as the content repository stores them, e.g. a date as ISO 8601 string. Assets, also in a list, are {"id": "…", "url": "…"} instead, null if the asset is gone',
@@ -107,8 +122,18 @@ final readonly class Node implements ProvidesSchema
                 variants: Nullable::wrap(NodeList::schema()),
             ),
             additionalProperties: false,
-            required: ['contentRepositoryId', 'workspaceName', 'dimensionSpacePoint', 'nodeAggregateId', 'name', 'nodeType', 'label', 'classification', 'isHidden', 'isHiddenByAncestor', 'isShineThrough', 'timestamps', 'properties', 'references', 'children', 'variants'],
+            required: ['contentRepositoryId', 'workspaceName', 'dimensionSpacePoint', 'nodeAggregateId', 'name', 'nodeType', 'label', 'classification', 'isHidden', 'isHiddenByAncestor', 'isShineThrough', 'tags', 'inheritedTags', 'timestamps', 'properties', 'references', 'children', 'variants'],
         );
+    }
+
+    /**
+     * @param array<string> $tags
+     * @return list<string>
+     */
+    private static function sorted(array $tags): array
+    {
+        sort($tags);
+        return $tags;
     }
 
     /**
