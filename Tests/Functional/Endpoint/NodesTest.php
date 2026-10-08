@@ -226,6 +226,67 @@ class NodesTest extends EndpointTestCase
         self::assertSame(401, $this->patch($path, null, $body)->getStatusCode());
     }
 
+    #[Test]
+    public function createsNodesOnlyInAGivenWorkspace(): void
+    {
+        $token = $this->token('editor-machine', 'nodes.create');
+        $body = ['nodeType' => 'Neos.Neos:Page', 'parentNodeAggregateId' => 'some-node', 'properties' => ['title' => 'About us']];
+
+        foreach ([['workspaceName' => 'user-editor'], ['workspaceName' => 'user-editor', 'dimensionSpacePoint' => '{"language":"de"}']] as $query) {
+            $response = $this->post(self::listPath($query), $token, $body);
+            self::assertSame(404, $response->getStatusCode(), (string)$response->getBody());
+            self::assertSame('There is no content repository with the ID unknown', self::json($response)['detail']);
+        }
+        $all = $body + ['succeedingSiblingNodeAggregateId' => 'other-node', 'nodeAggregateId' => 'new-node'];
+        self::assertSame(404, $this->post(self::listPath(['workspaceName' => 'user-editor']), $token, $all)->getStatusCode());
+
+        // no default workspace for changes
+        $response = $this->post(self::listPath([]), $token, $body);
+        self::assertSame(400, $response->getStatusCode(), (string)$response->getBody());
+        self::assertStringContainsString('workspaceName', (string)$response->getBody());
+
+        $post = self::json($this->get('/api/openapi.json', null))['paths']['/cr/{contentRepositoryId}/nodes']['post'];
+        self::assertSame('createNode', $post['operationId']);
+        self::assertArrayHasKey('Location', $post['responses']['201']['headers']);
+    }
+
+    #[Test]
+    public function rejectsInvalidNewNodes(): void
+    {
+        $token = $this->token('editor-machine', 'nodes.create');
+        $path = self::listPath(['workspaceName' => 'user-editor']);
+        $body = ['nodeType' => 'Neos.Neos:Page', 'parentNodeAggregateId' => 'some-node'];
+
+        // the body's schema rejects them: no node type or parent, unknown fields, invalid ids, properties no map
+        foreach ([
+            ['parentNodeAggregateId' => 'some-node'],
+            ['nodeType' => 'Neos.Neos:Page'],
+            $body + ['nodeName' => 'about-us'],
+            ['nodeType' => 'Neos.Neos:Page', 'parentNodeAggregateId' => 'Not_An_Id'],
+            $body + ['nodeAggregateId' => 'Not_An_Id'],
+            $body + ['properties' => 'title'],
+        ] as $invalid) {
+            self::assertSame(400, $this->post($path, $token, $invalid)->getStatusCode(), json_encode($invalid));
+        }
+    }
+
+    #[Test]
+    public function creatingRequiresTheScopeAndThePrivilege(): void
+    {
+        $path = self::listPath(['workspaceName' => 'user-editor']);
+        $body = ['nodeType' => 'Neos.Neos:Page', 'parentNodeAggregateId' => 'some-node'];
+
+        // changing isn't enough
+        $response = $this->post($path, $this->token('editor-machine', 'nodes.update'), $body);
+        self::assertSame(403, $response->getStatusCode(), (string)$response->getBody());
+        self::assertStringContainsString('nodes.create', self::json($response)['detail']);
+
+        // only editors may create nodes
+        self::assertSame(403, $this->post($path, $this->token('nobody-machine', 'nodes.create'), $body)->getStatusCode());
+
+        self::assertSame(401, $this->post($path, null, $body)->getStatusCode());
+    }
+
     /**
      * @param array<string, mixed> $query
      */

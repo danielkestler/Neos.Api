@@ -9,7 +9,9 @@ use Neos\Api\Endpoint\Nodes\Parameter\NodeTypeCriteria;
 use Neos\Api\Endpoint\Nodes\Parameter\PropertyCriteria;
 use Neos\Api\Endpoint\Nodes\Parameter\ReferenceFilter;
 use Neos\Api\Endpoint\Nodes\Parameter\SearchTerm;
+use Neos\Api\Endpoint\Nodes\RequestBody\NodeCreate;
 use Neos\Api\Endpoint\Nodes\RequestBody\NodePropertiesUpdate;
+use Neos\Api\Endpoint\Nodes\Response\NodeCreated;
 use Neos\Api\Endpoint\Nodes\Schema\DimensionSpacePoint;
 use Neos\Api\Endpoint\Nodes\Schema\Node;
 use Neos\Api\Endpoint\Nodes\Schema\NodeAggregateId;
@@ -20,6 +22,7 @@ use Neos\Api\Infrastructure\ContentRepository\ContentSubgraphs;
 use Neos\Api\Infrastructure\ContentRepository\InvalidPropertyValue;
 use Neos\Api\Infrastructure\ContentRepository\NodeSerializer;
 use Neos\Api\Infrastructure\ContentRepository\PropertyValues;
+use Neos\Api\Infrastructure\ContentRepository\UriPathSegments;
 use Neos\Api\Infrastructure\ContentRepository\SiteFinder;
 use Neos\Api\Security\ApiAuthContextProvider;
 use Neos\Api\Security\ApiScopes;
@@ -35,13 +38,20 @@ use Neos\Api\Shared\Response\UnprocessableContent;
 use Neos\Api\Shared\Schema\ListingLinks;
 use Neos\Api\Shared\Schema\ListingMeta;
 use Neos\ContentRepository\Core\DimensionSpace\OriginDimensionSpacePoint;
+use Neos\ContentRepository\Core\Feature\NodeCreation\Command\CreateNodeAggregateWithNode;
 use Neos\ContentRepository\Core\Feature\NodeModification\Command\SetNodeProperties;
 use Neos\ContentRepository\Core\Feature\Security\Exception\AccessDenied;
+use Neos\ContentRepository\Core\NodeType;
 use Neos\ContentRepository\Core\Projection\ContentGraph;
 use Neos\ContentRepository\Core\Projection\ContentGraph\ContentSubgraphInterface;
 use Neos\ContentRepository\Core\Projection\ContentGraph\Filter\FindChildNodesFilter;
 use Neos\ContentRepository\Core\SharedModel;
 use Neos\ContentRepository\Core\SharedModel\Exception\DimensionSpacePointIsNotYetOccupied;
+use Neos\ContentRepository\Core\SharedModel\Exception\NodeAggregateCurrentlyExists;
+use Neos\ContentRepository\Core\SharedModel\Exception\NodeAggregateDoesCurrentlyNotCoverDimensionSpacePoint;
+use Neos\ContentRepository\Core\SharedModel\Exception\NodeConstraintException;
+use Neos\ContentRepository\Core\SharedModel\Exception\NodeTypeIsAbstract;
+use Neos\ContentRepository\Core\SharedModel\Exception\NodeTypeIsOfTypeRoot;
 use Neos\ContentRepository\Core\SharedModel\Exception\PropertyCannotBeSet;
 use Neos\ContentRepositoryRegistry\ContentRepositoryRegistry;
 use Neos\OpenApi\Attributes\Operation;
@@ -66,6 +76,7 @@ final readonly class Nodes
         private SiteFinder $siteFinder,
         private NodeSerializer $nodeSerializer,
         private PropertyValues $propertyValues,
+        private UriPathSegments $uriPathSegments,
     ) {
     }
 
@@ -136,6 +147,75 @@ final readonly class Nodes
             new ListingMeta($total),
             ListingLinks::for($request, $offset, $limit, $total),
         );
+    }
+
+    #[Operation(
+        path: '/cr/{contentRepositoryId}/nodes',
+        method: 'POST',
+        summary: 'Create a node',
+        description: 'Creates a node of the node type below the parent in the workspace, with the dimension space point as its origin (CreateNodeAggregateWithNode): before the succeeding sibling, else as the parent\'s last child, with the given aggregate id, else a new one. The properties are set as for updateNodeProperties, over the node type\'s defaults, a document without uriPathSegment gets one from its title as in the Neos backend. Tethered child nodes (e.g. a page\'s main collection) are created with it. An unknown, abstract or root node type, one the parent doesn\'t allow below it, a sibling that isn\'t a child of the parent or properties that can\'t be written are a 422, an aggregate id that is taken a 409. Whether the account may create the node there is up to its workspace roles and node privileges (else a 403), as in the Neos backend. The response is the new node as getNode returns it without include.',
+        operationId: 'createNode',
+        security: [
+            ApiAuthContextProvider::SCOPES => [ApiScopes::NODES_CREATE],
+        ],
+    )]
+    public function create(
+        ContentRepositoryId $contentRepositoryId,
+        #[Parameter(in: 'query', description: 'The workspace to create the node in, required: changing live directly is rarely what is meant')]
+        WorkspaceName $workspaceName,
+        #[RequestBody(description: 'The node')] NodeCreate $newNode,
+        #[Parameter(in: 'query', description: 'The dimension space point to create the node in, its origin, as JSON. If omitted, as for getNode')]
+        DimensionSpacePoint|null $dimensionSpacePoint = null,
+    ): NodeCreated|NotFound|BadRequest|Forbidden|Conflict|UnprocessableContent {
+        $subgraph = $this->subgraph($contentRepositoryId, $workspaceName, $dimensionSpacePoint);
+        if (!$subgraph instanceof ContentSubgraphInterface) {
+            return $subgraph;
+        }
+        $parent = $this->findNode($subgraph, $newNode->parentNodeAggregateId);
+        if (!$parent instanceof ContentGraph\Node) {
+            return $parent;
+        }
+        // the content repository doesn't check it, the projection would take the position below the sibling's parent
+        if ($newNode->succeedingSiblingNodeAggregateId !== null && $subgraph->findParentNode($newNode->succeedingSiblingNodeAggregateId->toNodeAggregateId())?->aggregateId->equals($parent->aggregateId) !== true) {
+            return UnprocessableContent::because(sprintf('The node %s has no child node %s to create the node before', $parent->aggregateId->value, $newNode->succeedingSiblingNodeAggregateId->value));
+        }
+        $contentRepository = $this->contentRepositoryRegistry->get($parent->contentRepositoryId);
+        $nodeTypeName = NodeType\NodeTypeName::fromString($newNode->nodeType->value);
+        $nodeType = $contentRepository->getNodeTypeManager()->getNodeType($nodeTypeName);
+        if ($nodeType === null) {
+            return UnprocessableContent::because(sprintf('There is no node type %s', $nodeTypeName->value));
+        }
+        $values = $newNode->properties;
+        if ($nodeType->isOfType('Neos.Neos:Document') && $nodeType->hasProperty('uriPathSegment') && !isset($values['uriPathSegment'])) {
+            $values['uriPathSegment'] = $this->uriPathSegments->forNewDocument($nodeTypeName, is_string($values['title'] ?? null) ? $values['title'] : null, $subgraph->getDimensionSpacePoint());
+        }
+        try {
+            $propertyValues = $this->propertyValues->toWrite($nodeType, $values);
+        } catch (InvalidPropertyValue $exception) {
+            return UnprocessableContent::because($exception->getMessage());
+        }
+        $nodeAggregateId = $newNode->nodeAggregateId?->toNodeAggregateId() ?? SharedModel\Node\NodeAggregateId::create();
+        try {
+            $contentRepository->handle(CreateNodeAggregateWithNode::create(
+                $parent->workspaceName,
+                $nodeAggregateId,
+                $nodeTypeName,
+                OriginDimensionSpacePoint::fromDimensionSpacePoint($subgraph->getDimensionSpacePoint()),
+                $parent->aggregateId,
+                $newNode->succeedingSiblingNodeAggregateId?->toNodeAggregateId(),
+                $propertyValues,
+            ));
+        } catch (AccessDenied) {
+            return Forbidden::because(sprintf('You may not create a node below the node %s in the workspace %s', $parent->aggregateId->value, $parent->workspaceName->value));
+        } catch (NodeAggregateCurrentlyExists) {
+            return Conflict::because(sprintf('There is a node with the aggregate id %s already', $nodeAggregateId->value));
+        } catch (NodeAggregateDoesCurrentlyNotCoverDimensionSpacePoint) {
+            return Conflict::because(sprintf('The node %s isn\'t in the dimension space point %s', $parent->aggregateId->value, $subgraph->getDimensionSpacePoint()->toJson()));
+        } catch (NodeTypeIsAbstract | NodeTypeIsOfTypeRoot | NodeConstraintException | PropertyCannotBeSet $exception) {
+            return UnprocessableContent::because($exception->getMessage());
+        }
+        $created = $this->findNode($this->contentRepositoryRegistry->subgraphForNode($parent), NodeAggregateId::fromString($nodeAggregateId->value));
+        return $created instanceof ContentGraph\Node ? new NodeCreated($this->node($created, IncludePaths::none())) : $created;
     }
 
     #[Operation(

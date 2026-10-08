@@ -49,6 +49,9 @@ privilegeTargets:
     "Neos.Api:Nodes.Update":
       label: "Change the properties of the nodes you can edit"
       matcher: "nodes.update"
+    "Neos.Api:Nodes.Create":
+      label: "Create nodes where you can edit"
+      matcher: "nodes.create"
     "Neos.Api:Workspaces.Read":
       label: "List the workspaces you can read and the changes in them"
       matcher: "workspaces.read"
@@ -81,6 +84,8 @@ roles:
     privileges:
       # which nodes may be changed in which workspaces is up to the account's workspace roles and node privileges
       - privilegeTarget: "Neos.Api:Nodes.Update"
+        permission: GRANT
+      - privilegeTarget: "Neos.Api:Nodes.Create"
         permission: GRANT
       - privilegeTarget: "Neos.Api:DataSources.Read"
         permission: GRANT
