@@ -19,7 +19,9 @@ use Neos\Api\Endpoint\Nodes\Schema\NodeAggregateId;
 use Neos\Api\Endpoint\Nodes\Schema\NodeList;
 use Neos\Api\Endpoint\Nodes\Schema\PaginatedNodeListing;
 use Neos\Api\Endpoint\Nodes\Schema\SubtreeTag;
+use Neos\Api\Endpoint\Workspaces\ReadableWorkspace;
 use Neos\Api\Endpoint\Workspaces\Schema\WorkspaceName;
+use Neos\Api\Endpoint\Workspaces\WorkspaceResolver;
 use Neos\Api\Infrastructure\ContentRepository\ContentSubgraphs;
 use Neos\Api\Infrastructure\ContentRepository\InvalidPropertyValue;
 use Neos\Api\Infrastructure\ContentRepository\NodeSerializer;
@@ -27,6 +29,7 @@ use Neos\Api\Infrastructure\ContentRepository\PropertyValues;
 use Neos\Api\Infrastructure\ContentRepository\UriPathSegments;
 use Neos\Api\Infrastructure\ContentRepository\SiteFinder;
 use Neos\Api\Security\ApiAuthContextProvider;
+use Neos\Api\Security\ApiCaller;
 use Neos\Api\Security\ApiScopes;
 use Neos\Api\Shared\Parameter\IncludePaths;
 use Neos\Api\Shared\Parameter\Limit;
@@ -49,6 +52,8 @@ use Neos\ContentRepository\Core\Feature\SubtreeTagging\Exception\SubtreeIsAlread
 use Neos\ContentRepository\Core\Feature\SubtreeTagging\Exception\SubtreeIsNotTagged;
 use Neos\ContentRepository\Core\NodeType;
 use Neos\ContentRepository\Core\Projection\ContentGraph;
+use Neos\ContentRepository\Core\Projection\ContentGraph\ContentGraphInterface;
+use Neos\ContentRepository\Core\Projection\ContentGraph\NodeAggregate;
 use Neos\ContentRepository\Core\Projection\ContentGraph\ContentSubgraphInterface;
 use Neos\ContentRepository\Core\Projection\ContentGraph\Filter\FindChildNodesFilter;
 use Neos\ContentRepository\Core\SharedModel;
@@ -64,6 +69,7 @@ use Neos\ContentRepository\Core\SharedModel\Exception\PropertyCannotBeSet;
 use Neos\ContentRepository\Core\SharedModel\Node\NodeVariantSelectionStrategy;
 use Neos\ContentRepositoryRegistry\ContentRepositoryRegistry;
 use Neos\Neos\Domain\SubtreeTagging\NeosSubtreeTag;
+use Neos\OpenApi\Attributes\AuthContext;
 use Neos\OpenApi\Attributes\Operation;
 use Neos\OpenApi\Attributes\Parameter;
 use Neos\OpenApi\Attributes\RequestBody;
@@ -87,6 +93,7 @@ final readonly class Nodes
         private NodeSerializer $nodeSerializer,
         private PropertyValues $propertyValues,
         private UriPathSegments $uriPathSegments,
+        private WorkspaceResolver $workspaceResolver,
     ) {
     }
 
@@ -329,7 +336,7 @@ final readonly class Nodes
         path: '/cr/{contentRepositoryId}/nodes/{nodeAggregateId}',
         method: 'DELETE',
         summary: 'Delete a node',
-        description: 'Removes the node with everything below it in the workspace and dimension space point and the points that fall back to it (e.g. en_UK showing en_US), not in the others, as the Neos backend does: it is soft removed (tagged removed), and becomes a hard removal once it is published and no other workspace has changes to it, after a grace period (Neos.Neos.softRemoval.garbageCollectionGracePeriod). Removed nodes are read nowhere, a removed node is a 404 as an unknown one. A node shown with the content of another point is removed in this one only, it doesn\'t show the other\'s content again. Tethered nodes (e.g. a page\'s main collection) can only be removed with their parent, they and root nodes are a 422. Whether the account may remove the node is up to its workspace roles and node privileges (else a 403), as in the Neos backend.',
+        description: 'Removes the node with everything below it in the workspace and dimension space point and the points that fall back to it (e.g. en_UK showing en_US), not in the others, as the Neos backend does: it is soft removed (tagged removed), and becomes a hard removal once it is published and no other workspace has changes to it, after a grace period (Neos.Neos.softRemoval.garbageCollectionGracePeriod), until then restoreNode undoes it. Removed nodes are read nowhere, a removed node is a 404 as an unknown one. A node shown with the content of another point is removed in this one only, it doesn\'t show the other\'s content again. Tethered nodes (e.g. a page\'s main collection) can only be removed with their parent, they and root nodes are a 422. Whether the account may remove the node is up to its workspace roles and node privileges (else a 403), as in the Neos backend.',
         operationId: 'deleteNode',
         security: [
             ApiAuthContextProvider::SCOPES => [ApiScopes::NODES_DELETE],
@@ -413,7 +420,7 @@ final readonly class Nodes
         path: '/cr/{contentRepositoryId}/nodes/{nodeAggregateId}/tags/{tag}',
         method: 'DELETE',
         summary: 'Untag a node',
-        description: 'Removes the tag from the node and everything below it in the workspace and dimension space point and the points that fall back to it (UntagSubtree), as the Neos backend does: untagging disabled shows it again. A tag the node doesn\'t have itself is a 404, also one it only inherits from an ancestor (inheritedTags), untag that one instead. removed is a 422: removed nodes aren\'t found, Neos\' trash restores them. Whether the account may change the node is up to its workspace roles and node privileges (else a 403), as in the Neos backend. The response is the node as getNode returns it without include.',
+        description: 'Removes the tag from the node and everything below it in the workspace and dimension space point and the points that fall back to it (UntagSubtree), as the Neos backend does: untagging disabled shows it again. A tag the node doesn\'t have itself is a 404, also one it only inherits from an ancestor (inheritedTags), untag that one instead. removed is a 422: removed nodes aren\'t found, restoreNode restores them. Whether the account may change the node is up to its workspace roles and node privileges (else a 403), as in the Neos backend. The response is the node as getNode returns it without include.',
         operationId: 'untagNode',
         security: [
             ApiAuthContextProvider::SCOPES => [ApiScopes::NODES_UPDATE],
@@ -428,9 +435,9 @@ final readonly class Nodes
         #[Parameter(in: 'query', description: 'The dimension space point to untag the node in (and the points that fall back to it), as JSON. If omitted, as for getNode')]
         DimensionSpacePoint|null $dimensionSpacePoint = null,
     ): Node|NotFound|BadRequest|Forbidden|UnprocessableContent {
-        // removed nodes aren't found, restoring them is up to Neos' trash
+        // removed nodes aren't found, restoring them is up to restore()
         if ($tag->toSubtreeTag()->equals(NeosSubtreeTag::removed())) {
-            return UnprocessableContent::because('removed can\'t be untagged, removed nodes are restored from the trash');
+            return UnprocessableContent::because('removed can\'t be untagged, restoreNode restores removed nodes');
         }
         $node = $this->nodeIn($contentRepositoryId, $nodeAggregateId, $workspaceName, $dimensionSpacePoint);
         if (!$node instanceof ContentGraph\Node) {
@@ -444,6 +451,79 @@ final readonly class Nodes
             return NotFound::because(sprintf('The node %s isn\'t tagged %s itself', $node->aggregateId->value, $tag->value));
         }
         return $this->reread($node);
+    }
+
+    #[Operation(
+        path: '/cr/{contentRepositoryId}/nodes/{nodeAggregateId}/restore',
+        method: 'POST',
+        summary: 'Restore a deleted node',
+        description: 'Undoes deleteNode as Neos\' trash does: the node is restored in all dimension space points it was deleted in, with everything below it, and so are its deleted ancestors, so it has its place in the tree again. Only while the deletion is soft, until it is published and the grace period (Neos.Neos.softRemoval.garbageCollectionGracePeriod) is over, afterwards the node is gone, a 404 as an unknown one. Before publishing, discarding the workspace\'s changes undoes the deletion as well. A node that isn\'t deleted itself (also one inside a deleted node, restore that one) is a 409, as is a workspace that is outdated (rebase it first). Whether the account may restore the node is up to its workspace roles and node privileges (else a 403), as in the Neos backend.',
+        operationId: 'restoreNode',
+        security: [
+            ApiAuthContextProvider::SCOPES => [ApiScopes::NODES_DELETE],
+        ],
+    )]
+    public function restore(
+        ContentRepositoryId $contentRepositoryId,
+        NodeAggregateId $nodeAggregateId,
+        #[Parameter(in: 'query', description: 'The workspace to restore the node in, required: changing live directly is rarely what is meant')]
+        WorkspaceName $workspaceName,
+        #[AuthContext] ApiCaller $caller,
+    ): NotFound|Forbidden|Conflict|null {
+        // removed nodes aren't in any subgraph, they are found in the content graph, as in Neos' RestoreController
+        $workspace = $this->workspaceResolver->resolve($contentRepositoryId, $workspaceName, $caller->account);
+        if (!$workspace instanceof ReadableWorkspace) {
+            return $workspace;
+        }
+        $id = $nodeAggregateId->toNodeAggregateId();
+        $contentGraph = $workspace->contentRepository->getContentGraph($workspace->workspace->workspaceName);
+        $nodeAggregate = $contentGraph->findNodeAggregateById($id);
+        if ($nodeAggregate === null || !$workspace->mayReadNodeAggregate($id)) {
+            return NotFound::because(sprintf('There is no node %s in the workspace %s', $id->value, $workspace->workspace->workspaceName->value));
+        }
+        $removedIn = $nodeAggregate->getCoveredDimensionsTaggedBy(NeosSubtreeTag::removed(), withoutInherited: true);
+        if ($removedIn->isEmpty()) {
+            return Conflict::because(sprintf('The node %s isn\'t deleted itself in the workspace %s', $id->value, $workspace->workspace->workspaceName->value));
+        }
+        if ($workspace->workspace->status !== SharedModel\Workspace\WorkspaceStatus::UP_TO_DATE) {
+            return Conflict::because(sprintf('The workspace %s is outdated, rebase it first', $workspace->workspace->workspaceName->value));
+        }
+        try {
+            foreach ([$nodeAggregate, ...$this->removedAncestors($id, $contentGraph)] as $removed) {
+                $points = $removed->getCoveredDimensionsTaggedBy(NeosSubtreeTag::removed(), withoutInherited: true)->points;
+                $workspace->contentRepository->handle(UntagSubtree::create(
+                    $workspace->workspace->workspaceName,
+                    $removed->nodeAggregateId,
+                    reset($points) ?: throw new \LogicException('A removed node aggregate is removed somewhere', 1791449421),
+                    NodeVariantSelectionStrategy::STRATEGY_ALL_VARIANTS,
+                    NeosSubtreeTag::removed(),
+                ));
+            }
+        } catch (AccessDenied) {
+            return Forbidden::because(sprintf('You may not restore the node %s in the workspace %s', $id->value, $workspace->workspace->workspaceName->value));
+        }
+        return null;
+    }
+
+    /**
+     * The ancestors that are removed themselves, in any dimension space point, nearest first, as Neos' trash restores
+     * them with the node (RestoreController::gatherAdditionalAncestorsThatWillBeRestored())
+     *
+     * @return list<NodeAggregate>
+     */
+    private function removedAncestors(SharedModel\Node\NodeAggregateId $id, ContentGraphInterface $contentGraph): array
+    {
+        $removed = [];
+        foreach ($contentGraph->findParentNodeAggregates($id) as $parent) {
+            if (!$parent->getCoveredDimensionsTaggedBy(NeosSubtreeTag::removed(), withoutInherited: true)->isEmpty()) {
+                $removed[$parent->nodeAggregateId->value] = $parent;
+            }
+            // a node may have other parents in other dimension space points, their ancestors may meet
+            foreach ($this->removedAncestors($parent->nodeAggregateId, $contentGraph) as $ancestor) {
+                $removed[$ancestor->nodeAggregateId->value] ??= $ancestor;
+            }
+        }
+        return array_values($removed);
     }
 
     /**

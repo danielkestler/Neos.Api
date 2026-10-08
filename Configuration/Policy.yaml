@@ -53,7 +53,7 @@ privilegeTargets:
       label: "Create nodes where you can edit"
       matcher: "nodes.create"
     "Neos.Api:Nodes.Delete":
-      label: "Delete the nodes you can edit"
+      label: "Delete the nodes you can edit and restore them"
       matcher: "nodes.delete"
     "Neos.Api:Workspaces.Read":
       label: "List the workspaces you can read and the changes in them"

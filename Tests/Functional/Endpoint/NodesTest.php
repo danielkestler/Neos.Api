@@ -365,6 +365,32 @@ class NodesTest extends EndpointTestCase
         self::assertSame(401, $this->post(self::tagsPath('some-node', $workspace), null, ['tag' => 'disabled'])->getStatusCode());
     }
 
+    #[Test]
+    public function restoresNodesOnlyInAGivenWorkspace(): void
+    {
+        $token = $this->token('editor-machine', 'nodes.delete');
+
+        $response = $this->post(self::restorePath('some-node', ['workspaceName' => 'user-editor']), $token, []);
+        self::assertSame(404, $response->getStatusCode(), (string)$response->getBody());
+        self::assertSame('There is no content repository with the ID unknown', self::json($response)['detail']);
+
+        // no default workspace for changes
+        self::assertSame(400, $this->post(self::restorePath('some-node', []), $token, [])->getStatusCode());
+        self::assertSame(400, $this->post(self::restorePath('Not_An_Id', ['workspaceName' => 'user-editor']), $token, [])->getStatusCode());
+    }
+
+    #[Test]
+    public function restoringRequiresTheScopeAndThePrivilege(): void
+    {
+        $path = self::restorePath('some-node', ['workspaceName' => 'user-editor']);
+
+        $response = $this->post($path, $this->token('editor-machine', 'nodes.update'), []);
+        self::assertSame(403, $response->getStatusCode(), (string)$response->getBody());
+        self::assertStringContainsString('nodes.delete', self::json($response)['detail']);
+        self::assertSame(403, $this->post($path, $this->token('nobody-machine', 'nodes.delete'), [])->getStatusCode());
+        self::assertSame(401, $this->post($path, null, [])->getStatusCode());
+    }
+
     /**
      * @param array<string, mixed> $query
      */
@@ -395,6 +421,14 @@ class NodesTest extends EndpointTestCase
     private static function tagsPath(string $nodeAggregateId, array $query, ?string $tag = null): string
     {
         return '/api/cr/unknown/nodes/' . rawurlencode($nodeAggregateId) . '/tags' . ($tag !== null ? '/' . rawurlencode($tag) : '') . self::query($query);
+    }
+
+    /**
+     * @param array<string, mixed> $query
+     */
+    private static function restorePath(string $nodeAggregateId, array $query): string
+    {
+        return '/api/cr/unknown/nodes/' . rawurlencode($nodeAggregateId) . '/restore' . self::query($query);
     }
 
     /**

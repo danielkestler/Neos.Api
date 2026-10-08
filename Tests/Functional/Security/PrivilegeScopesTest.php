@@ -35,7 +35,7 @@ class PrivilegeScopesTest extends FunctionalTestCase
             'nodes.read' => 'Read the nodes you can read',
             'nodes.update' => 'Change the properties of the nodes you can edit',
             'nodes.create' => 'Create nodes where you can edit',
-            'nodes.delete' => 'Delete the nodes you can edit',
+            'nodes.delete' => 'Delete the nodes you can edit and restore them',
             'workspaces.read' => 'List the workspaces you can read and the changes in them',
             'datasources.read' => 'Get the data of the data sources, e.g. the options of select boxes',
         ], $privilegeScopes->scopes());
