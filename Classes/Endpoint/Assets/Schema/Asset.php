@@ -19,6 +19,7 @@ use Neos\Schematic\Discovery\AutoDiscoveringSchema;
 final readonly class Asset implements ProvidesSchema
 {
     /**
+     * @param AssetSourceId $assetSourceId the asset source it's from: neos for the media library of Neos, others for remote sources
      * @param AssetId $id the ID in its asset source, with assetSourceId what the asset's path is made of
      * @param AssetId|null $localAssetId the ID of the asset in neos: in neos its id, for a remote asset the imported one, null if it isn't imported
      * @param int $fileSize in bytes
@@ -28,7 +29,11 @@ final readonly class Asset implements ProvidesSchema
      * @param string|null $thumbnailUri a small preview image for lists, null if there is none
      * @param string|null $previewUri a larger preview image, null if there is none
      * @param bool $isReadOnly whether its asset source is read-only (only neos isn't): changing it means importing it first
-     * @param string|null $title null for an asset of another source than neos, as the other metadata
+     * @param string|null $title null for an asset of another source than neos
+     * @param string|null $caption null for an asset of another source than neos
+     * @param string|null $copyrightNotice null for an asset of another source than neos
+     * @param AssetTagReferenceList|null $tags sorted by label, null for an asset of another source than neos
+     * @param AssetCollectionReferenceList|null $collections sorted by title, null for an asset of another source than neos
      * @param AssetId|null $originalAssetId for an image variant the image it was made from, else null
      * @param CropRectangle|null $crop for an image variant its crop, else null
      * @param AssetIptc|null $iptc for a remote asset with IPTC metadata what importing it would copy, else null
