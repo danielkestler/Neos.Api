@@ -39,6 +39,8 @@ class NodeTypesTest extends EndpointTestCase
         self::assertNull($document['properties']);
         self::assertNull($document['references']);
         self::assertNull($document['configuration']);
+        self::assertNull($document['allowedChildNodeTypes']);
+        self::assertNull($document['tetheredChildNodes']);
         self::assertContains('Neos.Neos:Node', $nodeTypes['Neos.Neos:Document']['superTypes']);
     }
 
@@ -55,6 +57,43 @@ class NodeTypesTest extends EndpointTestCase
         self::assertArrayNotHasKey('_hidden', $properties);
         self::assertIsArray($document['references']);
         self::assertArrayHasKey('title', $document['configuration']['properties']);
+    }
+
+    #[Test]
+    public function includesTheAllowedChildNodeTypesInTheList(): void
+    {
+        $this->requireContentRepository();
+        $response = $this->get('/api/cr/default/nodetypes?include=allowedChildNodeTypes,tetheredChildNodes', $this->token('editor-machine', 'nodetypes.read'));
+
+        self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
+        $nodeTypes = array_column(self::json($response)['data'], null, 'name');
+        $page = $nodeTypes['Neos.Demo:Document.Page'];
+        // Neos.Demo allows only its sub pages below documents
+        self::assertContains('Neos.Demo:Document.Page', $page['allowedChildNodeTypes']);
+        self::assertNotContains('Neos.Neos:Shortcut', $page['allowedChildNodeTypes']);
+        self::assertNotContains('Neos.Demo:Content.Text', $page['allowedChildNodeTypes']);
+        self::assertSame(['main'], array_column($page['tetheredChildNodes'], 'name'));
+        self::assertSame([], $nodeTypes['Neos.Demo:Content.Text']['tetheredChildNodes']);
+    }
+
+    #[Test]
+    public function getsTheConstraintsOfTetheredChildNodes(): void
+    {
+        $this->requireContentRepository();
+        $response = $this->get('/api/cr/default/nodetypes/Neos.Demo:Document.Page', $this->token('editor-machine', 'nodetypes.read'));
+
+        self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
+        $nodeType = self::json($response);
+        $main = array_column($nodeType['tetheredChildNodes'], null, 'name')['main'];
+        self::assertSame('Neos.Demo:Collection.Content.Main', $main['nodeType']);
+        self::assertContains('Neos.Demo:Content.Text', $main['allowedChildNodeTypes']);
+        self::assertNotContains('Neos.Demo:Document.Page', $main['allowedChildNodeTypes']);
+        // neither abstract nor root node types
+        self::assertNotContains('Neos.Neos:Content', $main['allowedChildNodeTypes']);
+        self::assertNotContains('Neos.Neos:Sites', $nodeType['allowedChildNodeTypes']);
+        $sorted = $main['allowedChildNodeTypes'];
+        sort($sorted);
+        self::assertSame($sorted, $main['allowedChildNodeTypes']);
     }
 
     #[Test]

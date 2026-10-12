@@ -18,8 +18,8 @@ use Neos\JsonSchema\Support\ObjectProperties;
 use Neos\Neos\Service\IconNameMappingService;
 
 /**
- * A node type with what trees and creation UIs need and, if requested, its properties, references and whole
- * configuration
+ * A node type with what trees and creation UIs need and, if requested, its properties, references, whole
+ * configuration and the node types allowed below its nodes
  *
  * The schema is written out: position is an integer or a string, and the configuration a map, which schematic can't
  * discover
@@ -35,6 +35,11 @@ final readonly class NodeType implements ProvidesSchema
 
     /**
      * @param array<string, mixed>|\stdClass|null $configuration
+     * @param NodeTypeNameList|null $allowedChildNodeTypes the node types nodes of this type may have as children
+     *     (constraints.nodeTypes), neither abstract nor root ones. A tethered node, e.g. a page's main content
+     *     collection, follows its parent's tetheredChildNodes instead
+     * @param NodeTypeTetheredChildNodeList|null $tetheredChildNodes the child nodes nodes of this type are created with
+     *     (childNodes), with the node types allowed below each
      */
     public function __construct(
         public NodeTypeName $name,
@@ -48,6 +53,8 @@ final readonly class NodeType implements ProvidesSchema
         public NodeTypePropertyList|null $properties,
         public NodeTypeReferenceList|null $references,
         public array|\stdClass|null $configuration,
+        public NodeTypeNameList|null $allowedChildNodeTypes,
+        public NodeTypeTetheredChildNodeList|null $tetheredChildNodes,
     ) {
     }
 
@@ -55,9 +62,12 @@ final readonly class NodeType implements ProvidesSchema
         Core\NodeType\NodeType $nodeType,
         Labels $labels,
         IconNameMappingService $iconNameMappingService,
+        Core\NodeType\NodeTypeManager $nodeTypeManager,
         bool $withProperties,
         bool $withReferences,
         bool $withConfiguration,
+        bool $withAllowedChildNodeTypes,
+        bool $withTetheredChildNodes,
     ): self {
         $group = $nodeType->getConfiguration('ui.group');
         $position = $nodeType->getConfiguration('ui.position');
@@ -78,6 +88,8 @@ final readonly class NodeType implements ProvidesSchema
             $withReferences ? self::references($nodeType, $labels) : null,
             // an object where it is empty: the serializer can't tell an empty map from an empty list
             $withConfiguration ? ($configuration === [] ? new \stdClass() : $configuration) : null,
+            $withAllowedChildNodeTypes ? self::allowedChildNodeTypes($nodeType, $nodeTypeManager) : null,
+            $withTetheredChildNodes ? self::tetheredChildNodes($nodeType, $nodeTypeManager) : null,
         );
     }
 
@@ -111,9 +123,11 @@ final readonly class NodeType implements ProvidesSchema
                     description: 'The whole configuration, merged with the super types\', as NodeTypes.yaml declares it. Its labels (label, help message and placeholder values that are translation IDs) are translated to the requested language. In the list only with include=configuration, else null',
                     additionalProperties: true,
                 )),
+                allowedChildNodeTypes: Nullable::wrap(NodeTypeNameList::schema()),
+                tetheredChildNodes: Nullable::wrap(NodeTypeTetheredChildNodeList::schema()),
             ),
             additionalProperties: false,
-            required: ['name', 'label', 'icon', 'isAbstract', 'isFinal', 'superTypes', 'group', 'position', 'properties', 'references', 'configuration'],
+            required: ['name', 'label', 'icon', 'isAbstract', 'isFinal', 'superTypes', 'group', 'position', 'properties', 'references', 'configuration', 'allowedChildNodeTypes', 'tetheredChildNodes'],
         );
     }
 
@@ -137,6 +151,37 @@ final readonly class NodeType implements ProvidesSchema
             $references[] = NodeTypeReference::from((string)$name, is_array($configuration) ? $configuration : [], $labels);
         }
         return new NodeTypeReferenceList(...$references);
+    }
+
+    private static function allowedChildNodeTypes(Core\NodeType\NodeType $nodeType, Core\NodeType\NodeTypeManager $nodeTypeManager): NodeTypeNameList
+    {
+        return NodeTypeNameList::from(...array_filter(
+            self::childNodeTypeCandidates($nodeTypeManager),
+            static fn (Core\NodeType\NodeType $candidate) => $nodeType->allowsChildNodeType($candidate),
+        ));
+    }
+
+    private static function tetheredChildNodes(Core\NodeType\NodeType $nodeType, Core\NodeType\NodeTypeManager $nodeTypeManager): NodeTypeTetheredChildNodeList
+    {
+        $candidates = self::childNodeTypeCandidates($nodeTypeManager);
+        return new NodeTypeTetheredChildNodeList(...$nodeType->tetheredNodeTypeDefinitions->map(
+            static fn (Core\NodeType\TetheredNodeTypeDefinition $definition) => NodeTypeTetheredChildNode::from($nodeType, $definition, $nodeTypeManager, $candidates),
+        ));
+    }
+
+    /**
+     * The node types a node can be created with: neither abstract nor root, sorted by name
+     *
+     * @return list<Core\NodeType\NodeType>
+     */
+    private static function childNodeTypeCandidates(Core\NodeType\NodeTypeManager $nodeTypeManager): array
+    {
+        $candidates = array_filter(
+            $nodeTypeManager->getNodeTypes(false),
+            static fn (Core\NodeType\NodeType $candidate) => !$candidate->isOfType(Core\NodeType\NodeTypeName::ROOT_NODE_TYPE_NAME),
+        );
+        ksort($candidates);
+        return array_values($candidates);
     }
 
     /**

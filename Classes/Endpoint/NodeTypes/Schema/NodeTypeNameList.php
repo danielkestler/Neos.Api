@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Neos\Api\Endpoint\NodeTypes\Schema;
 
+use Neos\ContentRepository\Core;
 use Neos\JsonSchema\ProvidesSchema;
 use Neos\JsonSchema\Schema;
 use Neos\Schematic\Discovery\AutoDiscoveringSchema;
@@ -22,6 +23,14 @@ final readonly class NodeTypeNameList implements ProvidesSchema, \IteratorAggreg
     public function __construct(NodeTypeName ...$names)
     {
         $this->names = array_values($names);
+    }
+
+    public static function from(Core\NodeType\NodeType ...$nodeTypes): self
+    {
+        return new self(...array_map(
+            static fn (Core\NodeType\NodeType $nodeType) => NodeTypeName::fromString($nodeType->name->value),
+            array_values($nodeTypes),
+        ));
     }
 
     public static function schema(): Schema

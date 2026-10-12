@@ -26,7 +26,7 @@ use Neos\OpenApi\Attributes\Parameter;
  */
 final readonly class NodeTypes
 {
-    private const array INCLUDE_PATHS = ['properties', 'references', 'configuration'];
+    private const array INCLUDE_PATHS = ['properties', 'references', 'configuration', 'allowedChildNodeTypes', 'tetheredChildNodes'];
 
     public function __construct(
         private ContentRepositoryFinder $contentRepositoryFinder,
@@ -39,7 +39,7 @@ final readonly class NodeTypes
         path: '/cr/{contentRepositoryId}/nodetypes',
         method: 'GET',
         summary: 'List the node types',
-        description: 'All node types of the content repository, abstract ones included, sorted by name, or with filterBySuperType only the ones of that type. Their properties, references and configuration are null unless included, getNodeType has them all. The labels are translated to the Accept-Language.',
+        description: 'All node types of the content repository, abstract ones included, sorted by name, or with filterBySuperType only the ones of that type. Their properties, references, configuration, allowedChildNodeTypes and tetheredChildNodes are null unless included, getNodeType has them all. Which node types a node may have as children follows from the model alone: a regular node\'s from its node type\'s allowedChildNodeTypes, a tethered node\'s (e.g. a page\'s main content collection) from its parent\'s node type\'s tetheredChildNodes, by its name. The labels are translated to the Accept-Language.',
         operationId: 'listNodeTypes',
         security: [
             ApiAuthContextProvider::SCOPES => [ApiScopes::NODETYPES_READ],
@@ -49,7 +49,7 @@ final readonly class NodeTypes
         ContentRepositoryId $contentRepositoryId,
         #[Parameter(in: 'query', description: 'Only the node types of this type: it and the ones inheriting from it, directly or not. An unknown node type is a 400')]
         NodeTypeName|null $filterBySuperType = null,
-        #[Parameter(in: 'query', description: 'What to include beyond the node types\' own fields, comma-separated: properties, references, configuration')]
+        #[Parameter(in: 'query', description: 'What to include beyond the node types\' own fields, comma-separated: properties, references, configuration, allowedChildNodeTypes, tetheredChildNodes')]
         IncludePaths|null $include = null,
         #[Parameter(in: 'header', name: 'Accept-Language')] AcceptLanguage|null $acceptLanguage = null,
     ): NodeTypeListing|NotFound|BadRequest {
@@ -77,9 +77,12 @@ final readonly class NodeTypes
                 $nodeType,
                 $labels,
                 $this->iconNameMappingService,
+                $nodeTypeManager,
                 withProperties: $include->includes('properties'),
                 withReferences: $include->includes('references'),
                 withConfiguration: $include->includes('configuration'),
+                withAllowedChildNodeTypes: $include->includes('allowedChildNodeTypes'),
+                withTetheredChildNodes: $include->includes('tetheredChildNodes'),
             ),
             array_values($nodeTypes),
         )));
@@ -89,7 +92,7 @@ final readonly class NodeTypes
         path: '/cr/{contentRepositoryId}/nodetypes/{nodeTypeName}',
         method: 'GET',
         summary: 'Get a node type',
-        description: 'A node type with its properties, references and whole configuration, merged with its super types\'. The labels are translated to the Accept-Language, the ones in the configuration as well.',
+        description: 'A node type with its properties, references, whole configuration, merged with its super types\', and the node types allowed below its nodes and its tethered child nodes. The labels are translated to the Accept-Language, the ones in the configuration as well.',
         operationId: 'getNodeType',
         security: [
             ApiAuthContextProvider::SCOPES => [ApiScopes::NODETYPES_READ],
@@ -112,9 +115,12 @@ final readonly class NodeTypes
             $nodeType,
             $this->labelTranslator->forAcceptLanguage($acceptLanguage),
             $this->iconNameMappingService,
+            $nodeTypeManager,
             withProperties: true,
             withReferences: true,
             withConfiguration: true,
+            withAllowedChildNodeTypes: true,
+            withTetheredChildNodes: true,
         );
     }
 
