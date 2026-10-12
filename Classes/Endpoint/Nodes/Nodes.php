@@ -70,6 +70,7 @@ use Neos\ContentRepository\Core\Projection\ContentGraph;
 use Neos\ContentRepository\Core\Projection\ContentGraph\ContentGraphInterface;
 use Neos\ContentRepository\Core\Projection\ContentGraph\NodeAggregate;
 use Neos\ContentRepository\Core\Projection\ContentGraph\ContentSubgraphInterface;
+use Neos\ContentRepository\Core\Projection\ContentGraph\Filter\FindAncestorNodesFilter;
 use Neos\ContentRepository\Core\Projection\ContentGraph\Filter\FindChildNodesFilter;
 use Neos\ContentRepository\Core\SharedModel;
 use Neos\ContentRepository\Core\SharedModel\Exception\DimensionSpacePointIsNotYetOccupied;
@@ -107,7 +108,7 @@ final readonly class Nodes
     /**
      * The include paths, as JSON:API's: a path includes the ones it goes through, children.references includes children
      */
-    private const array INCLUDE_PATHS = ['references', 'children', 'children.references', 'variants', 'variants.references'];
+    private const array INCLUDE_PATHS = ['references', 'children', 'children.references', 'variants', 'variants.references', 'ancestors'];
 
     public function __construct(
         private ContentRepositoryRegistry $contentRepositoryRegistry,
@@ -155,7 +156,7 @@ final readonly class Nodes
         Offset|null $offset = null,
         #[Parameter(in: 'query', description: 'How many items at most, 25 if omitted, 100 at most')]
         Limit|null $limit = null,
-        #[Parameter(in: 'query', description: 'What to include beyond each node\'s own fields, comma-separated: references, children, children.references, variants, variants.references')]
+        #[Parameter(in: 'query', description: 'What to include beyond each node\'s own fields, comma-separated: references, children, children.references, variants, variants.references, ancestors')]
         IncludePaths|null $include = null,
     ): PaginatedNodeListing|NotFound|BadRequest {
         $offset ??= Offset::none();
@@ -264,7 +265,7 @@ final readonly class Nodes
         path: '/cr/{contentRepositoryId}/nodes/{nodeAggregateId}',
         method: 'GET',
         summary: 'Get a node',
-        description: 'A node in the workspace and dimension space point with its properties and what is included: with include=references its references, with children its direct child nodes in their order, with variants the node in its other origin dimension space points (its content variants, not the points that only fall back to it), in the order of the content dimensions. children.references and variants.references include their references as well. Hidden nodes are visible to accounts that may see them in every workspace, live included, as in the Neos backend; isHidden tells them apart.',
+        description: 'A node in the workspace and dimension space point with its properties and what is included: with include=references its references, with children its direct child nodes in their order, with variants the node in its other origin dimension space points (its content variants, not the points that only fall back to it), in the order of the content dimensions, with ancestors the nodes above it up to its site node, nearest first (the parent first, the content repository\'s root left out), e.g. for a breadcrumb: the labels of the documents among them, reversed. children.references and variants.references include their references as well. Hidden nodes are visible to accounts that may see them in every workspace, live included, as in the Neos backend; isHidden tells them apart.',
         operationId: 'getNode',
         security: [
             ApiAuthContextProvider::SCOPES => [ApiScopes::NODES_READ],
@@ -277,7 +278,7 @@ final readonly class Nodes
         WorkspaceName|null $workspaceName = null,
         #[Parameter(in: 'query', description: 'The dimension space point to read the node in, as JSON. If omitted, the default one of the content repository\'s default site (Neos.Neos.defaultSiteNodeName if it is in the content repository, else its first online site by name), the only one of a content repository without a site')]
         DimensionSpacePoint|null $dimensionSpacePoint = null,
-        #[Parameter(in: 'query', description: 'What to include beyond the node\'s own fields, comma-separated: references, children, children.references, variants, variants.references')]
+        #[Parameter(in: 'query', description: 'What to include beyond the node\'s own fields, comma-separated: references, children, children.references, variants, variants.references, ancestors')]
         IncludePaths|null $include = null,
     ): Node|NotFound|BadRequest {
         $include ??= IncludePaths::none();
@@ -985,7 +986,19 @@ final readonly class Nodes
             $include->includes('references'),
             $include->includes('children') ? $this->nodeList($this->children($node), $include->includes('children.references')) : null,
             $include->includes('variants') ? $this->nodeList($this->contentSubgraphs->findVariants($node, excludeDisabled: false), $include->includes('variants.references')) : null,
+            $include->includes('ancestors') ? $this->nodeList($this->ancestors($node), false) : null,
         );
+    }
+
+    /**
+     * The nodes above the node, nearest first, without the root
+     *
+     * @return list<ContentGraph\Node>
+     */
+    private function ancestors(ContentGraph\Node $node): array
+    {
+        $ancestors = $this->contentRepositoryRegistry->subgraphForNode($node)->findAncestorNodes($node->aggregateId, FindAncestorNodesFilter::create());
+        return array_values(array_filter(iterator_to_array($ancestors, false), static fn (ContentGraph\Node $ancestor) => !$ancestor->classification->isRoot()));
     }
 
     /**

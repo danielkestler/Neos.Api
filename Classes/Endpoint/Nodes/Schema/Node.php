@@ -33,6 +33,7 @@ final readonly class Node implements ProvidesSchema
      * @param array<string, list<array{nodeAggregateId: string, properties: array<string, mixed>|\stdClass}>>|\stdClass|null $references
      * @param NodeList|null $children typed iterable, not NodeList, see there
      * @param NodeList|null $variants as $children
+     * @param NodeList|null $ancestors as $children
      */
     public function __construct(
         public ContentRepositoryId $contentRepositoryId,
@@ -53,10 +54,11 @@ final readonly class Node implements ProvidesSchema
         public array|\stdClass|null $references,
         public iterable|null $children,
         public iterable|null $variants,
+        public iterable|null $ancestors,
     ) {
     }
 
-    public static function from(ContentGraph\Node $node, NodeSerializer $nodeSerializer, bool $includeReferences, NodeList|null $children = null, NodeList|null $variants = null): self
+    public static function from(ContentGraph\Node $node, NodeSerializer $nodeSerializer, bool $includeReferences, NodeList|null $children = null, NodeList|null $variants = null, NodeList|null $ancestors = null): self
     {
         return new self(
             ContentRepositoryId::fromString($node->contentRepositoryId->value),
@@ -77,6 +79,7 @@ final readonly class Node implements ProvidesSchema
             $includeReferences ? self::references($nodeSerializer->references($node), $nodeSerializer) : null,
             $children,
             $variants,
+            $ancestors,
         );
     }
 
@@ -120,9 +123,10 @@ final readonly class Node implements ProvidesSchema
                 // the very schema of NodeList, a copy with another description would be no branch the serializer knows
                 children: Nullable::wrap(NodeList::schema()),
                 variants: Nullable::wrap(NodeList::schema()),
+                ancestors: Nullable::wrap(NodeList::schema()),
             ),
             additionalProperties: false,
-            required: ['contentRepositoryId', 'workspaceName', 'dimensionSpacePoint', 'nodeAggregateId', 'name', 'nodeType', 'label', 'classification', 'isHidden', 'isHiddenByAncestor', 'isShineThrough', 'tags', 'inheritedTags', 'timestamps', 'properties', 'references', 'children', 'variants'],
+            required: ['contentRepositoryId', 'workspaceName', 'dimensionSpacePoint', 'nodeAggregateId', 'name', 'nodeType', 'label', 'classification', 'isHidden', 'isHiddenByAncestor', 'isShineThrough', 'tags', 'inheritedTags', 'timestamps', 'properties', 'references', 'children', 'variants', 'ancestors'],
         );
     }
 

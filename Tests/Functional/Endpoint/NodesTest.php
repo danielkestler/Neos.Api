@@ -59,15 +59,15 @@ class NodesTest extends EndpointTestCase
     }
 
     #[Test]
-    public function includesTheReferencesChildrenAndVariants(): void
+    public function includesTheReferencesChildrenVariantsAndAncestors(): void
     {
         $token = $this->token('nobody-machine', 'nodes.read');
 
-        self::assertSame(404, $this->get(self::nodePath('some-node', ['include' => 'references,children.references,variants,variants.references']), $token)->getStatusCode());
+        self::assertSame(404, $this->get(self::nodePath('some-node', ['include' => 'references,children.references,variants,variants.references,ancestors']), $token)->getStatusCode());
 
-        $response = $this->get(self::nodePath('some-node', ['include' => 'references,parent,children.children']), $token);
+        $response = $this->get(self::nodePath('some-node', ['include' => 'references,parent,children.children,ancestors.references']), $token);
         self::assertSame(400, $response->getStatusCode(), (string)$response->getBody());
-        self::assertSame('Can\'t include parent, children.children, only: references, children, children.references, variants, variants.references', self::json($response)['detail']);
+        self::assertSame('Can\'t include parent, children.children, ancestors.references, only: references, children, children.references, variants, variants.references, ancestors', self::json($response)['detail']);
 
         // not a list of paths, its schema rejects it
         self::assertSame(400, $this->get(self::nodePath('some-node', ['include' => 'references,']), $token)->getStatusCode());
