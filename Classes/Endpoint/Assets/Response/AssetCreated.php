@@ -27,19 +27,19 @@ final readonly class AssetCreated implements ApiResponseWithHeaders
     }
 
     /**
-     * For POST …/assets, relative to the API's URI prefix
+     * For POST …/assets/{assetSourceId}, relative to …/assets/
      */
     public static function uploaded(Asset $asset): self
     {
-        return new self($asset, 'assets/' . $asset->assetSourceId->value . '/' . $asset->id->value);
+        return new self($asset, $asset->assetSourceId->value . '/' . $asset->id->value);
     }
 
     /**
-     * For POST …/assets/import, relative to …/assets/
+     * For POST …/assets/{assetSourceId}/{assetId}/import of a remote asset, relative to …/assets/{assetSourceId}/{assetId}/
      */
     public static function imported(Asset $asset): self
     {
-        return new self($asset, $asset->assetSourceId->value . '/' . $asset->id->value);
+        return new self($asset, '../../' . $asset->assetSourceId->value . '/' . $asset->id->value);
     }
 
     /**

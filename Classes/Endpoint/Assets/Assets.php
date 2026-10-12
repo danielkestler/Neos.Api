@@ -5,7 +5,6 @@ namespace Neos\Api\Endpoint\Assets;
 
 use Doctrine\Common\Collections\ArrayCollection;
 use Neos\Api\Endpoint\AssetCollections\Schema\AssetCollectionId;
-use Neos\Api\Endpoint\Assets\RequestBody\AssetImport;
 use Neos\Api\Endpoint\Assets\RequestBody\AssetUpdate;
 use Neos\Api\Endpoint\Assets\RequestBody\AssetVariantCreate;
 use Neos\Api\Endpoint\Assets\Response\AssetCreated;
@@ -96,10 +95,10 @@ final readonly class Assets
     }
 
     #[Operation(
-        path: '/assetsources',
+        path: '/assets',
         method: 'GET',
         summary: 'List the asset sources',
-        description: 'The configured asset sources: neos, the media library of Neos, and remote ones like a DAM, with what they support, in their configured order.',
+        description: 'The configured asset sources, whose assets are below /assets/{assetSourceId}: neos, the media library of Neos, and remote ones like a DAM, with what they support, in their configured order.',
         operationId: 'listAssetSources',
         security: [
             ApiAuthContextProvider::SCOPES => [ApiScopes::ASSETS_READ],
@@ -114,19 +113,18 @@ final readonly class Assets
     }
 
     #[Operation(
-        path: '/assets',
+        path: '/assets/{assetSourceId}',
         method: 'GET',
-        summary: 'List the assets',
-        description: 'A page of the assets of an asset source, neos if not given (an unknown one is a 404). filterByAssetType narrows down to a type, filterByAssetCollection to a collection. Then either search (in title, caption and filename), filterByTag or filterByUntagged: the asset sources can do only one of them at a time, several are a 400. The tag and collection filters need a source that supports them (see listAssetSources), unknown tags and collections are 400s. sort is by name or lastModified, -lastModified if not given, for a source that supports sorting; sort on any other is a 400. Image variants aren\'t listed, they belong to their image. offset and limit (25 by default, 100 at most) choose the page, meta.total and links tell about the others.',
+        summary: 'List the assets of an asset source',
+        description: 'A page of the assets of the asset source (see listAssetSources), an unknown one is a 404. filterByAssetType narrows down to a type, filterByAssetCollection to a collection. Then either search (in title, caption and filename), filterByTag or filterByUntagged: the asset sources can do only one of them at a time, several are a 400. The tag and collection filters need a source that supports them (see listAssetSources), unknown tags and collections are 400s. sort is by name or lastModified, -lastModified if not given, for a source that supports sorting; sort on any other is a 400. Image variants aren\'t listed, they belong to their image. offset and limit (25 by default, 100 at most) choose the page, meta.total and links tell about the others.',
         operationId: 'listAssets',
         security: [
             ApiAuthContextProvider::SCOPES => [ApiScopes::ASSETS_READ],
         ],
     )]
     public function list(
+        AssetSourceId $assetSourceId,
         ServerRequestInterface $request,
-        #[Parameter(in: 'query', description: 'The asset source, neos if omitted')]
-        AssetSourceId|null $assetSourceId = null,
         #[Parameter(in: 'query', description: 'Only the assets of this type')]
         AssetType|null $filterByAssetType = null,
         #[Parameter(in: 'query', description: 'Only the assets in this collection')]
@@ -158,7 +156,6 @@ final readonly class Assets
             $orderings[self::SORT_FIELDS[$field]] = $descending ? SupportsSortingInterface::ORDER_DESCENDING : SupportsSortingInterface::ORDER_ASCENDING;
         }
 
-        $assetSourceId ??= AssetSourceId::fromString(self::NEOS);
         $assetSource = $this->assetResolver->findAssetSource($assetSourceId);
         if ($assetSource === null) {
             return AssetResolver::noAssetSource($assetSourceId);
@@ -435,17 +432,24 @@ final readonly class Assets
     }
 
     #[Operation(
-        path: '/assets',
+        path: '/assets/{assetSourceId}',
         method: 'POST',
         summary: 'Upload an asset',
-        description: 'Uploads a file into neos as an asset of the type its media type maps to (an image, document, video or audio), as the Neos media browser does. The body is multipart/form-data, not JSON (the document can\'t describe it): resource the file (required), title, assetCollectionId the collection to put it in, tagIds[] the tags to give it (repeated). A missing file or a malformed field is a 400, an unknown collection or tag a 422. A file that is in neos already (the same content) isn\'t added again: that asset gets the collection and tags and is the response, a 200 instead of the 201.',
+        description: 'Uploads a file into neos, the only asset source that takes uploads (others are a 422, an unknown one a 404), as an asset of the type its media type maps to (an image, document, video or audio), as the Neos media browser does. The body is multipart/form-data, not JSON (the document can\'t describe it): resource the file (required), title, assetCollectionId the collection to put it in, tagIds[] the tags to give it (repeated). A missing file or a malformed field is a 400, an unknown collection or tag a 422. A file that is in neos already (the same content) isn\'t added again: that asset gets the collection and tags and is the response, a 200 instead of the 201.',
         operationId: 'createAsset',
         security: [
             ApiAuthContextProvider::SCOPES => [ApiScopes::ASSETS_CREATE],
         ],
     )]
-    public function create(ServerRequestInterface $request): AssetCreated|Asset|BadRequest|UnprocessableContent
+    public function create(AssetSourceId $assetSourceId, ServerRequestInterface $request): AssetCreated|Asset|BadRequest|NotFound|UnprocessableContent
     {
+        $assetSource = $this->assetResolver->findAssetSource($assetSourceId);
+        if ($assetSource === null) {
+            return AssetResolver::noAssetSource($assetSourceId);
+        }
+        if ($assetSource->getIdentifier() !== self::NEOS || $assetSource->isReadOnly()) {
+            return UnprocessableContent::because(sprintf('The asset source %s takes no uploads, only neos does', $assetSourceId->value));
+        }
         $form = MultipartForm::of($request);
         $file = $form->file('resource');
         if ($file === null) {
@@ -549,28 +553,27 @@ final readonly class Assets
     }
 
     #[Operation(
-        path: '/assets/import',
+        path: '/assets/{assetSourceId}/{assetId}/import',
         method: 'POST',
         summary: 'Import a remote asset',
-        description: 'Imports an asset of a remote asset source into neos, as the Neos media browser does when it is used: its file, and its IPTC title, caption and copyright notice if it has them. The response is the asset in neos, a 201, or a 200 if it was imported before. An unknown source or asset and the assets of neos are 422s.',
+        description: 'Imports the asset of a remote asset source into neos, as the Neos media browser does when it is used: its file, and its IPTC title, caption and copyright notice if it has them. The response is the asset in neos (its localAssetId), a 201, or a 200 if it was imported before. The assets of neos are a 422, there is nothing to import.',
         operationId: 'importAsset',
         security: [
             ApiAuthContextProvider::SCOPES => [ApiScopes::ASSETS_CREATE],
         ],
     )]
-    public function import(
-        #[RequestBody(description: 'The remote asset')] AssetImport $remoteAsset,
-    ): AssetCreated|Asset|UnprocessableContent {
-        $proxy = $this->assetResolver->findAsset($remoteAsset->assetSourceId, $remoteAsset->assetId);
+    public function import(AssetSourceId $assetSourceId, AssetId $assetId): AssetCreated|Asset|NotFound|UnprocessableContent
+    {
+        $proxy = $this->assetResolver->findAsset($assetSourceId, $assetId);
         if ($proxy instanceof NotFound) {
-            return UnprocessableContent::because(sprintf('There is no asset with the ID %s in the asset source %s', $remoteAsset->assetId->value, $remoteAsset->assetSourceId->value));
+            return $proxy;
         }
         if (!$proxy instanceof HasRemoteOriginalInterface) {
-            return UnprocessableContent::because(sprintf('The assets of the asset source %s are local, there is nothing to import', $remoteAsset->assetSourceId->value));
+            return UnprocessableContent::because(sprintf('The assets of the asset source %s are local, there is nothing to import', $assetSourceId->value));
         }
         $importedBefore = $proxy->getLocalAssetIdentifier() !== null;
         try {
-            $importedAsset = $this->assetSourceService->importAsset($remoteAsset->assetSourceId->value, $remoteAsset->assetId->value);
+            $importedAsset = $this->assetSourceService->importAsset($assetSourceId->value, $assetId->value);
         } catch (AssetSourceServiceException $exception) {
             return UnprocessableContent::because($exception->getMessage());
         }
