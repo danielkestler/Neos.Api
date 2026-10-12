@@ -608,7 +608,7 @@ class NodesTest extends EndpointTestCase
      */
     private static function uriPathSegmentPath(string $nodeAggregateId, array $query): string
     {
-        return '/api/cr/unknown/nodes/' . rawurlencode($nodeAggregateId) . '/uri-path-segment' . self::query($query);
+        return '/api/cr/unknown/nodes/' . rawurlencode($nodeAggregateId) . '/uripathsegment' . self::query($query);
     }
 
     /**

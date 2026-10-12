@@ -329,7 +329,7 @@ final readonly class Nodes
     }
 
     #[Operation(
-        path: '/cr/{contentRepositoryId}/nodes/{nodeAggregateId}/uri-path-segment',
+        path: '/cr/{contentRepositoryId}/nodes/{nodeAggregateId}/uripathsegment',
         method: 'POST',
         summary: 'Generate the URI path segment of a document',
         description: 'Sets the uriPathSegment property of the document in the workspace and dimension space point to one generated from the text, else from its title, as the Neos backend\'s "sync" button does: transliterated in the language of the dimension space point (ä becomes ae in German), lowercase, with dashes. Not unique among its siblings, the backend\'s isn\'t either. Like updateNodeProperties otherwise, the response is the node as getNode returns it without include. A node without a uriPathSegment property (not a document) or nothing to generate it from (no text and no title) is a 422.',
