@@ -33,5 +33,7 @@ final class ApiScopes
     public const string WORKSPACES_UPDATE = 'workspaces.update';
     public const string WORKSPACES_CREATE = 'workspaces.create';
     public const string WORKSPACES_DELETE = 'workspaces.delete';
+    public const string WORKSPACES_PUBLISH = 'workspaces.publish';
+    public const string WORKSPACES_ROLES = 'workspaces.roles';
     public const string DATASOURCES_READ = 'datasources.read';
 }

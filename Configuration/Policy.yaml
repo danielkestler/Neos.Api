@@ -68,6 +68,12 @@ privilegeTargets:
     "Neos.Api:Workspaces.Delete":
       label: "Delete the workspaces you manage"
       matcher: "workspaces.delete"
+    "Neos.Api:Workspaces.Publish":
+      label: "Publish, discard and rebase the changes in the workspaces you can write to"
+      matcher: "workspaces.publish"
+    "Neos.Api:Workspaces.Roles":
+      label: "Assign and remove the roles in the workspaces you manage"
+      matcher: "workspaces.roles"
     "Neos.Api:DataSources.Read":
       label: "Get the data of the data sources, e.g. the options of select boxes"
       matcher: "datasources.read"
@@ -110,6 +116,12 @@ roles:
       - privilegeTarget: "Neos.Api:Workspaces.Create"
         permission: GRANT
       - privilegeTarget: "Neos.Api:Workspaces.Delete"
+        permission: GRANT
+      # which workspaces may be published, discarded or rebased is up to the account's workspace roles (write)
+      - privilegeTarget: "Neos.Api:Workspaces.Publish"
+        permission: GRANT
+      # who may assign roles is up to the account's workspace roles (manage)
+      - privilegeTarget: "Neos.Api:Workspaces.Roles"
         permission: GRANT
 
   "Neos.Neos:Editor":

@@ -9,13 +9,13 @@ use Neos\JsonSchema\Schema;
 use Neos\Schematic\Discovery\AutoDiscoveringSchema;
 
 /**
- * A page of events, as JSON:API's top level: the events in data, the next page in links. No meta: the event store
- * can't count the events without reading them all
+ * A page of events, as JSON:API's top level: the events in data, their content stream in meta, the next page in links
  */
 final readonly class PaginatedEventListing implements ProvidesSchema
 {
     public function __construct(
         public EventList $data,
+        public EventListingMeta $meta,
         public CursorListingLinks $links,
     ) {
     }
