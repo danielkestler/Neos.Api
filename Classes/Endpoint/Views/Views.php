@@ -8,6 +8,7 @@ use Neos\Api\Endpoint\Nodes\Schema\DimensionSpacePoint;
 use Neos\Api\Endpoint\Nodes\Schema\NodeAggregateId;
 use Neos\Api\Endpoint\Nodes\SubgraphResolver;
 use Neos\Api\Endpoint\Workspaces\Schema\WorkspaceName;
+use Neos\Api\Endpoint\Views\Parameter\ViewArguments;
 use Neos\Api\Endpoint\Views\Response\RenderedView;
 use Neos\Api\Endpoint\Views\Schema\RenderingModeName;
 use Neos\Api\Endpoint\Views\Schema\View;
@@ -16,6 +17,7 @@ use Neos\Api\Endpoint\Views\Schema\ViewList;
 use Neos\Api\Endpoint\Views\Schema\ViewListing;
 use Neos\Api\Infrastructure\ContentRepository\ContentSubgraphs;
 use Neos\Api\Infrastructure\ContentRepository\SiteFinder;
+use Neos\Api\Infrastructure\Fusion\InvalidViewArgument;
 use Neos\Api\Infrastructure\Fusion\ViewRenderer;
 use Neos\Api\Security\AccountPrivileges;
 use Neos\Api\Security\ApiAuthContextProvider;
@@ -41,7 +43,8 @@ use Psr\Http\Message\ServerRequestInterface;
  * Views of nodes: data Fusion prototypes build, e.g. a navigation with grouping folders or external data
  *
  * A view is a prototype inheriting from Neos.Api:View, made available under a name in the Neos.Api.views settings.
- * It is rendered with the Fusion of the node's site and the same context as in the frontend: node, documentNode, site
+ * It is rendered with the Fusion of the node's site and the same context as in the frontend: node, documentNode, site,
+ * plus the arguments of the request
  */
 final readonly class Views
 {
@@ -52,7 +55,7 @@ final readonly class Views
     private const string BACKEND_ACCESS = 'Neos.Neos:Backend.GeneralAccess';
 
     /**
-     * @var array<string, array{prototype: string, description?: string|null}>
+     * @var array<string, array{prototype: string, description?: string|null, renderErrors?: bool}>
      */
     private array $views;
 
@@ -62,7 +65,7 @@ final readonly class Views
     private array $renderingModeNames;
 
     /**
-     * @param array<string, array{prototype: string, description?: string|null}|null> $views
+     * @param array<string, array{prototype: string, description?: string|null, renderErrors?: bool}|null> $views
      * @param array<string, mixed> $editPreviewModes
      */
     public function __construct(
@@ -105,7 +108,7 @@ final readonly class Views
         path: '/views/{viewName}',
         method: 'GET',
         summary: 'Render a view',
-        description: 'Renders the view\'s Fusion prototype for a node with the Fusion of the node\'s site. Without a node, it is rendered for the site node of the default site (Neos.Neos.defaultSiteNodeName, else the first online site; with contentRepositoryId the content repository\'s default site, as for getNode), as the frontend renders its home page. The workspace is live and the dimension space point the default site\'s default one unless given. In the frontend rendering mode and the live workspace, disabled nodes are left out as in the frontend, otherwise they are visible to accounts that may see them, as in the preview of the Neos backend. Rendering modes other than frontend need the privilege Neos.Neos:Backend.GeneralAccess, as in Neos. The shape of the data is up to the view.',
+        description: 'Renders the view\'s Fusion prototype for a node with the Fusion of the node\'s site. Without a node, it is rendered for the site node of the default site (Neos.Neos.defaultSiteNodeName, else the first online site; with contentRepositoryId the content repository\'s default site, as for getNode), as the frontend renders its home page. The workspace is live and the dimension space point the default site\'s default one unless given. In the frontend rendering mode and the live workspace, disabled nodes are left out as in the frontend, otherwise they are visible to accounts that may see them, as in the preview of the Neos backend. Rendering modes other than frontend need the privilege Neos.Neos:Backend.GeneralAccess, as in Neos. The view gets the arguments as the Fusion context variable arguments, which ones it takes is up to it, an argument it can\'t use is a 400. The shape of the data is up to the view.',
         operationId: 'renderView',
         security: [
             ApiAuthContextProvider::SCOPES => [ApiScopes::VIEWS_READ],
@@ -125,6 +128,8 @@ final readonly class Views
         DimensionSpacePoint|null $dimensionSpacePoint = null,
         #[Parameter(in: 'query', description: 'The rendering mode, the Fusion global renderingMode. frontend if omitted, the Neos UI uses e.g. inPlace')]
         RenderingModeName|null $renderingMode = null,
+        #[Parameter(in: 'query', description: 'The arguments of the view: arguments[name]=value, arrays as arguments[name][]=value, e.g. arguments[fusionPath] for fusionPathHtml')]
+        ViewArguments|null $arguments = null,
     ): RenderedView|NotFound|BadRequest|Forbidden {
         $view = $this->views[$viewName->value] ?? null;
         if ($view === null) {
@@ -152,7 +157,13 @@ final readonly class Views
             return $nodes;
         }
         [$contextNode, $site] = $nodes;
-        $data = $this->viewRenderer->render($contextNode, $site, $view['prototype'], $mode, $request);
+        // the parameter only validates them, see ViewArguments
+        $values = $arguments !== null ? $request->getQueryParams()['arguments'] ?? [] : [];
+        try {
+            $data = $this->viewRenderer->render($contextNode, $site, $view['prototype'], $mode, $request, is_array($values) ? $values : [], $view['renderErrors'] ?? false);
+        } catch (InvalidViewArgument $exception) {
+            return BadRequest::because($exception->getMessage());
+        }
         if ($data === null) {
             return NotFound::because(sprintf('The site of the node has no Fusion prototype %s for the view %s', $view['prototype'], $viewName->value));
         }

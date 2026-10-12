@@ -32,9 +32,9 @@ class ViewsTest extends EndpointTestCase
 
         self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
         // the package's own first, the removed one is left out
-        self::assertSame(['documentNodesTree', 'contentNodesTree', 'document', 'navigation'], array_column(self::json($response)['data'], 'name'));
-        self::assertSame(['name' => 'navigation', 'description' => 'A test view'], self::json($response)['data'][3]);
-        self::assertSame(['total' => 4], self::json($response)['meta']);
+        self::assertSame(['documentNodesTree', 'contentNodesTree', 'document', 'fusionPathHtml', 'navigation'], array_column(self::json($response)['data'], 'name'));
+        self::assertSame(['name' => 'navigation', 'description' => 'A test view'], self::json($response)['data'][4]);
+        self::assertSame(['total' => 5], self::json($response)['meta']);
     }
 
     #[Test]
@@ -60,6 +60,20 @@ class ViewsTest extends EndpointTestCase
         $response = $this->get(self::viewPath('navigation', ['dimensionSpacePoint' => '{not json}'] + self::NODE), $token);
         self::assertSame(400, $response->getStatusCode(), (string)$response->getBody());
         self::assertStringStartsWith('dimensionSpacePoint is invalid', self::json($response)['detail']);
+    }
+
+    #[Test]
+    public function takesArgumentsAsDeepObject(): void
+    {
+        $token = $this->token('editor-machine', 'views.read');
+
+        // up to the content repository lookup, arrays included
+        $response = $this->get(self::viewPath('fusionPathHtml', ['arguments' => ['fusionPath' => 'root/main', 'tags' => ['a', 'b']]] + self::NODE), $token);
+        self::assertSame(404, $response->getStatusCode(), (string)$response->getBody());
+        self::assertStringContainsString('unknown', self::json($response)['detail']);
+
+        $parameters = array_column(self::json($this->get('/api/openapi.json', null))['paths']['/views/{viewName}']['get']['parameters'], null, 'name');
+        self::assertSame('deepObject', $parameters['arguments']['style'] ?? null);
     }
 
     #[Test]

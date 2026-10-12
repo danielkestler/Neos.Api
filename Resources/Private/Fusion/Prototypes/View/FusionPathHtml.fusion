@@ -1,0 +1,12 @@
+##
+# The HTML of a content element as the page renders it, e.g. to replace it in a preview after a change: rendered at its
+# Fusion path, arguments[fusionPath], the data-__neos-fusion-path attribute it has in an edit mode (renderingMode=inPlace
+# keeps the attributes in the HTML, so it can replace the element in the page). The node is the element
+#
+#   {"html": "<div class=\"neos-contentelement\" data-__neos-fusion-path=\"…\">…</div>"}
+#
+prototype(Neos.Api:View.FusionPathHtml) < prototype(Neos.Api:View) {
+    html = Neos.Api:FusionPath {
+        path = ${arguments.fusionPath}
+    }
+}

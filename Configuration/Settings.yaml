@@ -5,6 +5,9 @@ Neos:
     #   mainNavigation:
     #     prototype: 'Vendor.Site:Api.MainNavigation'
     #     description: 'The main navigation with grouping folders'
+    #     # optional: handle Fusion errors as in the frontend (e.g. a content element shows its error in its place)
+    #     # instead of failing the view with a 500
+    #     renderErrors: false
     # A view is removed by setting it to ~
     views:
       documentNodesTree:
@@ -16,6 +19,11 @@ Neos:
       document:
         prototype: "Neos.Api:View.Document"
         description: "The document node of the node with its properties, references and its whole content: all child content nodes and content collections with theirs, nested"
+      fusionPathHtml:
+        prototype: "Neos.Api:View.FusionPathHtml"
+        description: "The HTML of the content element as the page renders it, rendered at its Fusion path arguments[fusionPath] (its data-__neos-fusion-path attribute with renderingMode=inPlace), e.g. to replace it in a preview after a change"
+        # an element that fails to render shows its error in its place, as in the Neos backend
+        renderErrors: true
 
   OpenApi:
     FlowAdapter:

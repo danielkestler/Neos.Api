@@ -32,12 +32,18 @@ final readonly class ViewRenderer
      * @param string $prototypeName the prototype to render, e.g. one inheriting from Neos.Api:View
      * @param RenderingMode $renderingMode the global renderingMode, e.g. frontend or an edit mode
      * @param ServerRequestInterface $httpRequest the API request, Fusion builds URIs with it
+     * @param array<mixed> $arguments the context variable arguments
+     * @param bool $renderErrors whether Fusion errors are handled as in the frontend (e.g. a content element shows its
+     *     error in its place) instead of thrown
      * @return array<mixed>|null the data, null if the site has no such prototype
+     * @throws InvalidViewArgument if the view can't use one of the arguments
      */
-    public function render(Node $node, Node $site, string $prototypeName, RenderingMode $renderingMode, ServerRequestInterface $httpRequest): ?array
+    public function render(Node $node, Node $site, string $prototypeName, RenderingMode $renderingMode, ServerRequestInterface $httpRequest, array $arguments = [], bool $renderErrors = false): ?array
     {
         $view = new ViewFusionView();
         $view->setOption('renderingModeName', $renderingMode->name);
+        $view->setOption('arguments', $arguments);
+        $view->setOption('renderErrors', $renderErrors);
         $view->assign('request', ActionRequest::fromHttpRequest($httpRequest));
         $view->assign('value', $node);
         $view->assign('site', $site);
@@ -45,7 +51,12 @@ final readonly class ViewRenderer
         if (!$view->canRenderWithNodeAndPath()) {
             return null;
         }
-        $output = $view->render();
+        try {
+            $output = $view->render();
+        } catch (\Exception $exception) {
+            // Fusion wraps it where it bubbles through a path
+            throw InvalidViewArgument::in($exception) ?? $exception;
+        }
         $json = trim((string)($output instanceof ResponseInterface ? $output->getBody() : $output));
         // an empty Neos.Fusion:DataStructure is encoded as []
         if ($json === '[]') {
