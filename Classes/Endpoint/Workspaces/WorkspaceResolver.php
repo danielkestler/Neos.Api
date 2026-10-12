@@ -46,7 +46,8 @@ final readonly class WorkspaceResolver
         // the token's account alone, as for its privileges, not Flow's security context
         $roles = $this->accountPrivileges->rolesOf($account);
         $user = $this->partyService->getAssignedPartyOfAccount($account);
-        if (!$this->contentRepositoryAuthorizationService->getWorkspacePermissions($contentRepository->id, $workspace->workspaceName, $roles, $user instanceof Model\User ? $user->getId() : null)->read) {
+        $permissions = $this->contentRepositoryAuthorizationService->getWorkspacePermissions($contentRepository->id, $workspace->workspaceName, $roles, $user instanceof Model\User ? $user->getId() : null);
+        if (!$permissions->read) {
             return $notFound;
         }
         try {
@@ -54,6 +55,6 @@ final readonly class WorkspaceResolver
         } catch (AccessDenied) {
             return $notFound;
         }
-        return new ReadableWorkspace($contentRepository, $workspace, $contentGraph, $roles, $this->contentRepositoryAuthorizationService);
+        return new ReadableWorkspace($contentRepository, $workspace, $permissions, $contentGraph, $roles, $this->contentRepositoryAuthorizationService);
     }
 }

@@ -59,6 +59,15 @@ privilegeTargets:
     "Neos.Api:Workspaces.Read":
       label: "List the workspaces you can read and the changes in them"
       matcher: "workspaces.read"
+    "Neos.Api:Workspaces.Update":
+      label: "Change the workspaces you manage, their title, description and base workspace"
+      matcher: "workspaces.update"
+    "Neos.Api:Workspaces.Create":
+      label: "Create workspaces, your personal one and shared ones"
+      matcher: "workspaces.create"
+    "Neos.Api:Workspaces.Delete":
+      label: "Delete the workspaces you manage"
+      matcher: "workspaces.delete"
     "Neos.Api:DataSources.Read":
       label: "Get the data of the data sources, e.g. the options of select boxes"
       matcher: "datasources.read"
@@ -93,6 +102,14 @@ roles:
       - privilegeTarget: "Neos.Api:Nodes.Delete"
         permission: GRANT
       - privilegeTarget: "Neos.Api:DataSources.Read"
+        permission: GRANT
+      # as Neos grants Neos.Workspace.Ui:Backend.CreateWorkspaces, which workspaces may be changed or deleted is up to
+      # the account's workspace roles (manage)
+      - privilegeTarget: "Neos.Api:Workspaces.Update"
+        permission: GRANT
+      - privilegeTarget: "Neos.Api:Workspaces.Create"
+        permission: GRANT
+      - privilegeTarget: "Neos.Api:Workspaces.Delete"
         permission: GRANT
 
   "Neos.Neos:Editor":

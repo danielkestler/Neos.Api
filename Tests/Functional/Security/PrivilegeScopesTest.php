@@ -39,6 +39,9 @@ class PrivilegeScopesTest extends FunctionalTestCase
             'nodes.create' => 'Create nodes where you can edit',
             'nodes.delete' => 'Delete the nodes you can edit and restore them',
             'workspaces.read' => 'List the workspaces you can read and the changes in them',
+            'workspaces.update' => 'Change the workspaces you manage, their title, description and base workspace',
+            'workspaces.create' => 'Create workspaces, your personal one and shared ones',
+            'workspaces.delete' => 'Delete the workspaces you manage',
             'datasources.read' => 'Get the data of the data sources, e.g. the options of select boxes',
         ], $privilegeScopes->scopes());
         self::assertSame('Neos.Api:Users.Update', $privilegeScopes->privilegeTargetOf('users.update'));
@@ -53,7 +56,7 @@ class PrivilegeScopesTest extends FunctionalTestCase
         self::assertSame('Change the Neos users', $scopeRegistry->describe('users.update'));
 
         $response = $this->browser->request('http://localhost/.well-known/oauth-protected-resource/api');
-        self::assertSame(['me.read', 'me.update', 'me.password', 'users.read', 'users.update', 'users.create', 'users.delete', 'sites.read', 'sites.update', 'sites.create', 'sites.delete', 'contentrepositories.read', 'nodetypes.read', 'views.read', 'nodes.read', 'nodes.update', 'nodes.create', 'nodes.delete', 'workspaces.read', 'datasources.read'], json_decode((string)$response->getBody(), true, flags: JSON_THROW_ON_ERROR)['scopes_supported']);
+        self::assertSame(['me.read', 'me.update', 'me.password', 'users.read', 'users.update', 'users.create', 'users.delete', 'sites.read', 'sites.update', 'sites.create', 'sites.delete', 'contentrepositories.read', 'nodetypes.read', 'views.read', 'nodes.read', 'nodes.update', 'nodes.create', 'nodes.delete', 'workspaces.read', 'workspaces.update', 'workspaces.create', 'workspaces.delete', 'datasources.read'], json_decode((string)$response->getBody(), true, flags: JSON_THROW_ON_ERROR)['scopes_supported']);
     }
 
     #[Test]

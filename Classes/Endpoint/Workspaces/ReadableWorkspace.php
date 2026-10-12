@@ -8,10 +8,11 @@ use Neos\ContentRepository\Core\Projection\ContentGraph\ContentGraphInterface;
 use Neos\ContentRepository\Core\SharedModel;
 use Neos\Flow\Annotations as Flow;
 use Neos\Flow\Security\Policy\Role;
+use Neos\Neos\Domain\Model;
 use Neos\Neos\Security\Authorization\ContentRepositoryAuthorizationService;
 
 /**
- * A workspace the account may read, and which of its node aggregates it may read
+ * A workspace the account may read, what else it may do in it, and which of its node aggregates it may read
  */
 #[Flow\Proxy(false)]
 final class ReadableWorkspace
@@ -22,11 +23,13 @@ final class ReadableWorkspace
     private array $readableNodeAggregates = [];
 
     /**
+     * @param Model\WorkspacePermissions $permissions the token's account's, by its workspace roles or as the owner
      * @param array<Role> $roles the token's account's
      */
     public function __construct(
         public readonly ContentRepository $contentRepository,
         public readonly SharedModel\Workspace\Workspace $workspace,
+        public readonly Model\WorkspacePermissions $permissions,
         private readonly ContentGraphInterface $contentGraph,
         private readonly array $roles,
         private readonly ContentRepositoryAuthorizationService $contentRepositoryAuthorizationService,
