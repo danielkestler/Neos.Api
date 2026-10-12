@@ -5,6 +5,7 @@ namespace Neos\Api\Tests\Functional\Endpoint;
 
 use Neos\Flow\Security\AccountFactory;
 use Neos\Flow\Security\AccountRepository;
+use Neos\Flow\Security\Cryptography\HashService;
 use Neos\Neos\Domain\Service\UserService;
 use PHPUnit\Framework\Attributes\Test;
 
@@ -99,5 +100,135 @@ class MeTest extends EndpointTestCase
         self::assertSame([['oauth2' => ['me.read']]], $document['paths']['/me']['get']['security']);
         self::assertSame('oauth2', $document['components']['securitySchemes']['oauth2']['type']);
         self::assertArrayHasKey('CurrentAccount', $document['components']['schemas']);
+        self::assertSame([['oauth2' => ['me.read']]], $document['paths']['/me/profile']['get']['security']);
+        self::assertSame([['oauth2' => ['me.update']]], $document['paths']['/me/profile']['patch']['security']);
+        self::assertSame([['oauth2' => ['me.password']]], $document['paths']['/me/password']['put']['security']);
+        self::assertArrayHasKey('204', $document['paths']['/me/password']['put']['responses']);
+    }
+
+    #[Test]
+    public function returnsTheProfile(): void
+    {
+        $response = $this->get('/api/me/profile', $this->token('editor-machine', 'me.read'));
+
+        self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
+        self::assertSame([
+            'firstName' => 'Edith',
+            'lastName' => 'Editor',
+            'email' => null,
+            'interfaceLanguage' => 'en',
+            'preferences' => [],
+        ], self::json($response));
+        self::assertStringContainsString('"preferences":{}', (string)$response->getBody());
+    }
+
+    #[Test]
+    public function profileIsNotFoundForAccountsWithoutUser(): void
+    {
+        self::assertSame(404, $this->get('/api/me/profile', $this->token('service-machine', 'me.read'))->getStatusCode());
+        self::assertSame(404, $this->patch('/api/me/profile', $this->token('service-machine', 'me.update'), ['firstName' => 'Sam'])->getStatusCode());
+        self::assertSame(404, $this->put('/api/me/password', $this->token('service-machine', 'me.password'), ['currentPassword' => 'password', 'newPassword' => 'new-password'])->getStatusCode());
+    }
+
+    #[Test]
+    public function changesTheProfile(): void
+    {
+        $token = $this->token('editor-machine', 'me.read me.update');
+        $response = $this->patch('/api/me/profile', $token, [
+            'firstName' => 'Edda',
+            'email' => 'edda@example.com',
+            'interfaceLanguage' => 'de',
+            'preferences' => ['studio.uiMode' => 'dark', 'studio.sidebar' => ['width' => 320]],
+        ]);
+
+        self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
+        $expected = [
+            'firstName' => 'Edda',
+            'lastName' => 'Editor',
+            'email' => 'edda@example.com',
+            'interfaceLanguage' => 'de',
+            'preferences' => ['studio.uiMode' => 'dark', 'studio.sidebar' => ['width' => 320]],
+        ];
+        self::assertSame($expected, self::json($response));
+        $this->persistenceManager->persistAll();
+        $this->persistenceManager->clearState();
+        self::assertSame($expected, self::json($this->get('/api/me/profile', $token)));
+
+        // preferences are merged, null removes one
+        $response = $this->patch('/api/me/profile', $token, ['preferences' => ['studio.uiMode' => null, 'studio.zoom' => 1.5]]);
+
+        self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
+        self::assertSame(['studio.sidebar' => ['width' => 320], 'studio.zoom' => 1.5], self::json($response)['preferences']);
+        self::assertSame('de', self::json($response)['interfaceLanguage']);
+    }
+
+    #[Test]
+    public function rejectsInvalidProfileChanges(): void
+    {
+        $token = $this->token('editor-machine', 'me.update');
+        foreach ([['email' => 'not-an-email'], ['firstName' => ''], ['firstName' => 42], ['preferences' => ['a', 'b']], ['label' => 'Edith']] as $body) {
+            $response = $this->patch('/api/me/profile', $token, $body);
+
+            self::assertSame(400, $response->getStatusCode(), json_encode($body) . ': ' . $response->getBody());
+        }
+        foreach ([['interfaceLanguage' => 'xx'], ['preferences' => ['interfaceLanguage' => 'de']]] as $body) {
+            $response = $this->patch('/api/me/profile', $token, $body);
+
+            self::assertSame(422, $response->getStatusCode(), json_encode($body) . ': ' . $response->getBody());
+        }
+    }
+
+    #[Test]
+    public function changingTheProfileRequiresTheUpdateScope(): void
+    {
+        $response = $this->patch('/api/me/profile', $this->token('editor-machine', 'me.read me.password'), ['firstName' => 'Edda']);
+
+        self::assertSame(403, $response->getStatusCode(), (string)$response->getBody());
+        self::assertStringContainsString('me.update', self::json($response)['detail']);
+    }
+
+    #[Test]
+    public function changesThePassword(): void
+    {
+        $response = $this->put('/api/me/password', $this->token('editor-machine', 'me.password'), ['currentPassword' => 'password', 'newPassword' => 'new-password']);
+
+        self::assertSame(204, $response->getStatusCode(), (string)$response->getBody());
+        $this->persistenceManager->persistAll();
+        $this->persistenceManager->clearState();
+        $account = $this->objectManager->get(AccountRepository::class)->findActiveByAccountIdentifierAndAuthenticationProviderName('editor', 'Neos.Neos:Backend');
+        $hashService = $this->objectManager->get(HashService::class);
+        self::assertTrue($hashService->validatePassword('new-password', $account->getCredentialsSource()));
+        self::assertFalse($hashService->validatePassword('password', $account->getCredentialsSource()));
+    }
+
+    #[Test]
+    public function rejectsAWrongCurrentPassword(): void
+    {
+        $response = $this->put('/api/me/password', $this->token('editor-machine', 'me.password'), ['currentPassword' => 'wrong', 'newPassword' => 'new-password']);
+
+        self::assertSame(422, $response->getStatusCode(), (string)$response->getBody());
+        $this->persistenceManager->clearState();
+        $account = $this->objectManager->get(AccountRepository::class)->findActiveByAccountIdentifierAndAuthenticationProviderName('editor', 'Neos.Neos:Backend');
+        self::assertTrue($this->objectManager->get(HashService::class)->validatePassword('password', $account->getCredentialsSource()));
+    }
+
+    #[Test]
+    public function rejectsInvalidPasswordChanges(): void
+    {
+        $token = $this->token('editor-machine', 'me.password');
+        foreach ([['currentPassword' => 'password', 'newPassword' => ''], ['currentPassword' => 'password'], ['newPassword' => 'new-password']] as $body) {
+            $response = $this->put('/api/me/password', $token, $body);
+
+            self::assertSame(400, $response->getStatusCode(), json_encode($body) . ': ' . $response->getBody());
+        }
+    }
+
+    #[Test]
+    public function changingThePasswordRequiresThePasswordScope(): void
+    {
+        $response = $this->put('/api/me/password', $this->token('editor-machine', 'me.read me.update'), ['currentPassword' => 'password', 'newPassword' => 'new-password']);
+
+        self::assertSame(403, $response->getStatusCode(), (string)$response->getBody());
+        self::assertStringContainsString('me.password', self::json($response)['detail']);
     }
 }

@@ -12,6 +12,8 @@ namespace Neos\Api\Security;
 final class ApiScopes
 {
     public const string ME_READ = 'me.read';
+    public const string ME_UPDATE = 'me.update';
+    public const string ME_PASSWORD = 'me.password';
     public const string USERS_READ = 'users.read';
     public const string USERS_UPDATE = 'users.update';
     public const string USERS_CREATE = 'users.create';

@@ -5,6 +5,12 @@ privilegeTargets:
     "Neos.Api:Me.Read":
       label: "Read your account"
       matcher: "me.read"
+    "Neos.Api:Me.Update":
+      label: "Change your name, email address, interface language and preferences"
+      matcher: "me.update"
+    "Neos.Api:Me.Password":
+      label: "Change your password"
+      matcher: "me.password"
     "Neos.Api:Users.Read":
       label: "List and read the Neos users"
       matcher: "users.read"
@@ -61,6 +67,10 @@ roles:
   "Neos.Flow:AuthenticatedUser":
     privileges:
       - privilegeTarget: "Neos.Api:Me.Read"
+        permission: GRANT
+      - privilegeTarget: "Neos.Api:Me.Update"
+        permission: GRANT
+      - privilegeTarget: "Neos.Api:Me.Password"
         permission: GRANT
       # which nodes a view shows is up to the account's node privileges
       - privilegeTarget: "Neos.Api:Views.Read"
