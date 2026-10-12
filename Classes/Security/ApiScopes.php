@@ -36,4 +36,16 @@ final class ApiScopes
     public const string WORKSPACES_PUBLISH = 'workspaces.publish';
     public const string WORKSPACES_ROLES = 'workspaces.roles';
     public const string DATASOURCES_READ = 'datasources.read';
+    public const string ASSETS_READ = 'assets.read';
+    public const string ASSETS_UPDATE = 'assets.update';
+    public const string ASSETS_CREATE = 'assets.create';
+    public const string ASSETS_DELETE = 'assets.delete';
+    public const string ASSETTAGS_READ = 'assettags.read';
+    public const string ASSETTAGS_UPDATE = 'assettags.update';
+    public const string ASSETTAGS_CREATE = 'assettags.create';
+    public const string ASSETTAGS_DELETE = 'assettags.delete';
+    public const string ASSETCOLLECTIONS_READ = 'assetcollections.read';
+    public const string ASSETCOLLECTIONS_UPDATE = 'assetcollections.update';
+    public const string ASSETCOLLECTIONS_CREATE = 'assetcollections.create';
+    public const string ASSETCOLLECTIONS_DELETE = 'assetcollections.delete';
 }

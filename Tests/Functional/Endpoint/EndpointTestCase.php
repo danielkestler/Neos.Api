@@ -12,6 +12,7 @@ use Neos\Flow\Tests\FunctionalTestCase;
 use Neos\OAuth\Domain\Model\OAuthClient;
 use Neos\OAuth\Domain\Repository\OAuthClientRepository;
 use Psr\Http\Message\ResponseInterface;
+use Psr\Http\Message\UploadedFileInterface;
 
 /**
  * Calls the API with access tokens of machine clients that act as a given account
@@ -76,6 +77,23 @@ abstract class EndpointTestCase extends FunctionalTestCase
     protected function put(string $path, ?string $bearer, array $body): ResponseInterface
     {
         return $this->request('PUT', $path, $bearer, $body);
+    }
+
+    /**
+     * A multipart/form-data POST, as PHP parses it: the fields as parsed body, the files as uploaded files
+     *
+     * @param array<string, mixed> $fields
+     * @param array<string, UploadedFileInterface> $files
+     */
+    protected function postMultipart(string $path, ?string $bearer, array $fields, array $files): ResponseInterface
+    {
+        $this->resetAuthenticationState();
+        $headers = ['Content-Type' => 'multipart/form-data; boundary=neos-api-test'];
+        if ($bearer !== null) {
+            $headers['Authorization'] = 'Bearer ' . $bearer;
+        }
+        $request = (new ServerRequest('POST', 'http://localhost' . $path, $headers))->withParsedBody($fields)->withUploadedFiles($files);
+        return $this->browser->sendRequest($request);
     }
 
     /**

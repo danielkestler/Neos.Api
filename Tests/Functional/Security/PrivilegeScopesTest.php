@@ -45,6 +45,18 @@ class PrivilegeScopesTest extends FunctionalTestCase
             'workspaces.publish' => 'Publish, discard and rebase the changes in the workspaces you can write to',
             'workspaces.roles' => 'Assign and remove the roles in the workspaces you manage',
             'datasources.read' => 'Get the data of the data sources, e.g. the options of select boxes',
+            'assets.read' => 'List and read the assets of the media library and remote asset sources, and where they are used',
+            'assets.update' => 'Change the assets of the media library, their metadata, tags, collections and files',
+            'assets.create' => 'Upload and import assets into the media library and create image variants',
+            'assets.delete' => 'Delete assets of the media library that aren\'t in use',
+            'assettags.read' => 'List and read the tags of the media library',
+            'assettags.update' => 'Rename and move the tags of the media library',
+            'assettags.create' => 'Create tags in the media library',
+            'assettags.delete' => 'Delete tags of the media library',
+            'assetcollections.read' => 'List and read the collections of the media library',
+            'assetcollections.update' => 'Rename the collections of the media library',
+            'assetcollections.create' => 'Create collections in the media library',
+            'assetcollections.delete' => 'Delete collections of the media library',
         ], $privilegeScopes->scopes());
         self::assertSame('Neos.Api:Users.Update', $privilegeScopes->privilegeTargetOf('users.update'));
     }
@@ -58,7 +70,7 @@ class PrivilegeScopesTest extends FunctionalTestCase
         self::assertSame('Change the Neos users', $scopeRegistry->describe('users.update'));
 
         $response = $this->browser->request('http://localhost/.well-known/oauth-protected-resource/api');
-        self::assertSame(['me.read', 'me.update', 'me.password', 'users.read', 'users.update', 'users.create', 'users.delete', 'sites.read', 'sites.update', 'sites.create', 'sites.delete', 'contentrepositories.read', 'nodetypes.read', 'views.read', 'nodes.read', 'nodes.update', 'nodes.create', 'nodes.delete', 'workspaces.read', 'workspaces.update', 'workspaces.create', 'workspaces.delete', 'workspaces.publish', 'workspaces.roles', 'datasources.read'], json_decode((string)$response->getBody(), true, flags: JSON_THROW_ON_ERROR)['scopes_supported']);
+        self::assertSame(['me.read', 'me.update', 'me.password', 'users.read', 'users.update', 'users.create', 'users.delete', 'sites.read', 'sites.update', 'sites.create', 'sites.delete', 'contentrepositories.read', 'nodetypes.read', 'views.read', 'nodes.read', 'nodes.update', 'nodes.create', 'nodes.delete', 'workspaces.read', 'workspaces.update', 'workspaces.create', 'workspaces.delete', 'workspaces.publish', 'workspaces.roles', 'datasources.read', 'assets.read', 'assets.update', 'assets.create', 'assets.delete', 'assettags.read', 'assettags.update', 'assettags.create', 'assettags.delete', 'assetcollections.read', 'assetcollections.update', 'assetcollections.create', 'assetcollections.delete'], json_decode((string)$response->getBody(), true, flags: JSON_THROW_ON_ERROR)['scopes_supported']);
     }
 
     #[Test]

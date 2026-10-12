@@ -77,6 +77,42 @@ privilegeTargets:
     "Neos.Api:DataSources.Read":
       label: "Get the data of the data sources, e.g. the options of select boxes"
       matcher: "datasources.read"
+    "Neos.Api:Assets.Read":
+      label: "List and read the assets of the media library and remote asset sources, and where they are used"
+      matcher: "assets.read"
+    "Neos.Api:Assets.Update":
+      label: "Change the assets of the media library, their metadata, tags, collections and files"
+      matcher: "assets.update"
+    "Neos.Api:Assets.Create":
+      label: "Upload and import assets into the media library and create image variants"
+      matcher: "assets.create"
+    "Neos.Api:Assets.Delete":
+      label: "Delete assets of the media library that aren't in use"
+      matcher: "assets.delete"
+    "Neos.Api:AssetTags.Read":
+      label: "List and read the tags of the media library"
+      matcher: "assettags.read"
+    "Neos.Api:AssetTags.Update":
+      label: "Rename and move the tags of the media library"
+      matcher: "assettags.update"
+    "Neos.Api:AssetTags.Create":
+      label: "Create tags in the media library"
+      matcher: "assettags.create"
+    "Neos.Api:AssetTags.Delete":
+      label: "Delete tags of the media library"
+      matcher: "assettags.delete"
+    "Neos.Api:AssetCollections.Read":
+      label: "List and read the collections of the media library"
+      matcher: "assetcollections.read"
+    "Neos.Api:AssetCollections.Update":
+      label: "Rename the collections of the media library"
+      matcher: "assetcollections.update"
+    "Neos.Api:AssetCollections.Create":
+      label: "Create collections in the media library"
+      matcher: "assetcollections.create"
+    "Neos.Api:AssetCollections.Delete":
+      label: "Delete collections of the media library"
+      matcher: "assetcollections.delete"
 
 roles:
   "Neos.Flow:AuthenticatedUser":
@@ -122,6 +158,32 @@ roles:
         permission: GRANT
       # who may assign roles is up to the account's workspace roles (manage)
       - privilegeTarget: "Neos.Api:Workspaces.Roles"
+        permission: GRANT
+      # as Neos grants managing assets, tags and collections (Neos.Media.Browser:ManageAssets, :ManageTags,
+      # :ManageAssetCollections), which ones the account sees is up to Neos' media privileges
+      - privilegeTarget: "Neos.Api:Assets.Read"
+        permission: GRANT
+      - privilegeTarget: "Neos.Api:Assets.Update"
+        permission: GRANT
+      - privilegeTarget: "Neos.Api:Assets.Create"
+        permission: GRANT
+      - privilegeTarget: "Neos.Api:Assets.Delete"
+        permission: GRANT
+      - privilegeTarget: "Neos.Api:AssetTags.Read"
+        permission: GRANT
+      - privilegeTarget: "Neos.Api:AssetTags.Update"
+        permission: GRANT
+      - privilegeTarget: "Neos.Api:AssetTags.Create"
+        permission: GRANT
+      - privilegeTarget: "Neos.Api:AssetTags.Delete"
+        permission: GRANT
+      - privilegeTarget: "Neos.Api:AssetCollections.Read"
+        permission: GRANT
+      - privilegeTarget: "Neos.Api:AssetCollections.Update"
+        permission: GRANT
+      - privilegeTarget: "Neos.Api:AssetCollections.Create"
+        permission: GRANT
+      - privilegeTarget: "Neos.Api:AssetCollections.Delete"
         permission: GRANT
 
   "Neos.Neos:Editor":
