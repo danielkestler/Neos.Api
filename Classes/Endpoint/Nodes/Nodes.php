@@ -15,6 +15,7 @@ use Neos\Api\Endpoint\Nodes\RequestBody\NodePropertiesUpdate;
 use Neos\Api\Endpoint\Nodes\RequestBody\NodeReferencesUpdate;
 use Neos\Api\Endpoint\Nodes\RequestBody\NodeTag;
 use Neos\Api\Endpoint\Nodes\RequestBody\NodeTypeChange;
+use Neos\Api\Endpoint\Nodes\RequestBody\NodeUriPathSegmentGenerate;
 use Neos\Api\Endpoint\Nodes\RequestBody\NodeVariantCreate;
 use Neos\Api\Endpoint\Nodes\Response\NodeCreated;
 use Neos\Api\Endpoint\Nodes\Schema\DimensionSpacePoint;
@@ -312,48 +313,91 @@ final readonly class Nodes
         #[Parameter(in: 'query', description: 'The dimension space point to change the node in, as JSON. If omitted, as for getNode')]
         DimensionSpacePoint|null $dimensionSpacePoint = null,
     ): Node|NotFound|BadRequest|Forbidden|Conflict|UnprocessableContent {
-        $subgraph = $this->subgraph($contentRepositoryId, $workspaceName, $dimensionSpacePoint);
-        if (!$subgraph instanceof ContentSubgraphInterface) {
-            return $subgraph;
-        }
-        $node = $this->findNode($subgraph, $nodeAggregateId);
+        $node = $this->nodeIn($contentRepositoryId, $nodeAggregateId, $workspaceName, $dimensionSpacePoint);
         if (!$node instanceof ContentGraph\Node) {
             return $node;
         }
-        $contentRepository = $this->contentRepositoryRegistry->get($node->contentRepositoryId);
-        $nodeType = $contentRepository->getNodeTypeManager()->getNodeType($node->nodeTypeName);
+        $nodeType = $this->contentRepositoryRegistry->get($node->contentRepositoryId)->getNodeTypeManager()->getNodeType($node->nodeTypeName);
         if ($nodeType === null) {
             return UnprocessableContent::because(sprintf('The node type %s of the node doesn\'t exist anymore', $node->nodeTypeName->value));
         }
         // NodePropertiesUpdate only validated the body, a map schematic can't build
         /** @var array<string, mixed> $values */
         $values = json_decode((string)$request->getBody(), true, flags: JSON_THROW_ON_ERROR);
+        return $this->setProperties($node, $nodeType, $values) ?? $this->reread($node);
+    }
+
+    #[Operation(
+        path: '/cr/{contentRepositoryId}/nodes/{nodeAggregateId}/uri-path-segment',
+        method: 'POST',
+        summary: 'Generate the URI path segment of a document',
+        description: 'Sets the uriPathSegment property of the document in the workspace and dimension space point to one generated from the text, else from its title, as the Neos backend\'s "sync" button does: transliterated in the language of the dimension space point (ä becomes ae in German), lowercase, with dashes. Not unique among its siblings, the backend\'s isn\'t either. Like updateNodeProperties otherwise, the response is the node as getNode returns it without include. A node without a uriPathSegment property (not a document) or nothing to generate it from (no text and no title) is a 422.',
+        operationId: 'generateNodeUriPathSegment',
+        security: [
+            ApiAuthContextProvider::SCOPES => [ApiScopes::NODES_UPDATE],
+        ],
+    )]
+    public function generateUriPathSegment(
+        ContentRepositoryId $contentRepositoryId,
+        NodeAggregateId $nodeAggregateId,
+        #[Parameter(in: 'query', description: 'The workspace to change the node in, required: changing live directly is rarely what is meant')]
+        WorkspaceName $workspaceName,
+        #[RequestBody(description: 'What to generate it from, {} for the title')] NodeUriPathSegmentGenerate $source,
+        #[Parameter(in: 'query', description: 'The dimension space point to change the node in, its language the one to transliterate in, as JSON. If omitted, as for getNode')]
+        DimensionSpacePoint|null $dimensionSpacePoint = null,
+    ): Node|NotFound|BadRequest|Forbidden|Conflict|UnprocessableContent {
+        $node = $this->nodeIn($contentRepositoryId, $nodeAggregateId, $workspaceName, $dimensionSpacePoint);
+        if (!$node instanceof ContentGraph\Node) {
+            return $node;
+        }
+        $nodeType = $this->contentRepositoryRegistry->get($node->contentRepositoryId)->getNodeTypeManager()->getNodeType($node->nodeTypeName);
+        if ($nodeType === null) {
+            return UnprocessableContent::because(sprintf('The node type %s of the node doesn\'t exist anymore', $node->nodeTypeName->value));
+        }
+        if (!$nodeType->hasProperty('uriPathSegment')) {
+            return UnprocessableContent::because(sprintf('The node %s has no uriPathSegment property', $node->aggregateId->value));
+        }
+        $title = $node->getProperty('title');
+        $text = $source->text !== null && trim($source->text) !== '' ? $source->text : (is_string($title) ? $title : '');
+        $uriPathSegment = trim($text) !== '' ? $this->uriPathSegments->fromText($text, $node->dimensionSpacePoint) : '';
+        if ($uriPathSegment === '') {
+            return UnprocessableContent::because(sprintf('There is nothing to generate the uriPathSegment of the node %s from, it has no title', $node->aggregateId->value));
+        }
+        return $this->setProperties($node, $nodeType, ['uriPathSegment' => $uriPathSegment]) ?? $this->reread($node);
+    }
+
+    /**
+     * Sets the properties as updateNodeProperties does, null if they are set
+     *
+     * @param array<string, mixed> $values
+     */
+    private function setProperties(ContentGraph\Node $node, NodeType\NodeType $nodeType, array $values): Forbidden|Conflict|UnprocessableContent|null
+    {
         try {
             $propertyValues = $this->propertyValues->toWrite($nodeType, $values);
         } catch (InvalidPropertyValue $exception) {
             return UnprocessableContent::because($exception->getMessage());
         }
         // the content repository rejects a command without changes
-        if ($values !== []) {
-            try {
-                // in the requested point, not the node's origin: the content repository decides whether it may be changed there
-                $contentRepository->handle(SetNodeProperties::create($node->workspaceName, $node->aggregateId, OriginDimensionSpacePoint::fromDimensionSpacePoint($node->dimensionSpacePoint), $propertyValues));
-            } catch (AccessDenied) {
-                return Forbidden::because(sprintf('You may not change the node %s in the workspace %s', $node->aggregateId->value, $node->workspaceName->value));
-            } catch (DimensionSpacePointIsNotYetOccupied) {
-                return Conflict::because(sprintf(
-                    'The node is shown in the dimension space point %s with the content of %s, create a variant in %1$s first',
-                    $node->dimensionSpacePoint->toJson(),
-                    $node->originDimensionSpacePoint->toJson(),
-                ));
-            } catch (PropertyCannotBeSet $exception) {
-                // PropertyValues checks the same, in case they disagree
-                return UnprocessableContent::because($exception->getMessage());
-            }
+        if ($values === []) {
+            return null;
         }
-        // the node is read-only, read it again
-        $changed = $this->findNode($this->contentRepositoryRegistry->subgraphForNode($node), $nodeAggregateId);
-        return $changed instanceof ContentGraph\Node ? $this->node($changed, IncludePaths::none()) : $changed;
+        try {
+            // in the requested point, not the node's origin: the content repository decides whether it may be changed there
+            $this->contentRepositoryRegistry->get($node->contentRepositoryId)->handle(SetNodeProperties::create($node->workspaceName, $node->aggregateId, OriginDimensionSpacePoint::fromDimensionSpacePoint($node->dimensionSpacePoint), $propertyValues));
+        } catch (AccessDenied) {
+            return Forbidden::because(sprintf('You may not change the node %s in the workspace %s', $node->aggregateId->value, $node->workspaceName->value));
+        } catch (DimensionSpacePointIsNotYetOccupied) {
+            return Conflict::because(sprintf(
+                'The node is shown in the dimension space point %s with the content of %s, create a variant in %1$s first',
+                $node->dimensionSpacePoint->toJson(),
+                $node->originDimensionSpacePoint->toJson(),
+            ));
+        } catch (PropertyCannotBeSet $exception) {
+            // PropertyValues checks the same, in case they disagree
+            return UnprocessableContent::because($exception->getMessage());
+        }
+        return null;
     }
 
     #[Operation(

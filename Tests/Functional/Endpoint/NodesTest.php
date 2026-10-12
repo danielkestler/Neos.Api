@@ -227,6 +227,35 @@ class NodesTest extends EndpointTestCase
     }
 
     #[Test]
+    public function generatesUriPathSegmentsOnlyInAGivenWorkspace(): void
+    {
+        $token = $this->token('editor-machine', 'nodes.update');
+
+        $response = $this->post(self::uriPathSegmentPath('some-node', ['workspaceName' => 'user-editor']), $token, ['text' => 'Über uns']);
+        self::assertSame(404, $response->getStatusCode(), (string)$response->getBody());
+        self::assertSame('There is no content repository with the ID unknown', self::json($response)['detail']);
+        // the title if there is no text
+        self::assertSame(404, $this->post(self::uriPathSegmentPath('some-node', ['workspaceName' => 'user-editor']), $token, [])->getStatusCode());
+
+        // no default workspace for changes
+        self::assertSame(400, $this->post(self::uriPathSegmentPath('some-node', []), $token, [])->getStatusCode());
+        // its schema rejects it
+        self::assertSame(400, $this->post(self::uriPathSegmentPath('some-node', ['workspaceName' => 'user-editor']), $token, ['text' => 42])->getStatusCode());
+    }
+
+    #[Test]
+    public function generatingUriPathSegmentsRequiresTheScopeAndThePrivilege(): void
+    {
+        $path = self::uriPathSegmentPath('some-node', ['workspaceName' => 'user-editor']);
+
+        $response = $this->post($path, $this->token('editor-machine', 'nodes.read'), []);
+        self::assertSame(403, $response->getStatusCode(), (string)$response->getBody());
+        self::assertStringContainsString('nodes.update', self::json($response)['detail']);
+        self::assertSame(403, $this->post($path, $this->token('nobody-machine', 'nodes.update'), [])->getStatusCode());
+        self::assertSame(401, $this->post($path, null, [])->getStatusCode());
+    }
+
+    #[Test]
     public function createsNodesOnlyInAGivenWorkspace(): void
     {
         $token = $this->token('editor-machine', 'nodes.create');
@@ -572,6 +601,14 @@ class NodesTest extends EndpointTestCase
     private static function restorePath(string $nodeAggregateId, array $query): string
     {
         return '/api/cr/unknown/nodes/' . rawurlencode($nodeAggregateId) . '/restore' . self::query($query);
+    }
+
+    /**
+     * @param array<string, mixed> $query
+     */
+    private static function uriPathSegmentPath(string $nodeAggregateId, array $query): string
+    {
+        return '/api/cr/unknown/nodes/' . rawurlencode($nodeAggregateId) . '/uri-path-segment' . self::query($query);
     }
 
     /**
