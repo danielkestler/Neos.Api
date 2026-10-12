@@ -100,7 +100,7 @@ class UsersTest extends EndpointTestCase
     public function readingIsDeniedToNonEditors(): void
     {
         $token = $this->token('manager-machine', 'users.read');
-        foreach (['/api/users', '/api/users/' . $this->adminId] as $path) {
+        foreach (['/api/users', '/api/users/' . $this->adminId, '/api/users/options'] as $path) {
             $response = $this->get($path, $token);
 
             self::assertSame(403, $response->getStatusCode(), $path . ': ' . $response->getBody());
@@ -317,12 +317,40 @@ class UsersTest extends EndpointTestCase
     }
 
     #[Test]
+    public function listsTheAssignableRoles(): void
+    {
+        $response = $this->get('/api/users/options', $this->token('editor-machine', 'users.read'));
+
+        self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
+        $roles = self::json($response)['roles'];
+        $identifiers = array_column($roles, 'identifier');
+        self::assertContains('Neos.Neos:Administrator', $identifiers);
+        self::assertContains('Neos.Neos:Editor', $identifiers);
+        foreach (['Neos.Flow:Everybody', 'Neos.Flow:AuthenticatedUser', 'Neos.Neos:AbstractEditor'] as $abstractRole) {
+            self::assertNotContains($abstractRole, $identifiers);
+        }
+        $labels = array_column($roles, 'label');
+        $sorted = $labels;
+        usort($sorted, strcasecmp(...));
+        self::assertSame($sorted, $labels);
+        $editor = $roles[array_search('Neos.Neos:Editor', $identifiers, true)];
+        self::assertSame(['identifier', 'label', 'description', 'packageKey'], array_keys($editor));
+        self::assertSame('Neos.Neos', $editor['packageKey']);
+
+        // the roles a client gets here are the ones it can create users with
+        $response = $this->post('/api/users', $this->token('admin-machine', 'users.create'), ['username' => 'writer', 'password' => 'password', 'firstName' => 'Wanda', 'lastName' => 'Writer', 'roles' => $identifiers]);
+        self::assertSame(201, $response->getStatusCode(), (string)$response->getBody());
+    }
+
+    #[Test]
     public function readingRequiresTheReadScope(): void
     {
-        $response = $this->get('/api/users', $this->token('admin-machine', null));
+        foreach (['/api/users', '/api/users/options'] as $path) {
+            $response = $this->get($path, $this->token('admin-machine', null));
 
-        self::assertSame(403, $response->getStatusCode(), (string)$response->getBody());
-        self::assertStringContainsString('users.read', self::json($response)['detail']);
+            self::assertSame(403, $response->getStatusCode(), $path . ': ' . $response->getBody());
+            self::assertStringContainsString('users.read', self::json($response)['detail']);
+        }
     }
 
     #[Test]
@@ -340,6 +368,8 @@ class UsersTest extends EndpointTestCase
         $document = self::json($this->get('/api/openapi.json', null));
 
         self::assertSame([['oauth2' => ['users.read']]], $document['paths']['/users']['get']['security']);
+        self::assertSame([['oauth2' => ['users.read']]], $document['paths']['/users/options']['get']['security']);
+        self::assertSame('getUserOptions', $document['paths']['/users/options']['get']['operationId']);
         self::assertSame([['oauth2' => ['users.update']]], $document['paths']['/users/{userId}']['patch']['security']);
         self::assertSame([['oauth2' => ['users.create']]], $document['paths']['/users']['post']['security']);
         self::assertSame([['oauth2' => ['users.delete']]], $document['paths']['/users/{userId}']['delete']['security']);

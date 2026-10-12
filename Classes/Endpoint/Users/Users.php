@@ -5,10 +5,13 @@ namespace Neos\Api\Endpoint\Users;
 
 use Neos\Api\Endpoint\Users\RequestBody\UserCreate;
 use Neos\Api\Endpoint\Users\RequestBody\UserUpdate;
+use Neos\Api\Endpoint\Users\Schema\AccountRole;
+use Neos\Api\Endpoint\Users\Schema\AccountRoleList;
 use Neos\Api\Endpoint\Users\Schema\PaginatedUserListing;
 use Neos\Api\Endpoint\Users\Schema\User;
 use Neos\Api\Endpoint\Users\Schema\UserId;
 use Neos\Api\Endpoint\Users\Schema\UserList;
+use Neos\Api\Endpoint\Users\Schema\UserOptions;
 use Neos\Api\Endpoint\Users\Response\UserCreated;
 use Neos\Api\Security\ApiAuthContextProvider;
 use Neos\Api\Security\ApiCaller;
@@ -21,6 +24,7 @@ use Neos\Api\Shared\Response\UnprocessableContent;
 use Neos\Api\Shared\Schema\ListingLinks;
 use Neos\Api\Shared\Schema\ListingMeta;
 use Neos\Flow\Security\Policy\PolicyService;
+use Neos\Flow\Security\Policy\Role;
 use Neos\Neos\Domain\Model;
 use Neos\Neos\Domain\Service\UserService;
 use Neos\OpenApi\Attributes\AuthContext;
@@ -101,6 +105,24 @@ final readonly class Users
             $newUser->roleIdentifiers(),
         );
         return new UserCreated(User::from($user));
+    }
+
+    #[Operation(
+        path: '/users/options',
+        method: 'GET',
+        summary: 'Get the user options',
+        description: 'The roles that can be assigned to an account when a user is created or changed: the roles that aren\'t abstract, ordered by label.',
+        operationId: 'getUserOptions',
+        security: [
+            ApiAuthContextProvider::SCOPES => [ApiScopes::USERS_READ],
+        ],
+    )]
+    public function options(): UserOptions
+    {
+        // without the abstract ones, Flow can't assign them to accounts
+        $roles = array_values($this->policyService->getRoles());
+        usort($roles, static fn (Role $a, Role $b) => strcasecmp($a->getLabel(), $b->getLabel()) ?: strcmp($a->getIdentifier(), $b->getIdentifier()));
+        return new UserOptions(new AccountRoleList(...array_map(AccountRole::from(...), $roles)));
     }
 
     #[Operation(
