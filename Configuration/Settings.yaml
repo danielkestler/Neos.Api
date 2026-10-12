@@ -1,10 +1,5 @@
 Neos:
   Api:
-    docs:
-      # The OAuth client the docs log in with, declared in Neos.OAuth.clients below
-      clientId: "neos-api-docs"
-      swaggerUiVersion: "5.33.0"
-
     # The views GET /views/{viewName}?nodeAggregateId={nodeAggregateId} renders, only these are exposed. The prototype inherits from
     # Neos.Api:View and is looked up in the Fusion of the node's site, e.g.
     #   mainNavigation:
@@ -41,7 +36,7 @@ Neos:
             'Neos\Api\Endpoint\Views\Views': true
             'Neos\Api\Endpoint\DataSources\DataSources': true
           specPath: "openapi.json"
-          # the docs are served by Neos.Api's DocsController, which lets users log in
+          # the docs are served by Neos.Api.Docs, which lets users log in
           authContextProvider: 'Neos\Api\Security\ApiAuthContextProvider'
 
   Neos:
@@ -64,21 +59,8 @@ Neos:
         path: "api"
         name: "Neos API"
         scopeProvider: 'Neos\Api\Security\PrivilegeScopes'
-        documentation: "api/docs"
-    clients:
-      # Swagger UI on /api/docs: users log in with their Neos account (authorization code flow with PKCE)
-      "neos-api-docs":
-        name: "Neos API docs"
-        redirectUris: ["{issuer}/api/docs/oauth2-redirect"]
-        grantTypes: ["authorization_code"]
-        firstParty: true
 
   Flow:
-    mvc:
-      routes:
-        "Neos.Api":
-          position: "before Neos.Neos"
-
     security:
       authentication:
         providers:

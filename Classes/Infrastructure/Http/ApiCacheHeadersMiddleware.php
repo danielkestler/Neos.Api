@@ -5,6 +5,7 @@ namespace Neos\Api\Infrastructure\Http;
 
 use Neos\Api\Infrastructure\I18n\LabelTranslator;
 use Neos\Flow\Annotations as Flow;
+use Neos\Flow\Http\ServerRequestAttributes;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
@@ -16,16 +17,19 @@ use Psr\Http\Server\RequestHandlerInterface;
  * - `Cache-Control: private, no-store` and `Vary: Authorization`: a response depends on the token's account and scopes
  * - `Content-Language` and `Vary: Accept-Language` if the operation translated labels, see LabelTranslator
  *
- * Not for the docs and the OpenAPI document, which are public and the same for everybody. It runs around
- * OAuthChallengeMiddleware, whose 401 and 403 responses get the headers as well.
+ * Only for the operations, not for anything else under the API's path like the OpenAPI document or the docs of
+ * Neos.Api.Docs, which are public and the same for everybody. It runs around OAuthChallengeMiddleware, whose 401 and
+ * 403 responses get the headers as well.
  */
 final class ApiCacheHeadersMiddleware implements MiddlewareInterface
 {
     #[Flow\Inject]
     protected LabelTranslator $labelTranslator;
 
-    #[Flow\InjectConfiguration(path: 'apis.neos', package: 'Neos.OpenApi.FlowAdapter')]
-    protected array $api;
+    /**
+     * The name of the API in Neos.OpenApi.FlowAdapter.apis, see Settings.yaml
+     */
+    private const string API_NAME = 'neos';
 
     public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
     {
@@ -48,15 +52,12 @@ final class ApiCacheHeadersMiddleware implements MiddlewareInterface
         return $response;
     }
 
+    /**
+     * Whether the request was routed to one of the API's operations, see the FlowAdapter's OpenApiRoutesProvider
+     */
     private function isOperation(ServerRequestInterface $request): bool
     {
-        $prefix = '/' . trim($this->api['uriPrefix'], '/') . '/';
-        $path = $request->getUri()->getPath();
-        if (!str_starts_with($path, $prefix)) {
-            return false;
-        }
-        $subPath = substr($path, strlen($prefix));
-        // the DocsController's routes, see Routes.yaml
-        return $subPath !== ($this->api['specPath'] ?? null) && $subPath !== 'docs' && !str_starts_with($subPath, 'docs/');
+        $routingResults = $request->getAttribute(ServerRequestAttributes::ROUTING_RESULTS);
+        return ($routingResults['__api'] ?? null) === self::API_NAME && isset($routingResults['__operation']);
     }
 }

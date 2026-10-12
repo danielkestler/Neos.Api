@@ -1,9 +1,4 @@
 privilegeTargets:
-  'Neos\Flow\Security\Authorization\Privilege\Method\MethodPrivilege':
-    # The docs are public, calling the API requires logging in
-    "Neos.Api:Docs":
-      matcher: 'method(Neos\Api\Controller\DocsController->(index|oauth2Redirect)Action())'
-
   # Each one is an OAuth scope as well: the matcher is its name (a constant of Neos\Api\Security\ApiScopes), the label
   # its description on the consent page. A token needs the scope, its account the privilege
   'Neos\Api\Security\ApiPrivilege':
@@ -63,11 +58,6 @@ privilegeTargets:
       matcher: "datasources.read"
 
 roles:
-  "Neos.Flow:Everybody":
-    privileges:
-      - privilegeTarget: "Neos.Api:Docs"
-        permission: GRANT
-
   "Neos.Flow:AuthenticatedUser":
     privileges:
       - privilegeTarget: "Neos.Api:Me.Read"

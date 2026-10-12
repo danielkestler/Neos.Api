@@ -43,14 +43,12 @@ class ApiCacheHeadersMiddlewareTest extends EndpointTestCase
     }
 
     #[Test]
-    public function leavesTheDocsAndTheOpenApiDocumentAlone(): void
+    public function leavesTheOpenApiDocumentAlone(): void
     {
-        foreach (['/api/openapi.json', '/api/docs'] as $path) {
-            $response = $this->get($path, null);
+        $response = $this->get('/api/openapi.json', null);
 
-            self::assertSame(200, $response->getStatusCode(), $path);
-            self::assertFalse($response->hasHeader('Vary'), $path);
-            self::assertStringNotContainsString('no-store', $response->getHeaderLine('Cache-Control'), $path);
-        }
+        self::assertSame(200, $response->getStatusCode());
+        self::assertFalse($response->hasHeader('Vary'));
+        self::assertStringNotContainsString('no-store', $response->getHeaderLine('Cache-Control'));
     }
 }
