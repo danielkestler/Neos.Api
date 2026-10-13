@@ -9,8 +9,10 @@ use Neos\Flow\Security\Authentication\AuthenticationManagerInterface;
 use Neos\Flow\Security\Authentication\Token\BearerToken;
 use Neos\Flow\Security\Authentication\TokenAndProviderFactoryInterface;
 use Neos\Flow\Tests\FunctionalTestCase;
+use Neos\Neos\Domain\Service\UserService;
 use Neos\OAuth\Domain\Model\OAuthClient;
 use Neos\OAuth\Domain\Repository\OAuthClientRepository;
+use Neos\Utility\ObjectAccess;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\UploadedFileInterface;
 
@@ -22,6 +24,15 @@ abstract class EndpointTestCase extends FunctionalTestCase
     protected static $testablePersistenceEnabled = true;
 
     private const string SECRET = 'machine-secret';
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        // UserService is a singleton and maps usernames to user IDs for the whole process, while each test gets an
+        // empty database: a user of an earlier test with the same username would hide the new one from getUser()
+        $userService = $this->objectManager->get(UserService::class);
+        ObjectAccess::setProperty($userService, 'runtimeUserCache', [], true);
+    }
 
     /**
      * A confidential client with the client credentials grant and all scopes of the API, acting as the account; persist it before requesting tokens
