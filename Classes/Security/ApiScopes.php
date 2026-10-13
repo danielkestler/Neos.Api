@@ -48,4 +48,6 @@ final class ApiScopes
     public const string ASSETCOLLECTIONS_UPDATE = 'assetcollections.update';
     public const string ASSETCOLLECTIONS_CREATE = 'assetcollections.create';
     public const string ASSETCOLLECTIONS_DELETE = 'assetcollections.delete';
+    public const string CACHES_READ = 'caches.read';
+    public const string CACHES_FLUSH = 'caches.flush';
 }

@@ -47,6 +47,7 @@ Neos:
             'Neos\Api\Endpoint\AssetTags\AssetTags': true
             'Neos\Api\Endpoint\AssetCollections\AssetCollections': true
             'Neos\Api\Endpoint\Options\Options': true
+            'Neos\Api\Endpoint\Caches\Caches': true
           specPath: "openapi.json"
           # the docs are served by Neos.Api.Docs, which lets users log in
           authContextProvider: 'Neos\Api\Security\ApiAuthContextProvider'

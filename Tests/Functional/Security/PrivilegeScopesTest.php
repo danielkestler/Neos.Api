@@ -57,6 +57,8 @@ class PrivilegeScopesTest extends FunctionalTestCase
             'assetcollections.update' => 'Rename the collections of the media library',
             'assetcollections.create' => 'Create collections in the media library',
             'assetcollections.delete' => 'Delete collections of the media library',
+            'caches.read' => 'List the caches of Flow and Neos',
+            'caches.flush' => 'Flush the caches of Flow and Neos',
         ], $privilegeScopes->scopes());
         self::assertSame('Neos.Api:Users.Update', $privilegeScopes->privilegeTargetOf('users.update'));
     }
@@ -70,7 +72,7 @@ class PrivilegeScopesTest extends FunctionalTestCase
         self::assertSame('Change the Neos users', $scopeRegistry->describe('users.update'));
 
         $response = $this->browser->request('http://localhost/.well-known/oauth-protected-resource/api');
-        self::assertSame(['me.read', 'me.update', 'me.password', 'users.read', 'users.update', 'users.create', 'users.delete', 'sites.read', 'sites.update', 'sites.create', 'sites.delete', 'contentrepositories.read', 'nodetypes.read', 'views.read', 'nodes.read', 'nodes.update', 'nodes.create', 'nodes.delete', 'workspaces.read', 'workspaces.update', 'workspaces.create', 'workspaces.delete', 'workspaces.publish', 'workspaces.roles', 'datasources.read', 'assets.read', 'assets.update', 'assets.create', 'assets.delete', 'assettags.read', 'assettags.update', 'assettags.create', 'assettags.delete', 'assetcollections.read', 'assetcollections.update', 'assetcollections.create', 'assetcollections.delete'], json_decode((string)$response->getBody(), true, flags: JSON_THROW_ON_ERROR)['scopes_supported']);
+        self::assertSame(['me.read', 'me.update', 'me.password', 'users.read', 'users.update', 'users.create', 'users.delete', 'sites.read', 'sites.update', 'sites.create', 'sites.delete', 'contentrepositories.read', 'nodetypes.read', 'views.read', 'nodes.read', 'nodes.update', 'nodes.create', 'nodes.delete', 'workspaces.read', 'workspaces.update', 'workspaces.create', 'workspaces.delete', 'workspaces.publish', 'workspaces.roles', 'datasources.read', 'assets.read', 'assets.update', 'assets.create', 'assets.delete', 'assettags.read', 'assettags.update', 'assettags.create', 'assettags.delete', 'assetcollections.read', 'assetcollections.update', 'assetcollections.create', 'assetcollections.delete', 'caches.read', 'caches.flush'], json_decode((string)$response->getBody(), true, flags: JSON_THROW_ON_ERROR)['scopes_supported']);
     }
 
     #[Test]

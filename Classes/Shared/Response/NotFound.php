@@ -29,6 +29,11 @@ final readonly class NotFound implements ApiResponse
         return self::because(sprintf('There is no content repository with the ID %s', $contentRepositoryId));
     }
 
+    public static function cache(string $cacheId): self
+    {
+        return self::because(sprintf('There is no cache with the ID %s', $cacheId));
+    }
+
     public static function statusCode(): HttpStatusCode
     {
         return HttpStatusCode::fromInteger(404);

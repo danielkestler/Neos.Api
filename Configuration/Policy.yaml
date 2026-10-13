@@ -113,6 +113,12 @@ privilegeTargets:
     "Neos.Api:AssetCollections.Delete":
       label: "Delete collections of the media library"
       matcher: "assetcollections.delete"
+    "Neos.Api:Caches.Read":
+      label: "List the caches of Flow and Neos"
+      matcher: "caches.read"
+    "Neos.Api:Caches.Flush":
+      label: "Flush the caches of Flow and Neos"
+      matcher: "caches.flush"
 
 roles:
   "Neos.Flow:AuthenticatedUser":
@@ -224,4 +230,8 @@ roles:
       - privilegeTarget: "Neos.Api:Sites.Create"
         permission: GRANT
       - privilegeTarget: "Neos.Api:Sites.Delete"
+        permission: GRANT
+      - privilegeTarget: "Neos.Api:Caches.Read"
+        permission: GRANT
+      - privilegeTarget: "Neos.Api:Caches.Flush"
         permission: GRANT
