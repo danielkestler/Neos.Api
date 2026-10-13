@@ -8,8 +8,8 @@
   removes one). The prototype encodes its data to JSON itself, the endpoint decodes it and returns `RenderedView`
   (free-form, `ViewData` only describes it).
 - The node is given by query parameters (`contentRepositoryId`, `nodeAggregateId`, `workspaceName`,
-  `dimensionSpacePoint`), all optional, resolved by `Nodes\SubgraphResolver` (same errors as Nodes): neos/openapi has
-  no optional path parameters. Without `nodeAggregateId` it's the default site's site node, as for the frontend's
+  `dimensionSpacePoint`), all optional, resolved by `Nodes\Domain\SubgraphResolver` (same errors as Nodes): neos/openapi
+  has no optional path parameters. Without `nodeAggregateId` it's the default site's site node, as for the frontend's
   home page.
 - `renderingMode` (default `frontend`, else a key of `Neos.Neos.userInterface.editPreviewModes`) becomes the Fusion
   global. Other modes need `Neos.Neos:Backend.GeneralAccess`, as in Neos: the argument-dependent rule `security`

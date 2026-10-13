@@ -12,7 +12,7 @@ use Neos\Api\Endpoint\DataSources\Schema\DataSourceList;
 use Neos\Api\Endpoint\DataSources\Schema\DataSourceListing;
 use Neos\Api\Endpoint\Nodes\Schema\DimensionSpacePoint;
 use Neos\Api\Endpoint\Nodes\Schema\NodeAggregateId;
-use Neos\Api\Endpoint\Nodes\SubgraphResolver;
+use Neos\Api\Endpoint\Nodes\Domain\SubgraphResolver;
 use Neos\Api\Endpoint\Workspaces\Schema\WorkspaceName;
 use Neos\Api\Security\ApiAuthContextProvider;
 use Neos\Api\Security\ApiScopes;

@@ -4,8 +4,11 @@ declare(strict_types=1);
 namespace Neos\Api\Endpoint\Assets;
 
 use Doctrine\Common\Collections\ArrayCollection;
-use Neos\Api\Endpoint\AssetCollections\AssetCollectionFinder;
+use Neos\Api\Endpoint\AssetCollections\Domain\AssetCollectionResolver;
 use Neos\Api\Endpoint\AssetCollections\Schema\AssetCollectionId;
+use Neos\Api\Endpoint\Assets\Domain\AssetQuery;
+use Neos\Api\Endpoint\Assets\Domain\AssetResolver;
+use Neos\Api\Endpoint\Assets\Domain\AssetUpload;
 use Neos\Api\Endpoint\Assets\RequestBody\AssetUpdate;
 use Neos\Api\Endpoint\Assets\RequestBody\AssetVariantCreate;
 use Neos\Api\Endpoint\Assets\Response\AssetCreated;
@@ -26,12 +29,13 @@ use Neos\Api\Endpoint\Assets\Schema\AssetUsageListing;
 use Neos\Api\Endpoint\Assets\Schema\AssetUsageListingMeta;
 use Neos\Api\Endpoint\Assets\Schema\CropRectangle;
 use Neos\Api\Endpoint\Assets\Schema\PaginatedAssetListing;
-use Neos\Api\Endpoint\AssetTags\AssetTagFinder;
+use Neos\Api\Endpoint\AssetTags\Domain\AssetTagResolver;
 use Neos\Api\Endpoint\AssetTags\Schema\AssetTagId;
 use Neos\Api\Endpoint\Nodes\Schema\Node;
 use Neos\Api\Infrastructure\ContentRepository\ContentSubgraphs;
 use Neos\Api\Infrastructure\ContentRepository\NodeSerializer;
 use Neos\Api\Infrastructure\Http\MultipartForm;
+use Neos\Api\Infrastructure\Media\AssetSourceFinder;
 use Neos\Api\Security\ApiAuthContextProvider;
 use Neos\Api\Security\ApiScopes;
 use Neos\Api\Shared\Parameter\Limit;
@@ -77,9 +81,10 @@ final readonly class Assets
 {
     public function __construct(
         private AssetSourceService $assetSourceService,
+        private AssetSourceFinder $assetSourceFinder,
         private AssetResolver $assetResolver,
-        private AssetTagFinder $assetTagFinder,
-        private AssetCollectionFinder $assetCollectionFinder,
+        private AssetTagResolver $assetTagResolver,
+        private AssetCollectionResolver $assetCollectionResolver,
         private AssetService $assetService,
         private AssetRepository $assetRepository,
         private ImageService $imageService,
@@ -141,15 +146,15 @@ final readonly class Assets
     ): PaginatedAssetListing|BadRequest|NotFound {
         $offset ??= Offset::none();
         $limit ??= Limit::default();
-        $assetSource = $this->assetResolver->findAssetSource($assetSourceId);
-        if ($assetSource === null) {
-            return AssetResolver::noAssetSource($assetSourceId);
+        $assetSource = $this->assetResolver->resolveAssetSource($assetSourceId);
+        if ($assetSource instanceof NotFound) {
+            return $assetSource;
         }
         $query = AssetQuery::create($filterByAssetType, $filterByCollection, $filterByTag, $filterByUntagged, $search, $sort);
         if ($query instanceof BadRequest) {
             return $query;
         }
-        $result = $query->find($assetSourceId->value, $this->assetResolver->repository($assetSource), $this->assetTagFinder, $this->assetCollectionFinder);
+        $result = $query->find($assetSourceId->value, $this->assetSourceFinder->repository($assetSource), $this->assetTagResolver, $this->assetCollectionResolver);
         if ($result instanceof BadRequest) {
             return $result;
         }
@@ -177,7 +182,7 @@ final readonly class Assets
     )]
     public function get(AssetSourceId $assetSourceId, AssetId $assetId): Asset|NotFound
     {
-        $proxy = $this->assetResolver->findAsset($assetSourceId, $assetId);
+        $proxy = $this->assetResolver->resolveAsset($assetSourceId, $assetId);
         return $proxy instanceof AssetProxyInterface ? $this->asset($proxy) : $proxy;
     }
 
@@ -193,7 +198,7 @@ final readonly class Assets
     )]
     public function listUsages(AssetSourceId $assetSourceId, AssetId $assetId): AssetUsageListing|NotFound
     {
-        $proxy = $this->assetResolver->findAsset($assetSourceId, $assetId);
+        $proxy = $this->assetResolver->resolveAsset($assetSourceId, $assetId);
         if (!$proxy instanceof AssetProxyInterface) {
             return $proxy;
         }
@@ -224,7 +229,7 @@ final readonly class Assets
     )]
     public function listVariants(AssetSourceId $assetSourceId, AssetId $assetId): AssetListing|NotFound
     {
-        $proxy = $this->assetResolver->findAsset($assetSourceId, $assetId);
+        $proxy = $this->assetResolver->resolveAsset($assetSourceId, $assetId);
         if (!$proxy instanceof AssetProxyInterface) {
             return $proxy;
         }
@@ -232,7 +237,7 @@ final readonly class Assets
         $variants = $image instanceof Model\Image && !$image instanceof Model\ImageVariant ? $image->getVariants() : [];
         usort($variants, static fn (Model\ImageVariant $a, Model\ImageVariant $b) => $a->getLastModified() <=> $b->getLastModified());
         return AssetListing::of(new AssetList(...array_map(
-            fn (Model\ImageVariant $variant) => $this->asset($this->assetResolver->neosProxy($variant)),
+            fn (Model\ImageVariant $variant) => $this->asset($this->assetSourceFinder->neosProxy($variant)),
             $variants,
         )));
     }
@@ -252,15 +257,15 @@ final readonly class Assets
         AssetId $assetId,
         #[RequestBody(description: 'The metadata to change')] AssetUpdate $patch,
     ): Asset|NotFound|UnprocessableContent {
-        $asset = $this->assetResolver->findAssetToChange($assetSourceId, $assetId);
+        $asset = $this->assetResolver->resolveAssetToChange($assetSourceId, $assetId);
         if (!$asset instanceof Model\Asset) {
             return $asset;
         }
-        $tags = $this->assetTagFinder->findAll($patch->tagIds ?? []);
+        $tags = $this->assetTagResolver->resolveReferences($patch->tagIds ?? []);
         if ($tags instanceof UnprocessableContent) {
             return $tags;
         }
-        $collections = $this->assetCollectionFinder->findAll($patch->collectionIds ?? []);
+        $collections = $this->assetCollectionResolver->resolveReferences($patch->collectionIds ?? []);
         if ($collections instanceof UnprocessableContent) {
             return $collections;
         }
@@ -297,7 +302,7 @@ final readonly class Assets
     )]
     public function delete(AssetSourceId $assetSourceId, AssetId $assetId): NotFound|Conflict|UnprocessableContent|null
     {
-        $asset = $this->assetResolver->findAssetToChange($assetSourceId, $assetId);
+        $asset = $this->assetResolver->resolveAssetToChange($assetSourceId, $assetId);
         if (!$asset instanceof Model\Asset) {
             return $asset;
         }
@@ -326,13 +331,13 @@ final readonly class Assets
     )]
     public function tag(AssetSourceId $assetSourceId, AssetId $assetId, AssetTagId $assetTagId): Asset|NotFound|UnprocessableContent
     {
-        $asset = $this->assetResolver->findAssetToChange($assetSourceId, $assetId);
+        $asset = $this->assetResolver->resolveAssetToChange($assetSourceId, $assetId);
         if (!$asset instanceof Model\Asset) {
             return $asset;
         }
-        $tag = $this->assetTagFinder->find($assetTagId);
-        if ($tag === null) {
-            return NotFound::because(AssetTagFinder::noTag($assetTagId));
+        $tag = $this->assetTagResolver->resolve($assetTagId);
+        if ($tag instanceof NotFound) {
+            return $tag;
         }
         return $asset->addTag($tag) ? $this->changed($asset) : $this->neosAsset($asset);
     }
@@ -349,12 +354,12 @@ final readonly class Assets
     )]
     public function untag(AssetSourceId $assetSourceId, AssetId $assetId, AssetTagId $assetTagId): Asset|NotFound|UnprocessableContent
     {
-        $asset = $this->assetResolver->findAssetToChange($assetSourceId, $assetId);
+        $asset = $this->assetResolver->resolveAssetToChange($assetSourceId, $assetId);
         if (!$asset instanceof Model\Asset) {
             return $asset;
         }
-        $tag = $this->assetTagFinder->find($assetTagId);
-        if ($tag === null || !$asset->removeTag($tag)) {
+        $tag = $this->assetTagResolver->resolve($assetTagId);
+        if ($tag instanceof NotFound || !$asset->removeTag($tag)) {
             return NotFound::because(sprintf('The asset has no tag with the ID %s', $assetTagId->value));
         }
         return $this->changed($asset);
@@ -372,13 +377,13 @@ final readonly class Assets
     )]
     public function addToCollection(AssetSourceId $assetSourceId, AssetId $assetId, AssetCollectionId $assetCollectionId): Asset|NotFound|UnprocessableContent
     {
-        $asset = $this->assetResolver->findAssetToChange($assetSourceId, $assetId);
+        $asset = $this->assetResolver->resolveAssetToChange($assetSourceId, $assetId);
         if (!$asset instanceof Model\Asset) {
             return $asset;
         }
-        $collection = $this->assetCollectionFinder->find($assetCollectionId);
-        if ($collection === null) {
-            return NotFound::because(AssetCollectionFinder::noCollection($assetCollectionId));
+        $collection = $this->assetCollectionResolver->resolve($assetCollectionId);
+        if ($collection instanceof NotFound) {
+            return $collection;
         }
         $collections = $asset->getAssetCollections()->toArray();
         if (in_array($collection, $collections, true)) {
@@ -400,13 +405,13 @@ final readonly class Assets
     )]
     public function removeFromCollection(AssetSourceId $assetSourceId, AssetId $assetId, AssetCollectionId $assetCollectionId): Asset|NotFound|UnprocessableContent
     {
-        $asset = $this->assetResolver->findAssetToChange($assetSourceId, $assetId);
+        $asset = $this->assetResolver->resolveAssetToChange($assetSourceId, $assetId);
         if (!$asset instanceof Model\Asset) {
             return $asset;
         }
-        $collection = $this->assetCollectionFinder->find($assetCollectionId);
+        $collection = $this->assetCollectionResolver->resolve($assetCollectionId);
         $collections = $asset->getAssetCollections()->toArray();
-        if ($collection === null || !in_array($collection, $collections, true)) {
+        if ($collection instanceof NotFound || !in_array($collection, $collections, true)) {
             return NotFound::because(sprintf('The asset is in no asset collection with the ID %s', $assetCollectionId->value));
         }
         $asset->setAssetCollections(new ArrayCollection(array_values(array_filter($collections, static fn (Model\AssetCollection $other) => $other !== $collection))));
@@ -425,14 +430,14 @@ final readonly class Assets
     )]
     public function create(AssetSourceId $assetSourceId, ServerRequestInterface $request): AssetCreated|Asset|BadRequest|NotFound|UnprocessableContent
     {
-        $assetSource = $this->assetResolver->findAssetSource($assetSourceId);
-        if ($assetSource === null) {
-            return AssetResolver::noAssetSource($assetSourceId);
+        $assetSource = $this->assetResolver->resolveAssetSource($assetSourceId);
+        if ($assetSource instanceof NotFound) {
+            return $assetSource;
         }
-        if (!AssetResolver::isNeos($assetSource)) {
+        if (!AssetSourceFinder::isNeos($assetSource)) {
             return UnprocessableContent::because(sprintf('The asset source %s takes no uploads, only neos does', $assetSourceId->value));
         }
-        $upload = AssetUpload::fromForm(MultipartForm::of($request), $this->assetTagFinder, $this->assetCollectionFinder);
+        $upload = AssetUpload::fromForm(MultipartForm::of($request), $this->assetTagResolver, $this->assetCollectionResolver);
         if (!$upload instanceof AssetUpload) {
             return $upload;
         }
@@ -471,7 +476,7 @@ final readonly class Assets
     )]
     public function replaceFile(AssetSourceId $assetSourceId, AssetId $assetId, ServerRequestInterface $request): Asset|NotFound|BadRequest|UnprocessableContent
     {
-        $asset = $this->assetResolver->findAssetToChange($assetSourceId, $assetId);
+        $asset = $this->assetResolver->resolveAssetToChange($assetSourceId, $assetId);
         if (!$asset instanceof Model\Asset) {
             return $asset;
         }
@@ -520,7 +525,7 @@ final readonly class Assets
     )]
     public function import(AssetSourceId $assetSourceId, AssetId $assetId): AssetCreated|Asset|NotFound|UnprocessableContent|AssetImportFailed
     {
-        $proxy = $this->assetResolver->findAsset($assetSourceId, $assetId);
+        $proxy = $this->assetResolver->resolveAsset($assetSourceId, $assetId);
         if ($proxy instanceof NotFound) {
             return $proxy;
         }
@@ -564,7 +569,7 @@ final readonly class Assets
         AssetId $assetId,
         #[RequestBody(description: 'The crop')] AssetVariantCreate $newVariant,
     ): AssetCreated|Asset|NotFound|UnprocessableContent {
-        $image = $this->assetResolver->findAssetToChange($assetSourceId, $assetId);
+        $image = $this->assetResolver->resolveAssetToChange($assetSourceId, $assetId);
         if (!$image instanceof Model\Asset) {
             return $image;
         }
@@ -666,7 +671,7 @@ final readonly class Assets
 
     private function neosAsset(Model\AssetInterface $asset): Asset
     {
-        return $this->asset($this->assetResolver->neosProxy($asset));
+        return $this->asset($this->assetSourceFinder->neosProxy($asset));
     }
 
     private function asset(AssetProxyInterface $proxy): Asset

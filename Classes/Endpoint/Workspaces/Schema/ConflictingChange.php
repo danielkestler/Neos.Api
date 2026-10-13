@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace Neos\Api\Endpoint\Workspaces\Schema;
 
 use Neos\Api\Endpoint\Nodes\Schema\NodeAggregateId;
-use Neos\Api\Endpoint\Workspaces\ChangeLocator;
+use Neos\Api\Endpoint\Workspaces\Domain\ChangeLocator;
 use Neos\ContentRepository\Core\Feature\WorkspaceRebase\ConflictingEvent;
 use Neos\JsonSchema\ProvidesSchema;
 use Neos\JsonSchema\Schema;

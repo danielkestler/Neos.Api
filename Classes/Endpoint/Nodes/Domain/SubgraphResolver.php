@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-namespace Neos\Api\Endpoint\Nodes;
+namespace Neos\Api\Endpoint\Nodes\Domain;
 
 use Neos\Api\Endpoint\ContentRepositories\Schema\ContentRepositoryId;
 use Neos\Api\Endpoint\Nodes\Schema\DimensionSpacePoint;
@@ -70,18 +70,18 @@ final readonly class SubgraphResolver
     }
 
     /**
-     * The node in the subgraph of resolve(), see there and findNode()
+     * The node in the subgraph of resolve(), see there and resolveNodeIn()
      */
     public function resolveNode(?ContentRepositoryId $contentRepositoryId, SharedModel\Node\NodeAggregateId $nodeAggregateId, ?WorkspaceName $workspaceName, ?DimensionSpacePoint $dimensionSpacePoint, bool $excludeDisabled, ?string $withoutContentRepository = null): Node|BadRequest|NotFound
     {
         $subgraph = $this->resolve($contentRepositoryId, $workspaceName, $dimensionSpacePoint, $excludeDisabled, $withoutContentRepository);
-        return $subgraph instanceof ContentSubgraphInterface ? $this->findNode($subgraph, $nodeAggregateId) : $subgraph;
+        return $subgraph instanceof ContentSubgraphInterface ? $this->resolveNodeIn($subgraph, $nodeAggregateId) : $subgraph;
     }
 
     /**
      * The node in the subgraph, a 404 if there is none the account may read
      */
-    public function findNode(ContentSubgraphInterface $subgraph, SharedModel\Node\NodeAggregateId $nodeAggregateId): Node|NotFound
+    public function resolveNodeIn(ContentSubgraphInterface $subgraph, SharedModel\Node\NodeAggregateId $nodeAggregateId): Node|NotFound
     {
         return $subgraph->findNodeById($nodeAggregateId)
             ?? NotFound::because(sprintf(

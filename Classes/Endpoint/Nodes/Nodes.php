@@ -4,6 +4,11 @@ declare(strict_types=1);
 namespace Neos\Api\Endpoint\Nodes;
 
 use Neos\Api\Endpoint\ContentRepositories\Schema\ContentRepositoryId;
+use Neos\Api\Endpoint\Nodes\Domain\NodeMoveCommand;
+use Neos\Api\Endpoint\Nodes\Domain\NodeQuery;
+use Neos\Api\Endpoint\Nodes\Domain\NodeRestoration;
+use Neos\Api\Endpoint\Nodes\Domain\NodeVariation;
+use Neos\Api\Endpoint\Nodes\Domain\SubgraphResolver;
 use Neos\Api\Endpoint\Nodes\Parameter\HierarchyFilter;
 use Neos\Api\Endpoint\Nodes\Parameter\NodeTypeCriteria;
 use Neos\Api\Endpoint\Nodes\Parameter\PropertyCriteria;
@@ -24,9 +29,9 @@ use Neos\Api\Endpoint\Nodes\Schema\NodeList;
 use Neos\Api\Endpoint\Nodes\Schema\NodeListing;
 use Neos\Api\Endpoint\Nodes\Schema\PaginatedNodeListing;
 use Neos\Api\Endpoint\Nodes\Schema\SubtreeTag;
-use Neos\Api\Endpoint\Workspaces\ReadableWorkspace;
+use Neos\Api\Endpoint\Workspaces\Domain\ReadableWorkspace;
 use Neos\Api\Endpoint\Workspaces\Schema\WorkspaceName;
-use Neos\Api\Endpoint\Workspaces\WorkspaceResolver;
+use Neos\Api\Endpoint\Workspaces\Domain\WorkspaceResolver;
 use Neos\Api\Infrastructure\ContentRepository\ContentSubgraphs;
 use Neos\Api\Infrastructure\ContentRepository\InvalidPropertyValue;
 use Neos\Api\Infrastructure\ContentRepository\NodeSerializer;
@@ -174,7 +179,7 @@ final readonly class Nodes
             return $subgraph;
         }
         $entryPointId = $query->entryPoint();
-        $entryPoint = $entryPointId !== null ? $this->subgraphResolver->findNode($subgraph, $entryPointId->toNodeAggregateId()) : $this->defaultSiteNode($subgraph);
+        $entryPoint = $entryPointId !== null ? $this->subgraphResolver->resolveNodeIn($subgraph, $entryPointId->toNodeAggregateId()) : $this->defaultSiteNode($subgraph);
         if (!$entryPoint instanceof ContentGraph\Node) {
             return $entryPoint;
         }
@@ -213,7 +218,7 @@ final readonly class Nodes
         if (!$subgraph instanceof ContentSubgraphInterface) {
             return $subgraph;
         }
-        $parent = $this->subgraphResolver->findNode($subgraph, $newNode->parentNodeAggregateId->toNodeAggregateId());
+        $parent = $this->subgraphResolver->resolveNodeIn($subgraph, $newNode->parentNodeAggregateId->toNodeAggregateId());
         if (!$parent instanceof ContentGraph\Node) {
             return $parent;
         }
@@ -684,11 +689,11 @@ final readonly class Nodes
             return UnprocessableContent::because('A node can\'t be moved before itself');
         }
         $subgraph = $this->contentRepositoryRegistry->subgraphForNode($node);
-        $sibling = $target->succeedingSiblingNodeAggregateId !== null ? $this->subgraphResolver->findNode($subgraph, $target->succeedingSiblingNodeAggregateId->toNodeAggregateId()) : null;
+        $sibling = $target->succeedingSiblingNodeAggregateId !== null ? $this->subgraphResolver->resolveNodeIn($subgraph, $target->succeedingSiblingNodeAggregateId->toNodeAggregateId()) : null;
         if ($sibling instanceof NotFound) {
             return $sibling;
         }
-        $parent = $target->parentNodeAggregateId !== null ? $this->subgraphResolver->findNode($subgraph, $target->parentNodeAggregateId->toNodeAggregateId()) : $subgraph->findParentNode($sibling->aggregateId);
+        $parent = $target->parentNodeAggregateId !== null ? $this->subgraphResolver->resolveNodeIn($subgraph, $target->parentNodeAggregateId->toNodeAggregateId()) : $subgraph->findParentNode($sibling->aggregateId);
         if ($parent instanceof NotFound) {
             return $parent;
         }
@@ -857,7 +862,7 @@ final readonly class Nodes
      */
     private function read(ContentSubgraphInterface $subgraph, SharedModel\Node\NodeAggregateId $nodeAggregateId, ?IncludePaths $include = null): Node|NotFound
     {
-        $node = $this->subgraphResolver->findNode($subgraph, $nodeAggregateId);
+        $node = $this->subgraphResolver->resolveNodeIn($subgraph, $nodeAggregateId);
         return $node instanceof ContentGraph\Node ? $this->node($node, $include ?? IncludePaths::none()) : $node;
     }
 

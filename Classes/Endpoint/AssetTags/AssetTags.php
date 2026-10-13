@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 namespace Neos\Api\Endpoint\AssetTags;
 
+use Neos\Api\Endpoint\AssetTags\Domain\AssetTagResolver;
+use Neos\Api\Endpoint\AssetTags\Domain\AssetTagTree;
 use Neos\Api\Endpoint\AssetTags\RequestBody\AssetTagCreate;
 use Neos\Api\Endpoint\AssetTags\RequestBody\AssetTagUpdate;
 use Neos\Api\Endpoint\AssetTags\Response\AssetTagCreated;
@@ -10,6 +12,7 @@ use Neos\Api\Endpoint\AssetTags\Schema\AssetTag;
 use Neos\Api\Endpoint\AssetTags\Schema\AssetTagId;
 use Neos\Api\Endpoint\AssetTags\Schema\AssetTagListing;
 use Neos\Api\Infrastructure\Http\JsonBody;
+use Neos\Api\Infrastructure\Media\AssetTagFinder;
 use Neos\Api\Security\ApiAuthContextProvider;
 use Neos\Api\Security\ApiScopes;
 use Neos\Api\Shared\Response\NotFound;
@@ -32,6 +35,7 @@ final readonly class AssetTags
     public function __construct(
         private TagRepository $tagRepository,
         private AssetTagFinder $assetTagFinder,
+        private AssetTagResolver $assetTagResolver,
         private AssetRepository $assetRepository,
         private PersistenceManagerInterface $persistenceManager,
     ) {
@@ -49,7 +53,7 @@ final readonly class AssetTags
     )]
     public function list(): AssetTagListing
     {
-        $tree = $this->assetTagFinder->tree();
+        $tree = $this->tree();
         return new AssetTagListing($tree->roots(), new ListingMeta($tree->count()));
     }
 
@@ -68,9 +72,9 @@ final readonly class AssetTags
     ): AssetTagCreated|UnprocessableContent {
         $parent = null;
         if ($newTag->parentId !== null) {
-            $parent = $this->assetTagFinder->find($newTag->parentId);
-            if ($parent === null) {
-                return UnprocessableContent::because(AssetTagFinder::noTag($newTag->parentId));
+            $parent = $this->assetTagResolver->resolveReference($newTag->parentId);
+            if ($parent instanceof UnprocessableContent) {
+                return $parent;
             }
         }
         $tag = new Model\Tag($newTag->label->value);
@@ -92,8 +96,8 @@ final readonly class AssetTags
     )]
     public function get(AssetTagId $assetTagId): AssetTag|NotFound
     {
-        $tag = $this->assetTagFinder->find($assetTagId);
-        return $tag !== null ? $this->assetTag($tag) : NotFound::because(AssetTagFinder::noTag($assetTagId));
+        $tag = $this->assetTagResolver->resolve($assetTagId);
+        return $tag instanceof Model\Tag ? $this->assetTag($tag) : $tag;
     }
 
     #[Operation(
@@ -111,9 +115,9 @@ final readonly class AssetTags
         #[RequestBody(description: 'The changes')] AssetTagUpdate $patch,
         ServerRequestInterface $request,
     ): AssetTag|NotFound|UnprocessableContent {
-        $tag = $this->assetTagFinder->find($assetTagId);
-        if ($tag === null) {
-            return NotFound::because(AssetTagFinder::noTag($assetTagId));
+        $tag = $this->assetTagResolver->resolve($assetTagId);
+        if ($tag instanceof NotFound) {
+            return $tag;
         }
         // AssetTagUpdate can't tell a parentId null from one left out
         if (JsonBody::has($request, 'parentId')) {
@@ -122,9 +126,9 @@ final readonly class AssetTags
                 // orphans (orphanRemoval), which would delete it. The children are read from the parent column again
                 ObjectAccess::setProperty($tag, 'parent', null, true);
             } else {
-                $parent = $this->assetTagFinder->find($patch->parentId);
-                if ($parent === null) {
-                    return UnprocessableContent::because(AssetTagFinder::noTag($patch->parentId));
+                $parent = $this->assetTagResolver->resolveReference($patch->parentId);
+                if ($parent instanceof UnprocessableContent) {
+                    return $parent;
                 }
                 for ($ancestor = $parent; $ancestor !== null; $ancestor = $ancestor->getParent()) {
                     if ($ancestor === $tag) {
@@ -154,9 +158,9 @@ final readonly class AssetTags
     )]
     public function delete(AssetTagId $assetTagId): NotFound|null
     {
-        $tag = $this->assetTagFinder->find($assetTagId);
-        if ($tag === null) {
-            return NotFound::because(AssetTagFinder::noTag($assetTagId));
+        $tag = $this->assetTagResolver->resolve($assetTagId);
+        if ($tag instanceof NotFound) {
+            return $tag;
         }
         // deepest first: the children remove orphans (orphanRemoval) anyway, but not from the assets
         foreach (array_reverse(self::subtree($tag)) as $removed) {
@@ -172,7 +176,12 @@ final readonly class AssetTags
 
     private function assetTag(Model\Tag $tag): AssetTag
     {
-        return $this->assetTagFinder->tree()->assetTag($tag);
+        return $this->tree()->assetTag($tag);
+    }
+
+    private function tree(): AssetTagTree
+    {
+        return new AssetTagTree($this->assetTagFinder->findAll(), $this->assetTagFinder->assetCounts(), $this->persistenceManager);
     }
 
     /**

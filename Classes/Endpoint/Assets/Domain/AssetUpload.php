@@ -1,13 +1,13 @@
 <?php
 declare(strict_types=1);
 
-namespace Neos\Api\Endpoint\Assets;
+namespace Neos\Api\Endpoint\Assets\Domain;
 
 use Doctrine\Common\Collections\ArrayCollection;
-use Neos\Api\Endpoint\AssetCollections\AssetCollectionFinder;
+use Neos\Api\Endpoint\AssetCollections\Domain\AssetCollectionResolver;
 use Neos\Api\Endpoint\AssetCollections\Schema\AssetCollectionId;
 use Neos\Api\Endpoint\Assets\Schema\AssetTitle;
-use Neos\Api\Endpoint\AssetTags\AssetTagFinder;
+use Neos\Api\Endpoint\AssetTags\Domain\AssetTagResolver;
 use Neos\Api\Endpoint\AssetTags\Schema\AssetTagId;
 use Neos\Api\Infrastructure\Http\MultipartForm;
 use Neos\Api\Shared\Response\BadRequest;
@@ -37,7 +37,7 @@ final readonly class AssetUpload
     /**
      * The upload, a 400 for a missing file or a malformed field, a 422 for an unknown tag or collection
      */
-    public static function fromForm(MultipartForm $form, AssetTagFinder $assetTagFinder, AssetCollectionFinder $assetCollectionFinder): self|BadRequest|UnprocessableContent
+    public static function fromForm(MultipartForm $form, AssetTagResolver $assetTagResolver, AssetCollectionResolver $assetCollectionResolver): self|BadRequest|UnprocessableContent
     {
         $file = $form->file('file');
         if ($file === null) {
@@ -61,11 +61,11 @@ final readonly class AssetUpload
         } catch (InstantiationFailed) {
             return BadRequest::because('tagIds[] must be IDs of asset tags, collectionIds[] IDs of asset collections');
         }
-        $tags = $assetTagFinder->findAll($tagIds);
+        $tags = $assetTagResolver->resolveReferences($tagIds);
         if ($tags instanceof UnprocessableContent) {
             return $tags;
         }
-        $collections = $assetCollectionFinder->findAll($collectionIds);
+        $collections = $assetCollectionResolver->resolveReferences($collectionIds);
         if ($collections instanceof UnprocessableContent) {
             return $collections;
         }

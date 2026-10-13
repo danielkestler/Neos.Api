@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-namespace Neos\Api\Endpoint\Users;
+namespace Neos\Api\Endpoint\Users\Domain;
 
 use Neos\Api\Endpoint\Users\Schema\EmailAddress;
 use Neos\Api\Endpoint\Users\Schema\PersonNamePart;

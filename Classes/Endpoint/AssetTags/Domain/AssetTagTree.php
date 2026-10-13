@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-namespace Neos\Api\Endpoint\AssetTags;
+namespace Neos\Api\Endpoint\AssetTags\Domain;
 
 use Neos\Api\Endpoint\AssetTags\Schema\AssetTag;
 use Neos\Api\Endpoint\AssetTags\Schema\AssetTagId;

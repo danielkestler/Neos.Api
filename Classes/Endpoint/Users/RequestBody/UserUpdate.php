@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 namespace Neos\Api\Endpoint\Users\RequestBody;
 
-use Neos\Api\Endpoint\Users\NameAndEmailChange;
+use Neos\Api\Endpoint\Users\Domain\NameAndEmailChange;
 use Neos\Api\Endpoint\Users\Schema\EmailAddress;
 use Neos\Api\Endpoint\Users\Schema\PersonNamePart;
 use Neos\Api\Endpoint\Users\Schema\RoleIdentifierList;

@@ -10,15 +10,18 @@ resource, each a regular endpoint folder whose scope prefix is the lowercased ta
   (`Neos.Media.Browser:ManageAssets`, `:ManageTags`, `:ManageAssetCollections`). Which assets, tags and collections the
   account sees is up to Neos' media privileges (Doctrine entity privileges, applied to the bearer's account).
 - Models are `Model\…` (`use Neos\Media\Domain\Model;`), IDs Flow's persistence identifiers.
-- Dependencies are one-way: Assets → AssetTags/AssetCollections. `AssetTags\AssetTagFinder` and
-  `AssetCollections\AssetCollectionFinder` are the one way to look them up (`find()`, `findAll(ids)` → list or the 422
-  for the first unknown one, `noTag()`/`noCollection()` messages). `AssetTagReference(List)` is in `AssetTags\Schema`.
+- Dependencies are one-way: Assets → AssetTags/AssetCollections. `AssetTags\Domain\AssetTagResolver` and
+  `AssetCollections\Domain\AssetCollectionResolver` are the one way to look them up, with the error of where the ID
+  came from: `resolve()` the path's 404, `resolveReferences()` the body's 422 for the first unknown one,
+  `resolveFilter()` a query parameter's 400. They use `Infrastructure/Media/AssetTagFinder` and
+  `AssetCollectionFinder` (null if unknown). `AssetTagReference(List)` is in `AssetTags\Schema`.
 - Error order: the path's 404 first, then 400s (malformed fields), then 422s (unknown references, rules).
 - Tag and collection membership are idempotent `PUT`/`DELETE` sub-resources without a body (`…/tags/{assetTagId}`,
   `…/collections/{assetCollectionId}`): `PUT` of a member changes nothing, `DELETE` of a non-member is a 404, as for
   node tags.
-- `assetCount` (tags and collections) comes from one grouped DQL query, not `TagRepository`'s native SQL, so the
-  media privileges apply to the assets counted; image variants aren't counted, as in Neos' lists.
+- `assetCount` (tags and collections) comes from one grouped DQL query (`Infrastructure/Media/AssetCounter`), not
+  `TagRepository`'s native SQL, so the media privileges apply to the assets counted; image variants aren't counted,
+  as in Neos' lists.
 
 ## AssetTags
 
@@ -45,12 +48,13 @@ both have a `GET` of one item (Medienreaktor's API had none), so the `Location` 
 - Every source is read the same way, through its asset proxy repository: `Schema\Asset::from(AssetProxyInterface)`,
   one shape for neos and remote sources (title, caption, copyright notice, tags and collections only for neos assets,
   `iptc` for remote ones).
-- `AssetResolver` finds sources and assets (404s) and resets the source's repository filters every time: a source
-  keeps one stateful repository, and the neos one swaps the repository it reads from by type, so after an image filter
-  `getAssetProxy()` wouldn't find documents (`orderBy()` even sets the default orderings of the singleton
-  `AssetRepository`). `AssetResolver::NEOS` / `isNeos()` is the one rule for "may change and take uploads":
-  `findAssetToChange()` gives a 422 for other sources (import first). `neosProxy()` wraps a neos asset without
-  querying again.
+- `Infrastructure/Media/AssetSourceFinder` finds sources and assets (null if unknown) and resets the source's
+  repository filters every time: a source keeps one stateful repository, and the neos one swaps the repository it
+  reads from by type, so after an image filter `getAssetProxy()` wouldn't find documents (`orderBy()` even sets the
+  default orderings of the singleton `AssetRepository`). `AssetSourceFinder::NEOS` / `isNeos()` is the one rule for
+  "may change and take uploads". `neosProxy()` wraps a neos asset without querying again.
+- `Assets\Domain\AssetResolver` turns the path into the source or asset, or the 404; `resolveAssetToChange()` gives a
+  422 for other sources (import first).
 - `listAssets` (`AssetQuery`): `filterByAssetType`, `filterByCollection`, and one of `search`, `filterByTag`,
   `filterByUntagged` (the repositories have one finder each; several are a 400). A filter or sort the source doesn't
   support is a 400. Neos' list leaves out image variants; `listAssetVariants` lists an image's (unpaged, oldest first,
@@ -79,7 +83,7 @@ both have a `GET` of one item (Medienreaktor's API had none), so the `Location` 
 - `POST /assets/{assetSourceId}` (`createAsset`, fields `file`, `title`, `collectionIds[]`, `tagIds[]`) and
   `PUT /assets/{assetSourceId}/{assetId}/file` (`replaceAssetFile`, fields `file`, `keepOriginalFilename`,
   `generateRedirects`) are multipart/form-data, read with `Infrastructure/Http/MultipartForm`.
-  `Assets\AssetUpload` is the upload form, an upload is mapped to its model class by Neos'
+  `Assets\Domain\AssetUpload` is the upload form, an upload is mapped to its model class by Neos'
   `AssetModelMappingStrategyInterface`.
 - PHP only parses POST bodies itself. `MultipartBodyMiddleware` ("Neos.Api:multipartBody", before Flow's
   `parseBody`, which would read `php://input` as a query string) parses other methods with `request_parse_body()`:

@@ -20,8 +20,8 @@
   `Security\OAuthTokens`, keeping the caller's own access token if it is that user.
 - User IDs are lowercased before the lookup: the UUID format check ignores case, Neos' user IDs are lowercase. The
   party repository finds any party, so `UserService::findUserById()` is used.
-- Names are `Users\Schema\PersonNamePart` (1–100 characters) everywhere, Users and Me; `Users\NameAndEmailChange` is
-  the apply logic both share.
+- Names are `Users\Schema\PersonNamePart` (1–100 characters) everywhere, Users and Me;
+  `Users\Domain\NameAndEmailChange` is the apply logic both share.
 
 ## Me (`/me`)
 

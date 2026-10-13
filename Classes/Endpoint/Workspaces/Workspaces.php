@@ -5,6 +5,13 @@ namespace Neos\Api\Endpoint\Workspaces;
 
 use Neos\Api\Endpoint\ContentRepositories\Schema\ContentRepositoryId;
 use Neos\Api\Endpoint\Nodes\Schema\NodeAggregateId;
+use Neos\Api\Endpoint\Workspaces\Domain\ChangeDiffer;
+use Neos\Api\Endpoint\Workspaces\Domain\ChangeQuery;
+use Neos\Api\Endpoint\Workspaces\Domain\DocumentAncestry;
+use Neos\Api\Endpoint\Workspaces\Domain\EventQuery;
+use Neos\Api\Endpoint\Workspaces\Domain\ReadableWorkspace;
+use Neos\Api\Endpoint\Workspaces\Domain\WorkspaceResolver;
+use Neos\Api\Endpoint\Workspaces\Domain\WorkspaceRoleSubjects;
 use Neos\Api\Endpoint\Workspaces\Parameter\ChangeTypes;
 use Neos\Api\Endpoint\Workspaces\RequestBody\BaseWorkspaceChange;
 use Neos\Api\Endpoint\Workspaces\RequestBody\WorkspaceCreate;

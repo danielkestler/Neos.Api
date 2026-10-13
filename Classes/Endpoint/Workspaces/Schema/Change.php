@@ -5,7 +5,7 @@ namespace Neos\Api\Endpoint\Workspaces\Schema;
 
 use Neos\Api\Endpoint\Nodes\Schema\DimensionSpacePoint;
 use Neos\Api\Endpoint\Nodes\Schema\NodeAggregateId;
-use Neos\Api\Endpoint\Workspaces\ChangeLocator;
+use Neos\Api\Endpoint\Workspaces\Domain\ChangeLocator;
 use Neos\JsonSchema\ProvidesSchema;
 use Neos\JsonSchema\Schema;
 use Neos\Neos\PendingChangesProjection;

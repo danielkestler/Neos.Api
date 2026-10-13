@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-namespace Neos\Api\Endpoint\Nodes;
+namespace Neos\Api\Endpoint\Nodes\Domain;
 
 use Neos\ContentRepository\Core\ContentRepository;
 use Neos\ContentRepository\Core\Feature\SubtreeTagging\Command\UntagSubtree;

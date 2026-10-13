@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Neos\Api\Endpoint\AssetCollections;
 
+use Neos\Api\Endpoint\AssetCollections\Domain\AssetCollectionResolver;
 use Neos\Api\Endpoint\AssetCollections\RequestBody\AssetCollectionCreate;
 use Neos\Api\Endpoint\AssetCollections\RequestBody\AssetCollectionUpdate;
 use Neos\Api\Endpoint\AssetCollections\Response\AssetCollectionCreated;
@@ -10,6 +11,7 @@ use Neos\Api\Endpoint\AssetCollections\Schema\AssetCollection;
 use Neos\Api\Endpoint\AssetCollections\Schema\AssetCollectionId;
 use Neos\Api\Endpoint\AssetCollections\Schema\AssetCollectionList;
 use Neos\Api\Endpoint\AssetCollections\Schema\AssetCollectionListing;
+use Neos\Api\Infrastructure\Media\AssetCollectionFinder;
 use Neos\Api\Security\ApiAuthContextProvider;
 use Neos\Api\Security\ApiScopes;
 use Neos\Api\Shared\Response\NotFound;
@@ -28,6 +30,7 @@ final readonly class AssetCollections
     public function __construct(
         private AssetCollectionRepository $assetCollectionRepository,
         private AssetCollectionFinder $assetCollectionFinder,
+        private AssetCollectionResolver $assetCollectionResolver,
         private SiteRepository $siteRepository,
         private PersistenceManagerInterface $persistenceManager,
     ) {
@@ -46,7 +49,7 @@ final readonly class AssetCollections
     public function list(): AssetCollectionListing
     {
         return AssetCollectionListing::of(new AssetCollectionList(
-            ...$this->assetCollectionFinder->read($this->assetCollectionRepository->findAll()),
+            ...$this->read($this->assetCollectionRepository->findAll()),
         ));
     }
 
@@ -79,8 +82,8 @@ final readonly class AssetCollections
     )]
     public function get(AssetCollectionId $assetCollectionId): AssetCollection|NotFound
     {
-        $assetCollection = $this->assetCollectionFinder->find($assetCollectionId);
-        return $assetCollection !== null ? $this->assetCollection($assetCollection) : NotFound::because(AssetCollectionFinder::noCollection($assetCollectionId));
+        $assetCollection = $this->assetCollectionResolver->resolve($assetCollectionId);
+        return $assetCollection instanceof Model\AssetCollection ? $this->assetCollection($assetCollection) : $assetCollection;
     }
 
     #[Operation(
@@ -97,9 +100,9 @@ final readonly class AssetCollections
         AssetCollectionId $assetCollectionId,
         #[RequestBody(description: 'The properties to change')] AssetCollectionUpdate $patch,
     ): AssetCollection|NotFound {
-        $assetCollection = $this->assetCollectionFinder->find($assetCollectionId);
-        if ($assetCollection === null) {
-            return NotFound::because(AssetCollectionFinder::noCollection($assetCollectionId));
+        $assetCollection = $this->assetCollectionResolver->resolve($assetCollectionId);
+        if ($assetCollection instanceof NotFound) {
+            return $assetCollection;
         }
         $patch->applyTo($assetCollection);
         $this->assetCollectionRepository->update($assetCollection);
@@ -119,9 +122,9 @@ final readonly class AssetCollections
     )]
     public function delete(AssetCollectionId $assetCollectionId): NotFound|null
     {
-        $assetCollection = $this->assetCollectionFinder->find($assetCollectionId);
-        if ($assetCollection === null) {
-            return NotFound::because(AssetCollectionFinder::noCollection($assetCollectionId));
+        $assetCollection = $this->assetCollectionResolver->resolve($assetCollectionId);
+        if ($assetCollection instanceof NotFound) {
+            return $assetCollection;
         }
         // the site's reference would keep it from being deleted
         foreach ($this->siteRepository->findByAssetCollection($assetCollection) as $site) {
@@ -135,6 +138,22 @@ final readonly class AssetCollections
 
     private function assetCollection(Model\AssetCollection $assetCollection): AssetCollection
     {
-        return $this->assetCollectionFinder->read([$assetCollection])[0];
+        return $this->read([$assetCollection])[0];
+    }
+
+    /**
+     * The collections as AssetCollection, with one query for all their asset counts
+     *
+     * @param iterable<Model\AssetCollection> $assetCollections
+     * @return list<AssetCollection>
+     */
+    private function read(iterable $assetCollections): array
+    {
+        $assetCounts = $this->assetCollectionFinder->assetCounts();
+        $read = [];
+        foreach ($assetCollections as $assetCollection) {
+            $read[] = AssetCollection::from($assetCollection, $this->persistenceManager, $assetCounts[$this->persistenceManager->getIdentifierByObject($assetCollection)] ?? 0);
+        }
+        return $read;
     }
 }

@@ -1,12 +1,12 @@
 <?php
 declare(strict_types=1);
 
-namespace Neos\Api\Endpoint\Assets;
+namespace Neos\Api\Endpoint\Assets\Domain;
 
-use Neos\Api\Endpoint\AssetCollections\AssetCollectionFinder;
+use Neos\Api\Endpoint\AssetCollections\Domain\AssetCollectionResolver;
 use Neos\Api\Endpoint\AssetCollections\Schema\AssetCollectionId;
 use Neos\Api\Endpoint\Assets\Schema\AssetType;
-use Neos\Api\Endpoint\AssetTags\AssetTagFinder;
+use Neos\Api\Endpoint\AssetTags\Domain\AssetTagResolver;
 use Neos\Api\Endpoint\AssetTags\Schema\AssetTagId;
 use Neos\Api\Shared\Parameter\Sort;
 use Neos\Api\Shared\Response\BadRequest;
@@ -70,14 +70,14 @@ final readonly class AssetQuery
     }
 
     /**
-     * The matching assets of the source's repository (fresh from AssetResolver::repository()), a 400 for a filter
+     * The matching assets of the source's repository (fresh from AssetSourceFinder::repository()), a 400 for a filter
      * or sort the source doesn't support and for an unknown tag or collection
      */
     public function find(
         string $assetSourceId,
         AssetProxyRepositoryInterface $repository,
-        AssetTagFinder $assetTagFinder,
-        AssetCollectionFinder $assetCollectionFinder,
+        AssetTagResolver $assetTagResolver,
+        AssetCollectionResolver $assetCollectionResolver,
     ): AssetProxyQueryResultInterface|BadRequest {
         if (($this->tagId !== null || $this->untagged) && !$repository instanceof SupportsTaggingInterface) {
             return BadRequest::because(sprintf('The asset source %s doesn\'t support tags', $assetSourceId));
@@ -88,13 +88,13 @@ final readonly class AssetQuery
         if ($this->orderings !== [] && !$repository instanceof SupportsSortingInterface) {
             return BadRequest::because(sprintf('The asset source %s doesn\'t support sorting', $assetSourceId));
         }
-        $tag = $this->tagId !== null ? $assetTagFinder->find($this->tagId) : null;
-        if ($this->tagId !== null && $tag === null) {
-            return BadRequest::because(AssetTagFinder::noTag($this->tagId));
+        $tag = $this->tagId !== null ? $assetTagResolver->resolveFilter($this->tagId) : null;
+        if ($tag instanceof BadRequest) {
+            return $tag;
         }
-        $collection = $this->collectionId !== null ? $assetCollectionFinder->find($this->collectionId) : null;
-        if ($this->collectionId !== null && $collection === null) {
-            return BadRequest::because(AssetCollectionFinder::noCollection($this->collectionId));
+        $collection = $this->collectionId !== null ? $assetCollectionResolver->resolveFilter($this->collectionId) : null;
+        if ($collection instanceof BadRequest) {
+            return $collection;
         }
 
         if ($this->assetType !== null) {

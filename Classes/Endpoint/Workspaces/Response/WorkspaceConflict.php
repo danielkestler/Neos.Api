@@ -4,8 +4,8 @@ declare(strict_types=1);
 namespace Neos\Api\Endpoint\Workspaces\Response;
 
 use Neos\Api\Endpoint\Nodes\Schema\NodeAggregateId;
-use Neos\Api\Endpoint\Workspaces\ChangeLocator;
-use Neos\Api\Endpoint\Workspaces\ReadableWorkspace;
+use Neos\Api\Endpoint\Workspaces\Domain\ChangeLocator;
+use Neos\Api\Endpoint\Workspaces\Domain\ReadableWorkspace;
 use Neos\Api\Endpoint\Workspaces\Schema\ConflictingChange;
 use Neos\Api\Endpoint\Workspaces\Schema\ConflictingChangeList;
 use Neos\Api\Endpoint\Workspaces\Schema\DocumentAggregateIdList;

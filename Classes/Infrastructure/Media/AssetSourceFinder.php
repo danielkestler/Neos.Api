@@ -1,12 +1,8 @@
 <?php
 declare(strict_types=1);
 
-namespace Neos\Api\Endpoint\Assets;
+namespace Neos\Api\Infrastructure\Media;
 
-use Neos\Api\Endpoint\Assets\Schema\AssetId;
-use Neos\Api\Endpoint\Assets\Schema\AssetSourceId;
-use Neos\Api\Shared\Response\NotFound;
-use Neos\Api\Shared\Response\UnprocessableContent;
 use Neos\Flow\Annotations as Flow;
 use Neos\Media\Domain\Model;
 use Neos\Media\Domain\Model\AssetSource\AssetNotFoundExceptionInterface;
@@ -19,14 +15,14 @@ use Neos\Media\Domain\Model\AssetSource\SupportsCollectionsInterface;
 use Neos\Media\Domain\Service\AssetSourceService;
 
 /**
- * Asset source and asset ID → the asset source's repository or asset, or the 404; for changes the asset of neos, the
- * only source whose assets can be changed and that takes uploads (isNeos())
+ * Finds the asset sources and their assets; neos, the media library of Neos, is the only source whose assets can be
+ * changed and that takes uploads (isNeos())
  *
  * A source keeps one repository whose filters are state (the neos one swaps the repository it reads from by type, so
  * an image filter hides documents from getAssetProxy()): they are reset each time, the caller sets its own
  */
 #[Flow\Scope('singleton')]
-final readonly class AssetResolver
+final readonly class AssetSourceFinder
 {
     /**
      * The asset source of the media library of Neos
@@ -38,9 +34,24 @@ final readonly class AssetResolver
     ) {
     }
 
-    public function findAssetSource(AssetSourceId $assetSourceId): ?AssetSourceInterface
+    /**
+     * The asset source, null if none is configured with the ID
+     */
+    public function find(string $assetSourceId): ?AssetSourceInterface
     {
-        return $this->assetSourceService->getAssetSources()[$assetSourceId->value] ?? null;
+        return $this->assetSourceService->getAssetSources()[$assetSourceId] ?? null;
+    }
+
+    /**
+     * The asset of the source, null if it has none with the ID
+     */
+    public function findAsset(AssetSourceInterface $assetSource, string $assetId): ?AssetProxyInterface
+    {
+        try {
+            return $this->repository($assetSource)->getAssetProxy($assetId);
+        } catch (AssetNotFoundExceptionInterface) {
+            return null;
+        }
     }
 
     /**
@@ -52,6 +63,9 @@ final readonly class AssetResolver
         return $assetSource->getIdentifier() === self::NEOS && $assetSource instanceof NeosAssetSource && !$assetSource->isReadOnly();
     }
 
+    /**
+     * The source's repository without filters
+     */
     public function repository(AssetSourceInterface $assetSource): AssetProxyRepositoryInterface
     {
         $repository = $assetSource->getAssetProxyRepository();
@@ -60,35 +74,6 @@ final readonly class AssetResolver
             $repository->filterByCollection(null);
         }
         return $repository;
-    }
-
-    public function findAsset(AssetSourceId $assetSourceId, AssetId $assetId): AssetProxyInterface|NotFound
-    {
-        $assetSource = $this->findAssetSource($assetSourceId);
-        if ($assetSource === null) {
-            return self::noAssetSource($assetSourceId);
-        }
-        try {
-            return $this->repository($assetSource)->getAssetProxy($assetId->value);
-        } catch (AssetNotFoundExceptionInterface) {
-            return NotFound::because(sprintf('There is no asset with the ID %s in the asset source %s', $assetId->value, $assetSourceId->value));
-        }
-    }
-
-    /**
-     * The asset to change: of neos, assets of other sources can only be read (422), they are imported first
-     */
-    public function findAssetToChange(AssetSourceId $assetSourceId, AssetId $assetId): Model\Asset|NotFound|UnprocessableContent
-    {
-        $proxy = $this->findAsset($assetSourceId, $assetId);
-        if ($proxy instanceof NotFound) {
-            return $proxy;
-        }
-        $asset = $proxy instanceof NeosAssetProxy && self::isNeos($proxy->getAssetSource()) ? $proxy->getAsset() : null;
-        if (!$asset instanceof Model\Asset) {
-            return UnprocessableContent::because(sprintf('The assets of the asset source %s can\'t be changed, import the asset into neos first', $assetSourceId->value));
-        }
-        return $asset;
     }
 
     /**
@@ -101,10 +86,5 @@ final readonly class AssetResolver
             throw new \RuntimeException('There is no asset source neos', 1791800001);
         }
         return new NeosAssetProxy($asset, $neos);
-    }
-
-    public static function noAssetSource(AssetSourceId $assetSourceId): NotFound
-    {
-        return NotFound::because(sprintf('There is no asset source %s', $assetSourceId->value));
     }
 }

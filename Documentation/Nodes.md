@@ -15,8 +15,8 @@ query parameters `workspaceName` and `dimensionSpacePoint`, named like the `Node
   (`DimensionSpacePointFinder`), else a 400.
 - `SubgraphResolver::resolve()` turns content repository, workspace and point into the subgraph, with the errors in a
   fixed order: point syntax (400) before any lookup, unknown CR (404, `NotFound::contentRepository()`), no default
-  point or a point not in the CR (400), unknown or unreadable workspace (404). `resolveNode()` adds `findNode()`, the
-  one "no node" 404. Views and DataSources use the same class, so their errors are the same.
+  point or a point not in the CR (400), unknown or unreadable workspace (404). `resolveNode()` adds `resolveNodeIn()`,
+  the one "no node" 404. Views and DataSources use the same class, so their errors are the same.
 - `SiteFinder::findDefault()`: the configured default site if it is in the CR, else the CR's first online site by
   name. A configured default site that is missing or offline is skipped as if none were configured.
 
@@ -46,8 +46,8 @@ WorkspaceName, id, excludeDisabled)` is every occupied point (`listNodeVariants`
   `VARIANT_INCLUDE_PATHS` (`references`, `children`, `children.references`): variants have no variants, and their
   ancestors are the node's.
 - `include=variants` are the others of the node read in one point; `GET …/variants` (`listNodeVariants`) is all of
-  them, each read in its own point, workspace resolved by `Workspaces\WorkspaceResolver`. The other sub-resources
-  (`/properties`, `/references`, `/tags`, `/nodetype`) have no GET: they are fields of `Node`.
+  them, each read in its own point, workspace resolved by `Workspaces\Domain\WorkspaceResolver`. The other
+  sub-resources (`/properties`, `/references`, `/tags`, `/nodetype`) have no GET: they are fields of `Node`.
 - `Node` contains itself, which schematic and the hoister reject for class types. So `children`/`variants`/`ancestors`
   are typed `iterable` (the hoister keeps the hand-written schema), their schema is `NodeList::schema()`, an array of
   `$ref` to the `Node` component, and `NodeList` yields its nodes serialized already: the serializer can't read an

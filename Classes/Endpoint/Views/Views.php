@@ -6,7 +6,7 @@ namespace Neos\Api\Endpoint\Views;
 use Neos\Api\Endpoint\ContentRepositories\Schema\ContentRepositoryId;
 use Neos\Api\Endpoint\Nodes\Schema\DimensionSpacePoint;
 use Neos\Api\Endpoint\Nodes\Schema\NodeAggregateId;
-use Neos\Api\Endpoint\Nodes\SubgraphResolver;
+use Neos\Api\Endpoint\Nodes\Domain\SubgraphResolver;
 use Neos\Api\Endpoint\Workspaces\Schema\WorkspaceName;
 use Neos\Api\Endpoint\Views\Response\RenderedView;
 use Neos\Api\Endpoint\Views\Schema\RenderingModeName;
@@ -175,7 +175,7 @@ final readonly class Views
      */
     private function node(ContentSubgraphInterface $subgraph, NodeAggregateId $nodeAggregateId): array|NotFound
     {
-        $node = $this->subgraphResolver->findNode($subgraph, $nodeAggregateId->toNodeAggregateId());
+        $node = $this->subgraphResolver->resolveNodeIn($subgraph, $nodeAggregateId->toNodeAggregateId());
         if (!$node instanceof Node) {
             return $node;
         }
