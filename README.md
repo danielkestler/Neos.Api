@@ -1,7 +1,7 @@
 # Neos.Api
 
 An HTTP API for Neos 9: content repositories, nodes, node types, workspaces, sites, users, the media library, data
-sources and Fusion-rendered views. The API is defined in PHP with [neos/openapi](https://github.com/bwaidelich/neos-openapi)
+sources and Fusion-rendered views. The API is defined in PHP with [neos/openapi](https://github.com/neos/openapi)
 and its Flow adapter, which also generates the OpenAPI document. It is secured with OAuth 2 by Neos.OAuth.
 
 ## Requirements
@@ -11,7 +11,7 @@ and its Flow adapter, which also generates the OpenAPI document. It is secured w
 - MariaDB or MySQL (the content repository)
 - neos/openapi with deepObject query parameters, from the branch `feature/deep-object-query-parameters` of
   [danielkestler/neos-openapi](https://github.com/danielkestler/neos-openapi), until
-  [bwaidelich/neos-openapi#9](https://github.com/bwaidelich/neos-openapi/pull/9) is merged
+  [neos/openapi#9](https://github.com/neos/openapi/pull/9) is merged
 - Optional: Neos.Api.Docs, the Swagger UI on `/api/docs`
 
 ## Usage
