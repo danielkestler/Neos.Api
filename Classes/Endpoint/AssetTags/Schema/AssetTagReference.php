@@ -1,10 +1,8 @@
 <?php
 declare(strict_types=1);
 
-namespace Neos\Api\Endpoint\Assets\Schema;
+namespace Neos\Api\Endpoint\AssetTags\Schema;
 
-use Neos\Api\Endpoint\AssetTags\Schema\AssetTagId;
-use Neos\Api\Endpoint\AssetTags\Schema\AssetTagLabel;
 use Neos\Flow\Persistence\PersistenceManagerInterface;
 use Neos\JsonSchema\ProvidesSchema;
 use Neos\JsonSchema\Schema;

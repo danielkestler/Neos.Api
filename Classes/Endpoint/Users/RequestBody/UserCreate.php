@@ -6,6 +6,7 @@ namespace Neos\Api\Endpoint\Users\RequestBody;
 use Neos\Api\Endpoint\Users\Schema\AccountIdentifier;
 use Neos\Api\Endpoint\Users\Schema\EmailAddress;
 use Neos\Api\Endpoint\Users\Schema\Password;
+use Neos\Api\Endpoint\Users\Schema\PersonNamePart;
 use Neos\Api\Endpoint\Users\Schema\RoleIdentifierList;
 use Neos\JsonSchema\ProvidesSchema;
 use Neos\JsonSchema\Schema;
@@ -18,16 +19,18 @@ use Neos\Schematic\Discovery\AutoDiscoveringSchema;
  */
 final readonly class UserCreate implements ProvidesSchema
 {
+    public const string DEFAULT_ROLE = 'Neos.Neos:Editor';
+
     /**
      * @param AccountIdentifier $username the identifier of the backend account, unique among them
      * @param EmailAddress|null $email the primary email address
-     * @param RoleIdentifierList|null $roles the roles of the account, Neos.Neos:Editor if left out
+     * @param RoleIdentifierList|null $roles the roles of the account, Neos.Neos:Editor if left out. Unless you are an administrator, only roles you have yourself
      */
     public function __construct(
         public AccountIdentifier $username,
         public Password $password,
-        public string $firstName,
-        public string $lastName,
+        public PersonNamePart $firstName,
+        public PersonNamePart $lastName,
         public EmailAddress|null $email = null,
         public RoleIdentifierList|null $roles = null,
     ) {
@@ -38,18 +41,18 @@ final readonly class UserCreate implements ProvidesSchema
      */
     public function applyTo(Model\User $user): void
     {
-        $user->setName(new PersonName('', $this->firstName, '', $this->lastName, '', $this->username->value));
+        $user->setName(new PersonName('', $this->firstName->value, '', $this->lastName->value, '', $this->username->value));
         $this->email?->makePrimaryOf($user);
     }
 
     /**
-     * @return list<string>|null
+     * The roles the account gets, the default of UserService::addUser() if left out
+     *
+     * @return list<string>
      */
-    public function roleIdentifiers(): ?array
+    public function roleIdentifiers(): array
     {
-        return $this->roles !== null
-            ? array_map(static fn ($role) => $role->value, iterator_to_array($this->roles, false))
-            : null;
+        return $this->roles?->identifiers() ?? [self::DEFAULT_ROLE];
     }
 
     public static function schema(): Schema

@@ -8,34 +8,27 @@ use Neos\Api\Endpoint\Sites\RequestBody\DomainCreate;
 use Neos\Api\Endpoint\Sites\RequestBody\DomainUpdate;
 use Neos\Api\Endpoint\Sites\RequestBody\SiteCreate;
 use Neos\Api\Endpoint\Sites\RequestBody\SiteUpdate;
+use Neos\Api\Endpoint\Sites\Schema\Domain;
 use Neos\Api\Endpoint\Sites\Schema\DomainId;
 use Neos\Api\Endpoint\Sites\Schema\Hostname;
-use Neos\Api\Endpoint\Sites\Schema\PackageKey;
-use Neos\Api\Endpoint\Sites\Schema\PackageKeyList;
 use Neos\Api\Endpoint\Sites\Schema\Site;
-use Neos\Api\Endpoint\Sites\Schema\SiteCreationOptions;
 use Neos\Api\Endpoint\Sites\Schema\SiteList;
 use Neos\Api\Endpoint\Sites\Schema\SiteListing;
 use Neos\Api\Endpoint\Sites\Schema\SiteNodeName;
-use Neos\Api\Endpoint\Sites\Schema\SiteNodeType;
-use Neos\Api\Endpoint\Sites\Schema\SiteNodeTypeList;
 use Neos\Api\Endpoint\Sites\Response\DomainCreated;
 use Neos\Api\Endpoint\Sites\Response\SiteCreated;
 use Neos\Api\Infrastructure\ContentRepository\ContentSubgraphs;
-use Neos\Api\Infrastructure\I18n\LabelTranslator;
+use Neos\Api\Infrastructure\Http\JsonBody;
 use Neos\Api\Security\ApiAuthContextProvider;
 use Neos\Api\Security\ApiScopes;
 use Neos\Api\Shared\Response\Conflict;
 use Neos\Api\Shared\Response\NotFound;
 use Neos\Api\Shared\Response\UnprocessableContent;
-use Neos\Api\Shared\Schema\AcceptLanguage;
-use Neos\ContentRepository\Core\NodeType\NodeType;
 use Neos\ContentRepository\Core\NodeType\NodeTypeManager;
 use Neos\ContentRepository\Core\Projection\ContentGraph\Node;
 use Neos\ContentRepository\Core\SharedModel\ContentRepository\ContentRepositoryId;
 use Neos\ContentRepositoryRegistry\ContentRepositoryRegistry;
 use Neos\ContentRepositoryRegistry\Exception\InvalidConfigurationException;
-use Neos\Flow\Annotations as Flow;
 use Neos\Flow\Package\PackageManager;
 use Neos\Flow\Persistence\PersistenceManagerInterface;
 use Neos\Neos\Domain\Model;
@@ -44,15 +37,18 @@ use Neos\Neos\Domain\Repository\SiteRepository;
 use Neos\Neos\Domain\Service\NodeTypeNameFactory;
 use Neos\Neos\Domain\Service\SiteService;
 use Neos\OpenApi\Attributes\Operation;
-use Neos\OpenApi\Attributes\Parameter;
 use Neos\OpenApi\Attributes\RequestBody;
+use Psr\Http\Message\ServerRequestInterface;
 
 /**
  * The Neos sites and their domains
  */
 final readonly class Sites
 {
-    private ContentRepositoryId $contentRepositoryForNewSites;
+    /**
+     * The code of the exception WorkspaceMetadataAndRoleRepository throws if it can't read the metadata
+     */
+    private const int WORKSPACE_METADATA_MISSING = 1727782164;
 
     public function __construct(
         private SiteRepository $siteRepository,
@@ -61,13 +57,8 @@ final readonly class Sites
         private PackageManager $packageManager,
         private ContentRepositoryRegistry $contentRepositoryRegistry,
         private PersistenceManagerInterface $persistenceManager,
-        private LabelTranslator $labelTranslator,
         private ContentSubgraphs $contentSubgraphs,
-        #[Flow\InjectConfiguration(path: 'sitePresets.default.contentRepository', package: 'Neos.Neos')]
-        string $defaultContentRepository,
     ) {
-        // the one the Neos sites module offers the node types of, sites without settings of their own use it as well
-        $this->contentRepositoryForNewSites = ContentRepositoryId::fromString($defaultContentRepository);
     }
 
     #[Operation(
@@ -89,37 +80,10 @@ final readonly class Sites
     }
 
     #[Operation(
-        path: '/sites/options',
-        method: 'GET',
-        summary: 'Get the site creation options',
-        description: 'The site packages and site node types a site can be created with. The labels are translated to the Accept-Language.',
-        operationId: 'getSiteCreationOptions',
-        security: [
-            ApiAuthContextProvider::SCOPES => [ApiScopes::SITES_CREATE],
-        ],
-    )]
-    public function options(
-        #[Parameter(in: 'header', name: 'Accept-Language')] AcceptLanguage|null $acceptLanguage = null,
-    ): SiteCreationOptions {
-        $nodeTypeManager = $this->nodeTypeManager($this->contentRepositoryForNewSites);
-        $labels = $this->labelTranslator->forAcceptLanguage($acceptLanguage);
-        return new SiteCreationOptions(
-            new PackageKeyList(...array_map(
-                PackageKey::fromString(...),
-                array_keys($this->packageManager->getFilteredPackages('available', 'neos-site')),
-            )),
-            new SiteNodeTypeList(...array_map(
-                static fn (NodeType $nodeType) => SiteNodeType::from($nodeType, $labels),
-                array_values($nodeTypeManager->getSubNodeTypes(NodeTypeNameFactory::forSite(), false)),
-            )),
-        );
-    }
-
-    #[Operation(
         path: '/sites',
         method: 'POST',
         summary: 'Create a site',
-        description: 'Creates a Neos site with a new site node in the live workspace.',
+        description: 'Creates a Neos site with a new site node in the live workspace. GET /options/sites lists the packages and node types it can be created with.',
         operationId: 'createSite',
         security: [
             ApiAuthContextProvider::SCOPES => [ApiScopes::SITES_CREATE],
@@ -245,14 +209,33 @@ final readonly class Sites
         // the inverse side, which Site::getPrimaryDomain() falls back to
         $site->getDomains()->add($domain);
         $this->domainRepository->add($domain);
-        return new DomainCreated($this->site($site));
+        return new DomainCreated(Domain::from($domain, $this->persistenceManager));
+    }
+
+    #[Operation(
+        path: '/sites/{siteNodeName}/domains/{domainId}',
+        method: 'GET',
+        summary: 'Get a domain of a site',
+        operationId: 'getDomain',
+        security: [
+            ApiAuthContextProvider::SCOPES => [ApiScopes::SITES_READ],
+        ],
+    )]
+    public function getDomain(SiteNodeName $siteNodeName, DomainId $domainId): Domain|NotFound
+    {
+        $site = $this->siteRepository->findOneByNodeName($siteNodeName->value);
+        if ($site === null) {
+            return self::siteNotFound($siteNodeName);
+        }
+        $domain = $this->findDomain($site, $domainId);
+        return $domain !== null ? Domain::from($domain, $this->persistenceManager) : self::domainNotFound($domainId);
     }
 
     #[Operation(
         path: '/sites/{siteNodeName}/domains/{domainId}',
         method: 'PATCH',
         summary: 'Change a domain of a site',
-        description: 'Changes the given properties and leaves the others as they are. The body is the site with the domain.',
+        description: 'Changes the given properties and leaves the others as they are, scheme or port null removes it (the domain works with the request\'s then). Deactivating the primary domain unsets it, the site is linked with its first active domain then.',
         operationId: 'updateDomain',
         security: [
             ApiAuthContextProvider::SCOPES => [ApiScopes::SITES_UPDATE],
@@ -262,7 +245,8 @@ final readonly class Sites
         SiteNodeName $siteNodeName,
         DomainId $domainId,
         #[RequestBody(description: 'The properties to change')] DomainUpdate $patch,
-    ): Site|NotFound|Conflict {
+        ServerRequestInterface $request,
+    ): Domain|NotFound|Conflict {
         $site = $this->siteRepository->findOneByNodeName($siteNodeName->value);
         if ($site === null) {
             return self::siteNotFound($siteNodeName);
@@ -275,21 +259,33 @@ final readonly class Sites
             return self::hostnameTaken($patch->hostname);
         }
         $patch->applyTo($domain);
+        // DomainUpdate can't tell a scheme or port null from one left out
+        if ($patch->scheme === null && JsonBody::has($request, 'scheme')) {
+            $domain->setScheme(null);
+        }
+        if ($patch->port === null && JsonBody::has($request, 'port')) {
+            $domain->setPort(null);
+        }
         $this->domainRepository->update($domain);
-        return $this->site($site);
+        if (!$domain->getActive() && $site->getPrimaryDomain(false) === $domain) {
+            // updateSite only takes an active primary domain
+            $site->setPrimaryDomain(null);
+            $this->siteRepository->update($site);
+        }
+        return Domain::from($domain, $this->persistenceManager);
     }
 
     #[Operation(
         path: '/sites/{siteNodeName}/domains/{domainId}',
         method: 'DELETE',
         summary: 'Remove a domain from a site',
-        description: 'If it was the primary domain, the site is linked with its first active domain. The body is the site without the domain.',
+        description: 'If it was the primary domain, the site is linked with its first active domain.',
         operationId: 'deleteDomain',
         security: [
             ApiAuthContextProvider::SCOPES => [ApiScopes::SITES_UPDATE],
         ],
     )]
-    public function deleteDomain(SiteNodeName $siteNodeName, DomainId $domainId): Site|NotFound
+    public function deleteDomain(SiteNodeName $siteNodeName, DomainId $domainId): NotFound|null
     {
         $site = $this->siteRepository->findOneByNodeName($siteNodeName->value);
         if ($site === null) {
@@ -305,7 +301,7 @@ final readonly class Sites
         }
         $site->getDomains()->removeElement($domain);
         $this->domainRepository->remove($domain);
-        return $this->site($site);
+        return null;
     }
 
     private function site(Model\Site $site): Site
@@ -315,8 +311,8 @@ final readonly class Sites
 
     /**
      * The site node in the live workspace and the site's default dimension space point, null if there is none the
-     * account may read, or the content repository can't be built or isn't set up: sites and their domains are managed
-     * without it, e.g. before ./flow cr:setup
+     * account may read, or the content repository can't be built or isn't set up (also Neos' migrations): sites and
+     * their domains are managed without it, e.g. before ./flow cr:setup
      */
     private function siteNode(Model\Site $site): ?Node
     {
@@ -324,6 +320,12 @@ final readonly class Sites
             return $this->contentSubgraphs->findSiteNode($site, excludeDisabled: false);
         } catch (InvalidConfigurationException | DBALException) {
             return null;
+        } catch (\RuntimeException $exception) {
+            // Neos' workspace metadata table is missing (its migrations didn't run): not set up either
+            if ($exception->getCode() === self::WORKSPACE_METADATA_MISSING) {
+                return null;
+            }
+            throw $exception;
         }
     }
 

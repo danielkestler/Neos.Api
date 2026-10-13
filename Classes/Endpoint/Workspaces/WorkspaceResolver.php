@@ -9,6 +9,7 @@ use Neos\Api\Infrastructure\ContentRepository\ContentRepositoryFinder;
 use Neos\Api\Security\AccountPrivileges;
 use Neos\Api\Shared\Response\NotFound;
 use Neos\ContentRepository\Core\Feature\Security\Exception\AccessDenied;
+use Neos\ContentRepository\Core\SharedModel;
 use Neos\Flow\Annotations as Flow;
 use Neos\Flow\Security\Account;
 use Neos\Neos\Domain\Model;
@@ -17,6 +18,9 @@ use Neos\Party\Domain\Service\PartyService;
 
 /**
  * The content repository and workspace of a request → the workspace as the token's account may read it, or the 404
+ *
+ * Also what the token's account may do in a workspace: always its own roles and Neos user, as for its privileges, not
+ * Flow's security context
  */
 #[Flow\Scope('singleton')]
 final readonly class WorkspaceResolver
@@ -36,17 +40,14 @@ final readonly class WorkspaceResolver
     {
         $contentRepository = $this->contentRepositoryFinder->find($contentRepositoryId->toContentRepositoryId());
         if ($contentRepository === null) {
-            return NotFound::because(sprintf('There is no content repository with the ID %s', $contentRepositoryId->value));
+            return NotFound::contentRepository($contentRepositoryId->value);
         }
         $notFound = NotFound::because(sprintf('There is no workspace %s in the content repository %s', $workspaceName->value, $contentRepositoryId->value));
         $workspace = $contentRepository->findWorkspaceByName($workspaceName->toWorkspaceName());
         if ($workspace === null) {
             return $notFound;
         }
-        // the token's account alone, as for its privileges, not Flow's security context
-        $roles = $this->accountPrivileges->rolesOf($account);
-        $user = $this->partyService->getAssignedPartyOfAccount($account);
-        $permissions = $this->contentRepositoryAuthorizationService->getWorkspacePermissions($contentRepository->id, $workspace->workspaceName, $roles, $user instanceof Model\User ? $user->getId() : null);
+        $permissions = $this->permissionsOf($contentRepository->id, $workspace->workspaceName, $account);
         if (!$permissions->read) {
             return $notFound;
         }
@@ -55,6 +56,29 @@ final readonly class WorkspaceResolver
         } catch (AccessDenied) {
             return $notFound;
         }
-        return new ReadableWorkspace($contentRepository, $workspace, $permissions, $contentGraph, $roles, $this->contentRepositoryAuthorizationService);
+        return new ReadableWorkspace($contentRepository, $workspace, $permissions, $contentGraph, $this->accountPrivileges->rolesOf($account), $this->contentRepositoryAuthorizationService);
+    }
+
+    /**
+     * What the token's account may do in the workspace, by its workspace roles or as the owner (whether the
+     * workspace exists or not)
+     */
+    public function permissionsOf(SharedModel\ContentRepository\ContentRepositoryId $contentRepositoryId, SharedModel\Workspace\WorkspaceName $workspaceName, Account $account): Model\WorkspacePermissions
+    {
+        return $this->contentRepositoryAuthorizationService->getWorkspacePermissions(
+            $contentRepositoryId,
+            $workspaceName,
+            $this->accountPrivileges->rolesOf($account),
+            $this->userOf($account)?->getId(),
+        );
+    }
+
+    /**
+     * The account's Neos user, null for an account without one (PartyService caches it for the request)
+     */
+    public function userOf(Account $account): Model\User|null
+    {
+        $user = $this->partyService->getAssignedPartyOfAccount($account);
+        return $user instanceof Model\User ? $user : null;
     }
 }

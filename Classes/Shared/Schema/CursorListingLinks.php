@@ -26,18 +26,39 @@ final readonly class CursorListingLinks implements ProvidesSchema
     }
 
     /**
+     * For a list read towards its end, which ends with the last item: next is null on the last page
+     *
      * @param int|null $nextAfter the cursor of the last item of this page if there are more, else null
      */
     public static function for(ServerRequestInterface $request, Limit $limit, int|null $nextAfter): self
     {
-        $with = static function (array $changes) use ($request, $limit): string {
-            $query = array_replace($request->getQueryParams(), ['limit' => $limit->value], $changes);
-            return (string)$request->getUri()->withQuery(http_build_query($query, '', '&', PHP_QUERY_RFC3986));
-        };
-        return new self(
-            $with([]),
-            $nextAfter !== null ? $with(['after' => $nextAfter]) : null,
+        return new self(self::with($request, $limit, []), $nextAfter !== null ? self::with($request, $limit, ['after' => $nextAfter]) : null);
+    }
+
+    /**
+     * For a list that grows at its end and is polled for new items (a workspace's events, oldest first): next is
+     * always there, after the last item of this page, or with the same cursor as this page if it is empty (without
+     * one if there was none), so a poller can always follow it
+     *
+     * @param int|null $lastAfter the cursor of the last item of this page, else the one this page was read after
+     */
+    public static function forGrowingList(ServerRequestInterface $request, Limit $limit, int|null $lastAfter): self
+    {
+        return new self(self::with($request, $limit, []), self::with($request, $limit, ['after' => $lastAfter]));
+    }
+
+    /**
+     * The request's URL with the limit and the changes, a null change removes the parameter
+     *
+     * @param array<string, int|null> $changes
+     */
+    private static function with(ServerRequestInterface $request, Limit $limit, array $changes): string
+    {
+        $query = array_filter(
+            array_replace($request->getQueryParams(), ['limit' => $limit->value], $changes),
+            static fn (mixed $value) => $value !== null,
         );
+        return (string)$request->getUri()->withQuery(http_build_query($query, '', '&', PHP_QUERY_RFC3986));
     }
 
     public static function schema(): Schema
@@ -48,7 +69,7 @@ final readonly class CursorListingLinks implements ProvidesSchema
             description: 'The URLs of this page and the next, the request with another cursor',
             properties: ObjectProperties::create(
                 self: $link('This page'),
-                next: Nullable::wrap($link('The page after, null on the last one')),
+                next: Nullable::wrap($link('The page after. Null on the last one, except for a list that is polled for new items (as a workspace\'s events oldest first), whose next page is always there, empty until there are new ones')),
             ),
             additionalProperties: false,
             required: ['self', 'next'],

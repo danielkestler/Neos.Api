@@ -6,6 +6,7 @@ namespace Neos\Api\Tests\Functional\Endpoint;
 use Doctrine\ORM\EntityManagerInterface;
 use GuzzleHttp\Psr7\UploadedFile;
 use GuzzleHttp\Psr7\Utils;
+use Neos\Api\Tests\Functional\Fixtures\FakeAssetSource;
 use Neos\Media\Domain\Model\AssetCollection;
 use Neos\Media\Domain\Model\Tag;
 use Neos\Media\Domain\Repository\AssetCollectionRepository;
@@ -115,7 +116,7 @@ class AssetsTest extends MediaTestCase
 
         self::assertSame([$this->logoId], $ids('filterByAssetType=image'));
         self::assertSame([$this->flyerId, $this->reportId], $ids('filterByAssetType=document'));
-        self::assertSame([$this->reportId], $ids('filterByAssetCollection=' . $this->pressId));
+        self::assertSame([$this->reportId], $ids('filterByCollection=' . $this->pressId));
         self::assertSame([$this->reportId], $ids('filterByTag=' . $this->financeId));
         self::assertSame([$this->flyerId, $this->logoId], $ids('filterByUntagged=true'));
         self::assertSame([$this->reportId], $ids('search=figures'));
@@ -145,9 +146,11 @@ class AssetsTest extends MediaTestCase
         self::assertSame(400, $this->get('/api/assets/neos?filterByUntagged=true&filterByTag=' . $this->financeId, $token)->getStatusCode());
         self::assertSame(400, $this->get('/api/assets/neos?sort=size', $token)->getStatusCode());
         self::assertSame(400, $this->get('/api/assets/neos?filterByTag=' . self::UNKNOWN_ID, $token)->getStatusCode());
-        self::assertSame(400, $this->get('/api/assets/neos?filterByAssetCollection=' . self::UNKNOWN_ID, $token)->getStatusCode());
+        self::assertSame(400, $this->get('/api/assets/neos?filterByCollection=' . self::UNKNOWN_ID, $token)->getStatusCode());
         self::assertSame(400, $this->get('/api/assets/neos?filterByAssetType=pdf', $token)->getStatusCode());
         self::assertSame(404, $this->get('/api/assets/unknown', $token)->getStatusCode());
+        // the path first
+        self::assertSame(404, $this->get('/api/assets/unknown?sort=size', $token)->getStatusCode());
     }
 
     #[Test]
@@ -175,9 +178,9 @@ class AssetsTest extends MediaTestCase
     public function listsTheUsagesTheAccountMayRead(): void
     {
         $this->requireContentRepository();
-        $token = $this->token('editor-machine', 'assets.read');
+        $token = $this->token('editor-machine', 'assets.read nodes.read');
 
-        $none = $this->get('/api/assets/neos/' . $this->reportId . '/usage', $token);
+        $none = $this->get('/api/assets/neos/' . $this->reportId . '/usages', $token);
         self::assertSame(200, $none->getStatusCode(), (string)$none->getBody());
         self::assertSame(['data' => [], 'meta' => ['total' => 0, 'inaccessible' => 0]], self::json($none));
 
@@ -191,11 +194,13 @@ class AssetsTest extends MediaTestCase
             'origindimensionspacepointhash' => '',
             'propertyname' => 'document',
         ]);
-        $hidden = $this->get('/api/assets/neos/' . $this->reportId . '/usage', $token);
+        $hidden = $this->get('/api/assets/neos/' . $this->reportId . '/usages', $token);
         self::assertSame(200, $hidden->getStatusCode(), (string)$hidden->getBody());
         self::assertSame(['data' => [], 'meta' => ['total' => 0, 'inaccessible' => 1]], self::json($hidden));
 
-        self::assertSame(404, $this->get('/api/assets/neos/' . self::UNKNOWN_ID . '/usage', $token)->getStatusCode());
+        self::assertSame(404, $this->get('/api/assets/neos/' . self::UNKNOWN_ID . '/usages', $token)->getStatusCode());
+        // the usages are node content
+        self::assertSame(403, $this->get('/api/assets/neos/' . $this->reportId . '/usages', $this->token('editor-machine', 'assets.read'))->getStatusCode());
     }
 
     #[Test]
@@ -204,14 +209,14 @@ class AssetsTest extends MediaTestCase
         $this->requireContentRepository();
         $token = $this->token('editor-machine', 'assets.update');
 
-        $response = $this->patch('/api/assets/neos/' . $this->flyerId, $token, ['title' => 'Flyer', 'copyrightNotice' => 'ACME', 'tagIds' => [$this->financeId, $this->financeId], 'assetCollectionIds' => [$this->pressId]]);
+        $response = $this->patch('/api/assets/neos/' . $this->flyerId, $token, ['title' => 'Flyer', 'copyrightNotice' => 'ACME', 'tagIds' => [$this->financeId, $this->financeId], 'collectionIds' => [$this->pressId]]);
         self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
         $flyer = self::json($response);
         self::assertSame(['Flyer', 'Flyer', '', 'ACME'], [$flyer['label'], $flyer['title'], $flyer['caption'], $flyer['copyrightNotice']]);
         self::assertSame([['id' => $this->financeId, 'label' => 'Finance']], $flyer['tags']);
         self::assertSame([['id' => $this->pressId, 'title' => 'Press']], $flyer['collections']);
 
-        $cleared = self::json($this->patch('/api/assets/neos/' . $this->flyerId, $token, ['tagIds' => [], 'assetCollectionIds' => []]));
+        $cleared = self::json($this->patch('/api/assets/neos/' . $this->flyerId, $token, ['tagIds' => [], 'collectionIds' => []]));
         self::assertSame([[], [], 'Flyer'], [$cleared['tags'], $cleared['collections'], $cleared['title']]);
 
         $this->persistenceManager->clearState();
@@ -226,9 +231,33 @@ class AssetsTest extends MediaTestCase
         $token = $this->token('editor-machine', 'assets.update');
 
         self::assertSame(422, $this->patch('/api/assets/neos/' . $this->flyerId, $token, ['tagIds' => [self::UNKNOWN_ID]])->getStatusCode());
-        self::assertSame(422, $this->patch('/api/assets/neos/' . $this->flyerId, $token, ['assetCollectionIds' => [self::UNKNOWN_ID]])->getStatusCode());
+        self::assertSame(422, $this->patch('/api/assets/neos/' . $this->flyerId, $token, ['collectionIds' => [self::UNKNOWN_ID]])->getStatusCode());
+        self::assertSame(400, $this->patch('/api/assets/neos/' . $this->flyerId, $token, ['title' => str_repeat('x', 256)])->getStatusCode());
         self::assertSame(404, $this->patch('/api/assets/neos/' . self::UNKNOWN_ID, $token, ['title' => 'x'])->getStatusCode());
         self::assertSame(404, $this->patch('/api/assets/unknown/' . $this->flyerId, $token, ['title' => 'x'])->getStatusCode());
+    }
+
+    #[Test]
+    public function replacesTheTagsOfAnAssetOneByOne(): void
+    {
+        $this->requireContentRepository();
+        $nature = new Tag('Nature');
+        $this->objectManager->get(TagRepository::class)->add($nature);
+        $this->persistenceManager->persistAll();
+        $natureId = $this->persistenceManager->getIdentifierByObject($nature);
+        $token = $this->token('editor-machine', 'assets.update');
+
+        // the report has Finance: Nature is added, Finance stays
+        $both = $this->patch('/api/assets/neos/' . $this->reportId, $token, ['tagIds' => [$natureId, $this->financeId]]);
+        self::assertSame(200, $both->getStatusCode(), (string)$both->getBody());
+        self::assertSame(['Finance', 'Nature'], array_column(self::json($both)['tags'], 'label'));
+
+        $nature = self::json($this->patch('/api/assets/neos/' . $this->reportId, $token, ['tagIds' => [$natureId]]));
+        self::assertSame([$natureId], array_column($nature['tags'], 'id'));
+
+        $this->persistenceManager->clearState();
+        $read = self::json($this->get('/api/assets/neos/' . $this->reportId, $this->token('editor-machine', 'assets.read')));
+        self::assertSame([$natureId], array_column($read['tags'], 'id'));
     }
 
     #[Test]
@@ -269,7 +298,7 @@ class AssetsTest extends MediaTestCase
         self::assertSame(404, $this->put('/api/assets/neos/' . $this->flyerId . '/collections/' . self::UNKNOWN_ID, $token, [])->getStatusCode());
 
         $this->persistenceManager->clearState();
-        self::assertSame([$this->reportId], array_column(self::json($this->get('/api/assets/neos?filterByAssetCollection=' . $this->pressId, $this->token('editor-machine', 'assets.read')))['data'], 'id'));
+        self::assertSame([$this->reportId], array_column(self::json($this->get('/api/assets/neos?filterByCollection=' . $this->pressId, $this->token('editor-machine', 'assets.read')))['data'], 'id'));
     }
 
     #[Test]
@@ -310,8 +339,20 @@ class AssetsTest extends MediaTestCase
         self::assertSame(422, $this->post('/api/assets/neos/' . $this->flyerId . '/variants', $token, ['crop' => ['x' => 0, 'y' => 0, 'width' => 1, 'height' => 1]])->getStatusCode());
         self::assertSame(400, $this->post('/api/assets/neos/' . $this->logoId . '/variants', $token, ['crop' => ['x' => 0, 'y' => 0, 'width' => 0, 'height' => 1]])->getStatusCode());
 
+        // the same crop again is the variant there is
+        $again = $this->post('/api/assets/neos/' . $this->logoId . '/variants', $token, ['crop' => ['x' => 0, 'y' => 0, 'width' => 1, 'height' => 1]]);
+        self::assertSame(200, $again->getStatusCode(), (string)$again->getBody());
+        self::assertSame($variant['id'], self::json($again)['id']);
+
         // variants aren't listed, they belong to their image
-        self::assertSame(['total' => 3], self::json($this->get('/api/assets/neos', $this->token('editor-machine', 'assets.read')))['meta']);
+        $readToken = $this->token('editor-machine', 'assets.read');
+        self::assertSame(['total' => 3], self::json($this->get('/api/assets/neos', $readToken))['meta']);
+        $variants = $this->get('/api/assets/neos/' . $this->logoId . '/variants', $readToken);
+        self::assertSame(200, $variants->getStatusCode(), (string)$variants->getBody());
+        self::assertSame([$variant['id']], array_column(self::json($variants)['data'], 'id'));
+        self::assertSame(['total' => 1], self::json($variants)['meta']);
+        self::assertSame(['data' => [], 'meta' => ['total' => 0]], self::json($this->get('/api/assets/neos/' . $this->flyerId . '/variants', $readToken)));
+        self::assertSame(404, $this->get('/api/assets/neos/' . self::UNKNOWN_ID . '/variants', $readToken)->getStatusCode());
     }
 
     #[Test]
@@ -328,7 +369,7 @@ class AssetsTest extends MediaTestCase
     {
         $token = $this->token('editor-machine', 'assets.create');
 
-        $response = $this->postMultipart('/api/assets/neos', $token, ['title' => 'Price list', 'assetCollectionId' => $this->pressId, 'tagIds' => [$this->financeId]], ['resource' => self::file('%PDF-1.4 prices', 'prices.pdf')]);
+        $response = $this->postMultipart('/api/assets/neos', $token, ['title' => 'Price list', 'collectionIds' => [$this->pressId], 'tagIds' => [$this->financeId]], ['file' => self::file('%PDF-1.4 prices', 'prices.pdf')]);
         self::assertSame(201, $response->getStatusCode(), (string)$response->getBody());
         $asset = self::json($response);
         self::assertSame('neos/' . $asset['id'], $response->getHeaderLine('Location'));
@@ -339,16 +380,15 @@ class AssetsTest extends MediaTestCase
     }
 
     #[Test]
-    public function uploadingAFileTwiceAddsItOnce(): void
+    public function uploadingAFileTwiceAddsItOnceAndLeavesIt(): void
     {
-        $this->requireContentRepository();
         $token = $this->token('editor-machine', 'assets.create');
 
-        // the content of the flyer of setUp()
-        $response = $this->postMultipart('/api/assets/neos', $token, ['tagIds' => [$this->financeId]], ['resource' => self::file('%PDF-1.4 flyer.pdf', 'copy.pdf')]);
+        // the content of the flyer of setUp(): it isn't changed, that needs assets.update
+        $response = $this->postMultipart('/api/assets/neos', $token, ['title' => 'Copy', 'tagIds' => [$this->financeId], 'collectionIds' => [$this->pressId]], ['file' => self::file('%PDF-1.4 flyer.pdf', 'copy.pdf')]);
         self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
         self::assertSame($this->flyerId, self::json($response)['id']);
-        self::assertSame([$this->financeId], array_column(self::json($response)['tags'], 'id'));
+        self::assertSame(['', [], []], [self::json($response)['title'], self::json($response)['tags'], self::json($response)['collections']]);
         self::assertSame(['total' => 3], self::json($this->get('/api/assets/neos', $this->token('editor-machine', 'assets.read')))['meta']);
     }
 
@@ -356,14 +396,19 @@ class AssetsTest extends MediaTestCase
     public function rejectsInvalidUploads(): void
     {
         $token = $this->token('editor-machine', 'assets.create');
-        $file = static fn () => ['resource' => self::file('%PDF-1.4 new', 'new.pdf')];
+        $file = static fn () => ['file' => self::file('%PDF-1.4 new', 'new.pdf')];
 
         self::assertSame(400, $this->postMultipart('/api/assets/neos', $token, ['title' => 'No file'], [])->getStatusCode());
-        self::assertSame(400, $this->postMultipart('/api/assets/neos', $token, [], ['resource' => new UploadedFile(Utils::streamFor(''), 0, UPLOAD_ERR_INI_SIZE, 'big.pdf')])->getStatusCode());
+        self::assertSame(400, $this->postMultipart('/api/assets/neos', $token, [], ['file' => new UploadedFile(Utils::streamFor(''), 0, UPLOAD_ERR_INI_SIZE, 'big.pdf')])->getStatusCode());
         self::assertSame(400, $this->postMultipart('/api/assets/neos', $token, ['tagIds' => 'not-a-list'], $file())->getStatusCode());
-        self::assertSame(400, $this->postMultipart('/api/assets/neos', $token, ['assetCollectionId' => 'not-an-id'], $file())->getStatusCode());
+        self::assertSame(400, $this->postMultipart('/api/assets/neos', $token, ['collectionIds' => ['not-an-id']], $file())->getStatusCode());
+        self::assertSame(400, $this->postMultipart('/api/assets/neos', $token, ['title' => ['x']], $file())->getStatusCode());
+        self::assertSame(400, $this->postMultipart('/api/assets/neos', $token, ['title' => str_repeat('x', 256)], $file())->getStatusCode());
         self::assertSame(422, $this->postMultipart('/api/assets/neos', $token, ['tagIds' => [self::UNKNOWN_ID]], $file())->getStatusCode());
-        self::assertSame(422, $this->postMultipart('/api/assets/neos', $token, ['assetCollectionId' => self::UNKNOWN_ID], $file())->getStatusCode());
+        self::assertSame(422, $this->postMultipart('/api/assets/neos', $token, ['collectionIds' => [self::UNKNOWN_ID]], $file())->getStatusCode());
+        // Flow takes the media type from the name: an image that isn't one
+        $notAnImage = $this->postMultipart('/api/assets/neos', $token, [], ['file' => self::file('%PDF-1.4 not an image', 'photo.png')]);
+        self::assertSame(422, $notAnImage->getStatusCode(), (string)$notAnImage->getBody());
         self::assertSame(404, $this->postMultipart('/api/assets/unknown', $token, [], $file())->getStatusCode());
         self::assertSame(['total' => 3], self::json($this->get('/api/assets/neos', $this->token('editor-machine', 'assets.read')))['meta']);
     }
@@ -373,19 +418,68 @@ class AssetsTest extends MediaTestCase
     {
         $this->requireContentRepository();
         $token = $this->token('editor-machine', 'assets.update');
-        $path = '/api/assets/neos/' . $this->reportId . '/resource';
+        $path = '/api/assets/neos/' . $this->reportId . '/file';
 
-        $response = $this->postMultipart($path, $token, [], ['resource' => self::file('%PDF-1.4 the new report', 'report-2026.pdf')]);
+        $response = $this->sendMultipart('PUT', $path, $token, [], ['file' => ['%PDF-1.4 the new report', 'report-2026.pdf']]);
         self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
         self::assertSame([$this->reportId, 'report-2026.pdf', 'Annual report'], [self::json($response)['id'], self::json($response)['filename'], self::json($response)['title']]);
 
-        $kept = $this->postMultipart($path, $token, ['keepOriginalFilename' => 'true'], ['resource' => self::file('%PDF-1.4 once more', 'other.pdf')]);
+        $kept = $this->sendMultipart('PUT', $path, $token, ['keepOriginalFilename' => 'true'], ['file' => ['%PDF-1.4 once more', 'other.pdf']]);
+        self::assertSame(200, $kept->getStatusCode(), (string)$kept->getBody());
         self::assertSame('report-2026.pdf', self::json($kept)['filename']);
 
-        self::assertSame(422, $this->postMultipart('/api/assets/neos/' . $this->logoId . '/resource', $token, [], ['resource' => self::file('%PDF-1.4', 'logo.pdf')])->getStatusCode());
-        self::assertSame(400, $this->postMultipart($path, $token, ['keepOriginalFilename' => 'maybe'], ['resource' => self::file('%PDF-1.4', 'x.pdf')])->getStatusCode());
-        self::assertSame(400, $this->postMultipart($path, $token, [], [])->getStatusCode());
-        self::assertSame(404, $this->postMultipart('/api/assets/neos/' . self::UNKNOWN_ID . '/resource', $token, [], ['resource' => self::file('%PDF-1.4', 'x.pdf')])->getStatusCode());
+        self::assertSame(422, $this->sendMultipart('PUT', '/api/assets/neos/' . $this->logoId . '/file', $token, [], ['file' => ['%PDF-1.4', 'logo.pdf']])->getStatusCode());
+        $notAnImage = $this->sendMultipart('PUT', '/api/assets/neos/' . $this->logoId . '/file', $token, [], ['file' => ['%PDF-1.4', 'logo.png']]);
+        self::assertSame(422, $notAnImage->getStatusCode(), (string)$notAnImage->getBody());
+        self::assertSame(400, $this->sendMultipart('PUT', $path, $token, ['keepOriginalFilename' => 'maybe'], ['file' => ['%PDF-1.4', 'x.pdf']])->getStatusCode());
+        self::assertSame(400, $this->sendMultipart('PUT', $path, $token, [], [])->getStatusCode());
+        // the path first
+        self::assertSame(404, $this->sendMultipart('PUT', '/api/assets/neos/' . self::UNKNOWN_ID . '/file', $token, [], [])->getStatusCode());
+
+        $this->persistenceManager->clearState();
+        $logo = self::json($this->get('/api/assets/neos/' . $this->logoId, $this->token('editor-machine', 'assets.read')));
+        self::assertSame(['logo.png', 1], [$logo['filename'], $logo['width']]);
+    }
+
+    #[Test]
+    public function readsAndImportsTheAssetsOfARemoteSource(): void
+    {
+        $this->addFakeAssetSource();
+        $readToken = $this->token('editor-machine', 'assets.read');
+        $token = $this->token('editor-machine', 'assets.create');
+        $remote = '/api/assets/' . FakeAssetSource::IDENTIFIER;
+
+        $list = $this->get($remote, $readToken);
+        self::assertSame(200, $list->getStatusCode(), (string)$list->getBody());
+        self::assertSame(['photo', 'long-title', 'broken'], array_column(self::json($list)['data'], 'id'));
+        $photo = self::json($list)['data'][0];
+        self::assertSame([FakeAssetSource::IDENTIFIER, null, true, null, null], [$photo['assetSourceId'], $photo['localAssetId'], $photo['isReadOnly'], $photo['title'], $photo['tags']]);
+        self::assertSame(['title' => 'A photo', 'caption' => 'Taken in 2026', 'copyrightNotice' => 'ACME'], $photo['iptc']);
+        self::assertSame(400, $this->get($remote . '?filterByTag=' . $this->financeId, $readToken)->getStatusCode());
+        self::assertSame(404, $this->get($remote . '/unknown', $readToken)->getStatusCode());
+
+        // read-only: import first
+        self::assertSame(422, $this->patch($remote . '/photo', $this->token('editor-machine', 'assets.update'), ['title' => 'x'])->getStatusCode());
+        self::assertSame(422, $this->postMultipart($remote, $token, [], ['file' => self::file('%PDF-1.4 new', 'new.pdf')])->getStatusCode());
+
+        $imported = $this->post($remote . '/photo/import', $token, []);
+        self::assertSame(201, $imported->getStatusCode(), (string)$imported->getBody());
+        $asset = self::json($imported);
+        self::assertSame('../../neos/' . $asset['id'], $imported->getHeaderLine('Location'));
+        self::assertSame(['neos', 'image', 'A photo', 'Taken in 2026', 'ACME'], [$asset['assetSourceId'], $asset['assetType'], $asset['title'], $asset['caption'], $asset['copyrightNotice']]);
+        self::assertSame($asset['id'], self::json($this->get($remote . '/photo', $readToken))['localAssetId']);
+
+        $again = $this->post($remote . '/photo/import', $token, []);
+        self::assertSame(200, $again->getStatusCode(), (string)$again->getBody());
+        self::assertSame($asset['id'], self::json($again)['id']);
+
+        // an IPTC title longer than an asset's is cut
+        $longTitle = $this->post($remote . '/long-title/import', $token, []);
+        self::assertSame(201, $longTitle->getStatusCode(), (string)$longTitle->getBody());
+        self::assertSame(255, mb_strlen(self::json($longTitle)['title']));
+
+        $broken = $this->post($remote . '/broken/import', $token, []);
+        self::assertSame(502, $broken->getStatusCode(), (string)$broken->getBody());
     }
 
     private static function file(string $content, string $filename): UploadedFile

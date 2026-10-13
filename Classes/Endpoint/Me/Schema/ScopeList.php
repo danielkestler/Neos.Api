@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-namespace Neos\Api\Shared\Schema;
+namespace Neos\Api\Endpoint\Me\Schema;
 
 use Neos\JsonSchema\ProvidesSchema;
 use Neos\JsonSchema\Schema;
@@ -27,16 +27,6 @@ final readonly class ScopeList implements ProvidesSchema, \IteratorAggregate
     public static function fromStrings(string ...$scopes): self
     {
         return new self(...array_map(Scope::fromString(...), $scopes));
-    }
-
-    public function contains(Scope $scope): bool
-    {
-        foreach ($this->scopes as $candidate) {
-            if ($candidate->value === $scope->value) {
-                return true;
-            }
-        }
-        return false;
     }
 
     public static function schema(): Schema

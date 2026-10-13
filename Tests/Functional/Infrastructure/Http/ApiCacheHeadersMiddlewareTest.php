@@ -39,6 +39,7 @@ class ApiCacheHeadersMiddlewareTest extends EndpointTestCase
 
         $response = $this->get('/api/users', $this->token('editor-machine', 'me.read'));
         self::assertSame(403, $response->getStatusCode());
+        self::assertSame('private, no-store', $response->getHeaderLine('Cache-Control'));
         self::assertSame(['Authorization'], $response->getHeader('Vary'));
     }
 

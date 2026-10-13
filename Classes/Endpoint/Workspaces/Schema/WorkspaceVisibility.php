@@ -13,13 +13,13 @@ use Neos\Neos\Domain\Model;
  */
 enum WorkspaceVisibility: string implements ProvidesSchema
 {
-    case SHARED = 'shared';
+    case PUBLIC = 'public';
     case PRIVATE = 'private';
 
     public function roleAssignmentsFor(Model\UserId $creator): Model\WorkspaceRoleAssignments
     {
         return match ($this) {
-            self::SHARED => Model\WorkspaceRoleAssignments::createForSharedWorkspace($creator),
+            self::PUBLIC => Model\WorkspaceRoleAssignments::createForSharedWorkspace($creator),
             self::PRIVATE => Model\WorkspaceRoleAssignments::createForPrivateWorkspace($creator),
         };
     }
@@ -28,7 +28,7 @@ enum WorkspaceVisibility: string implements ProvidesSchema
     {
         static $schema = null;
         return $schema ??= StringSchema::create(
-            description: 'shared (the creator manages it, every editor may collaborate in it) or private (only the creator manages it, as in the Neos workspace module)',
+            description: 'public (the creator manages it, every editor may collaborate in it) or private (only the creator manages it, as in the Neos workspace module)',
             enum: array_map(static fn (self $case) => $case->value, self::cases()),
         );
     }

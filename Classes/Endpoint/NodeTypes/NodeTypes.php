@@ -9,6 +9,7 @@ use Neos\Api\Endpoint\NodeTypes\Schema\NodeTypeName;
 use Neos\Api\Endpoint\NodeTypes\Schema\NodeTypeList;
 use Neos\Api\Endpoint\NodeTypes\Schema\NodeTypeListing;
 use Neos\Api\Infrastructure\ContentRepository\ContentRepositoryFinder;
+use Neos\Api\Infrastructure\ContentRepository\NodeTypeUi;
 use Neos\Api\Infrastructure\I18n\LabelTranslator;
 use Neos\Api\Security\ApiAuthContextProvider;
 use Neos\Api\Security\ApiScopes;
@@ -17,7 +18,6 @@ use Neos\Api\Shared\Response\BadRequest;
 use Neos\Api\Shared\Response\NotFound;
 use Neos\Api\Shared\Schema\AcceptLanguage;
 use Neos\ContentRepository\Core;
-use Neos\Neos\Service\IconNameMappingService;
 use Neos\OpenApi\Attributes\Operation;
 use Neos\OpenApi\Attributes\Parameter;
 
@@ -31,7 +31,7 @@ final readonly class NodeTypes
     public function __construct(
         private ContentRepositoryFinder $contentRepositoryFinder,
         private LabelTranslator $labelTranslator,
-        private IconNameMappingService $iconNameMappingService,
+        private NodeTypeUi $nodeTypeUi,
     ) {
     }
 
@@ -60,7 +60,7 @@ final readonly class NodeTypes
         }
         $nodeTypeManager = $this->nodeTypeManager($contentRepositoryId);
         if ($nodeTypeManager === null) {
-            return $this->contentRepositoryNotFound($contentRepositoryId);
+            return NotFound::contentRepository($contentRepositoryId->value);
         }
         $superType = $filterBySuperType;
         if ($superType !== null && !$nodeTypeManager->hasNodeType($superType->value)) {
@@ -72,12 +72,15 @@ final readonly class NodeTypes
             $nodeTypes = array_filter($nodeTypes, static fn (Core\NodeType\NodeType $nodeType) => $nodeType->isOfType($superType->value));
         }
         ksort($nodeTypes);
+        // the same for every node type, computed once
+        $candidates = $include->includes('allowedChildNodeTypes') || $include->includes('tetheredChildNodes') ? NodeType::childNodeTypeCandidates($nodeTypeManager) : [];
         return NodeTypeListing::of(new NodeTypeList(...array_map(
             fn (Core\NodeType\NodeType $nodeType) => NodeType::from(
                 $nodeType,
                 $labels,
-                $this->iconNameMappingService,
+                $this->nodeTypeUi,
                 $nodeTypeManager,
+                $candidates,
                 withProperties: $include->includes('properties'),
                 withReferences: $include->includes('references'),
                 withConfiguration: $include->includes('configuration'),
@@ -105,7 +108,7 @@ final readonly class NodeTypes
     ): NodeType|NotFound {
         $nodeTypeManager = $this->nodeTypeManager($contentRepositoryId);
         if ($nodeTypeManager === null) {
-            return $this->contentRepositoryNotFound($contentRepositoryId);
+            return NotFound::contentRepository($contentRepositoryId->value);
         }
         $nodeType = $nodeTypeManager->getNodeType($nodeTypeName->value);
         if ($nodeType === null) {
@@ -114,8 +117,9 @@ final readonly class NodeTypes
         return NodeType::from(
             $nodeType,
             $this->labelTranslator->forAcceptLanguage($acceptLanguage),
-            $this->iconNameMappingService,
+            $this->nodeTypeUi,
             $nodeTypeManager,
+            NodeType::childNodeTypeCandidates($nodeTypeManager),
             withProperties: true,
             withReferences: true,
             withConfiguration: true,
@@ -127,10 +131,5 @@ final readonly class NodeTypes
     private function nodeTypeManager(ContentRepositoryId $contentRepositoryId): Core\NodeType\NodeTypeManager|null
     {
         return $this->contentRepositoryFinder->find($contentRepositoryId->toContentRepositoryId())?->getNodeTypeManager();
-    }
-
-    private function contentRepositoryNotFound(ContentRepositoryId $contentRepositoryId): NotFound
-    {
-        return NotFound::because(sprintf('There is no content repository with the ID %s', $contentRepositoryId->value));
     }
 }

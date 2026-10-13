@@ -1,7 +1,8 @@
 ##
 # Renders an absolute Fusion path in the current context, as the Neos UI renders a content element after a change:
-# with the path it was rendered at, its data-__neos-fusion-path attribute in an edit mode. An empty, malformed or
-# unknown path makes renderView answer with a 400
+# with the path it was rendered at, its data-__neos-fusion-path attribute in an edit mode. Only such paths: below
+# root (or the rendering mode's own path, e.g. rawContent) and only in a rendering mode other than frontend. An empty,
+# malformed, unknown or other path, or the frontend rendering mode, makes renderView answer with a 400
 #
 #   html = Neos.Api:FusionPath {
 #       path = ${arguments.fusionPath}

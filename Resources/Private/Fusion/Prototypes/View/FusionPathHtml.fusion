@@ -1,7 +1,8 @@
 ##
 # The HTML of a content element as the page renders it, e.g. to replace it in a preview after a change: rendered at its
 # Fusion path, arguments[fusionPath], the data-__neos-fusion-path attribute it has in an edit mode (renderingMode=inPlace
-# keeps the attributes in the HTML, so it can replace the element in the page). The node is the element
+# keeps the attributes in the HTML, so it can replace the element in the page). The node is the element. Only in a
+# rendering mode other than frontend, which needs Neos.Neos:Backend.GeneralAccess, see Neos.Api:FusionPath
 #
 #   {"html": "<div class=\"neos-contentelement\" data-__neos-fusion-path=\"…\">…</div>"}
 #

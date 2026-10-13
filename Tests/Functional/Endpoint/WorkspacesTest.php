@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Neos\Api\Tests\Functional\Endpoint;
 
 use Neos\Api\Endpoint\Nodes\Schema\NodeAggregateId;
+use Neos\Api\Endpoint\Workspaces\Parameter\ChangeTypes;
 use Neos\Api\Endpoint\Workspaces\Schema;
 use Neos\Flow\Security\AccountFactory;
 use Neos\Flow\Security\AccountRepository;
@@ -13,7 +14,7 @@ use PHPUnit\Framework\Attributes\Test;
 
 /**
  * Workspaces, their changes and events need a content repository, which the Testing context (SQLite) doesn't have: these tests cover everything
- * up to the content repository lookup
+ * up to the content repository lookup, WorkspacesContentRepositoryTest the rest (Testing/Ddev)
  */
 class WorkspacesTest extends EndpointTestCase
 {
@@ -201,7 +202,8 @@ class WorkspacesTest extends EndpointTestCase
         $token = $this->token('editor-machine', 'workspaces.create');
 
         self::assertSame(400, $this->post('/api/cr/default/workspaces', $token, ['title' => 'Team', 'classification' => 'team'])->getStatusCode());
-        self::assertSame(400, $this->post('/api/cr/default/workspaces', $token, ['title' => 'Team', 'visibility' => 'public'])->getStatusCode());
+        // public or private, shared is the classification
+        self::assertSame(400, $this->post('/api/cr/default/workspaces', $token, ['title' => 'Team', 'visibility' => 'shared'])->getStatusCode());
         self::assertSame(400, $this->post('/api/cr/default/workspaces', $token, ['title' => 'Team', 'name' => 'Not_A_Name'])->getStatusCode());
         self::assertSame(400, $this->post('/api/cr/default/workspaces', $token, ['title' => 'Team', 'baseWorkspaceName' => 'Not_A_Name'])->getStatusCode());
         self::assertSame(400, $this->post('/api/cr/default/workspaces', $token, ['title' => 'Team', 'owner' => 'someone'])->getStatusCode());
@@ -620,7 +622,7 @@ class WorkspacesTest extends EndpointTestCase
     {
         $document = self::json($this->get('/api/openapi.json', null));
         $list = $document['paths']['/cr/{contentRepositoryId}/workspaces/{workspaceName}/roles']['get'];
-        $subject = $document['paths']['/cr/{contentRepositoryId}/workspaces/{workspaceName}/roles/{subjectType}/{subject}'];
+        $subject = $document['paths']['/cr/{contentRepositoryId}/workspaces/{workspaceName}/roles/{subjectType}/{subjectId}'];
 
         self::assertSame('listWorkspaceRoles', $list['operationId']);
         self::assertSame('assignWorkspaceRole', $subject['put']['operationId']);
@@ -628,7 +630,7 @@ class WorkspacesTest extends EndpointTestCase
         foreach ([$list, $subject['put'], $subject['delete']] as $operation) {
             self::assertSame(['Workspaces'], $operation['tags']);
         }
-        self::assertSame(['contentRepositoryId', 'workspaceName', 'subjectType', 'subject'], array_column($subject['put']['parameters'], 'name'));
+        self::assertSame(['contentRepositoryId', 'workspaceName', 'subjectType', 'subjectId'], array_column($subject['put']['parameters'], 'name'));
         self::assertSame('#/components/schemas/WorkspaceRoleAssign', $subject['put']['requestBody']['content']['application/json']['schema']['$ref']);
         foreach (['200', '403', '404'] as $status) {
             self::assertArrayHasKey($status, $list['responses']);
@@ -796,5 +798,27 @@ class WorkspacesTest extends EndpointTestCase
         $meta = $document['components']['schemas']['EventListingMeta'];
         self::assertSame(['contentStreamId', 'forkedFrom'], $meta['required']);
         self::assertSame(['contentStreamId', 'version'], $document['components']['schemas']['ContentStreamPosition']['required']);
+    }
+
+    #[Test]
+    public function aChangeMatchesIfItHasOneOfTheChangeTypes(): void
+    {
+        $change = static fn (bool $created, bool $changed, bool $moved, bool $deleted) => new Schema\Change(NodeAggregateId::fromString('node'), null, null, null, $created, $changed, $moved, $deleted, null);
+
+        self::assertTrue(ChangeTypes::fromString('created')->matches($change(true, false, false, false)));
+        self::assertTrue(ChangeTypes::fromString('moved,deleted')->matches($change(false, true, false, true)));
+        self::assertFalse(ChangeTypes::fromString('created,moved')->matches($change(false, true, false, true)));
+        self::assertFalse(ChangeTypes::fromString('deleted')->matches($change(false, false, false, false)));
+    }
+
+    #[Test]
+    public function documentsTheVisibilitiesAndWhatAConflictCompleted(): void
+    {
+        $schemas = self::json($this->get('/api/openapi.json', null))['components']['schemas'];
+
+        self::assertSame(['public', 'private'], $schemas['WorkspaceVisibility']['enum']);
+        foreach (['conflicts', 'inaccessibleConflicts', 'completedDocumentAggregateIds', 'numberOfCompletedChanges'] as $member) {
+            self::assertArrayHasKey($member, $schemas['WorkspaceConflictProblem']['properties']);
+        }
     }
 }

@@ -35,10 +35,11 @@ final readonly class ViewRenderer
      * @param array<mixed> $arguments the context variable arguments
      * @param bool $renderErrors whether Fusion errors are handled as in the frontend (e.g. a content element shows its
      *     error in its place) instead of thrown
-     * @return array<mixed>|null the data, null if the site has no such prototype
+     * @return array<string, mixed>|\stdClass|null the data (an empty object as \stdClass), null if the site has no
+     *     such prototype
      * @throws InvalidViewArgument if the view can't use one of the arguments
      */
-    public function render(Node $node, Node $site, string $prototypeName, RenderingMode $renderingMode, ServerRequestInterface $httpRequest, array $arguments = [], bool $renderErrors = false): ?array
+    public function render(Node $node, Node $site, string $prototypeName, RenderingMode $renderingMode, ServerRequestInterface $httpRequest, array $arguments = [], bool $renderErrors = false): array|\stdClass|null
     {
         $view = new ViewFusionView();
         $view->setOption('renderingModeName', $renderingMode->name);
@@ -57,15 +58,28 @@ final readonly class ViewRenderer
             // Fusion wraps it where it bubbles through a path
             throw InvalidViewArgument::in($exception) ?? $exception;
         }
-        $json = trim((string)($output instanceof ResponseInterface ? $output->getBody() : $output));
-        // an empty Neos.Fusion:DataStructure is encoded as []
+        return self::decode((string)($output instanceof ResponseInterface ? $output->getBody() : $output), $prototypeName);
+    }
+
+    /**
+     * The data of the JSON a view rendered: an object as an array, an empty one as an object, so it stays {}
+     *
+     * @param string $json what the prototype rendered
+     * @param string $prototypeName the prototype, for the error
+     * @return array<string, mixed>|\stdClass
+     * @throws \RuntimeException if it isn't a JSON object
+     */
+    public static function decode(string $json, string $prototypeName): array|\stdClass
+    {
+        $json = trim($json);
+        // an empty Neos.Fusion:DataStructure is an empty PHP array, which is encoded as []
         if ($json === '[]') {
-            return [];
+            $json = '{}';
         }
-        $data = str_starts_with($json, '{') ? json_decode($json) : null;
-        if (!$data instanceof \stdClass) {
-            throw new \RuntimeException(sprintf('The Fusion prototype %s must render a JSON object, e.g. by inheriting from Neos.Api:View', $prototypeName), 1790838157);
+        try {
+            return JsonValues::decodeObject($json);
+        } catch (\JsonException|\InvalidArgumentException $exception) {
+            throw new \RuntimeException(sprintf('The Fusion prototype %s must render a JSON object, e.g. by inheriting from Neos.Api:View', $prototypeName), 1790838157, $exception);
         }
-        return array_map(JsonValues::decoded(...), get_object_vars($data));
     }
 }

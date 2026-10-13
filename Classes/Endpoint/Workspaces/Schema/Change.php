@@ -40,9 +40,9 @@ final readonly class Change implements ProvidesSchema
     }
 
     /**
-     * The change, located (its document and site) if a locator is given
+     * The change, located (its document and site) if a locator is given, without its diff (withDiff())
      */
-    public static function from(PendingChangesProjection\Change $change, ChangeLocator|null $locator = null, ChangeDiff|null $diff = null): self
+    public static function from(PendingChangesProjection\Change $change, ChangeLocator|null $locator = null): self
     {
         // a legacy hard removal (before soft removals) names the surviving ancestor, as Neos' publishing scopes it
         $location = $locator?->locate($change->getLegacyRemovalAttachmentPoint() ?? $change->nodeAggregateId, $change->originDimensionSpacePoint);
@@ -55,8 +55,13 @@ final readonly class Change implements ProvidesSchema
             $change->changed,
             $change->moved,
             $change->deleted,
-            $diff,
+            null,
         );
+    }
+
+    public function withDiff(ChangeDiff $diff): self
+    {
+        return new self($this->nodeAggregateId, $this->documentAggregateId, $this->siteAggregateId, $this->originDimensionSpacePoint, $this->created, $this->changed, $this->moved, $this->deleted, $diff);
     }
 
     public static function schema(): Schema

@@ -30,9 +30,9 @@ use Neos\Neos\PendingChangesProjection;
  *
  * The node is read in the workspace and in the base workspace in the change's dimension space point, without
  * visibility constraints, so hidden and removed nodes are compared as well. In the base workspace that may be another
- * variant shining through (a new specialization compared to its fallback). A root workspace has no base: everything
- * is compared to nothing, as for a created node. Like the projection, only Schema\Change and this class touch
- * PendingChangesProjection's types
+ * variant shining through (a new specialization compared to its fallback). A root workspace has no base, and a base
+ * the content repository won't let read is treated as none: everything is compared to nothing, as for a created node.
+ * Like the projection, only Schema\Change and this class touch PendingChangesProjection's types
  */
 #[Flow\Scope('singleton')]
 final readonly class ChangeDiffer
@@ -44,9 +44,9 @@ final readonly class ChangeDiffer
 
     public function diff(ReadableWorkspace $workspace, PendingChangesProjection\Change $change): ChangeDiff
     {
-        $contentGraph = $workspace->contentRepository->getContentGraph($workspace->workspace->workspaceName);
-        $baseWorkspaceName = $workspace->workspace->baseWorkspaceName;
-        $baseContentGraph = $baseWorkspaceName !== null ? $workspace->contentRepository->getContentGraph($baseWorkspaceName) : null;
+        // both looked up once per request, not per change
+        $contentGraph = $workspace->contentGraph();
+        $baseContentGraph = $workspace->contentGraph(base: true);
         $baseNodeAggregate = $baseContentGraph?->findNodeAggregateById($change->nodeAggregateId);
         // the projection marks a created node and a created variant of an existing one the same way
         $createdVariant = $change->created && $baseNodeAggregate !== null;

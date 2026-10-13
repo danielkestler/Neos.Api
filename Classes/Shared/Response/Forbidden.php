@@ -10,8 +10,8 @@ use Neos\OpenApi\Support\HttpStatusCode;
 use Neos\OpenApi\Support\MediaTypeRange;
 
 /**
- * The caller may use the operation, but not with these arguments, e.g. a rendering mode of the backend without
- * backend access
+ * The caller may use the operation, but not on this resource or with these arguments, e.g. a workspace the account
+ * may not manage, or a rendering mode of the backend without backend access
  *
  * Only for rules an operation's security requirement can't express because they depend on an argument
  */

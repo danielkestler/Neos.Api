@@ -3,14 +3,26 @@ declare(strict_types=1);
 
 namespace Neos\Api\Tests\Functional\Endpoint;
 
+use GuzzleHttp\Psr7\Uri;
+use GuzzleHttp\Psr7\UriResolver;
+use Neos\Api\Endpoint\ContentRepositories\Schema\ContentRepositoryId;
+use Neos\Api\Endpoint\Nodes\Response\NodeCreated;
+use Neos\Api\Endpoint\Nodes\Schema\DimensionSpacePoint;
+use Neos\Api\Endpoint\Nodes\Schema\Node;
+use Neos\Api\Endpoint\Nodes\Schema\NodeAggregateId;
+use Neos\Api\Endpoint\Nodes\Schema\NodeClassification;
+use Neos\Api\Endpoint\Nodes\Schema\NodeTimestamps;
+use Neos\Api\Endpoint\NodeTypes\Schema\NodeTypeName;
+use Neos\Api\Endpoint\Workspaces\Schema\WorkspaceName;
 use Neos\Neos\Domain\Service\UserService;
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * Nodes need a content repository, which the Testing context (SQLite) doesn't have: these tests cover everything up
- * to the content repository lookup
+ * Nodes need a content repository, which the Testing context (SQLite) doesn't have: most tests cover everything up
+ * to the content repository lookup, the ones that call requireLiveWorkspaceAndAdministrator() need Testing/Ddev (MariaDB), see
+ * ContentRepositoryTestCase
  */
-class NodesTest extends EndpointTestCase
+class NodesTest extends ContentRepositoryTestCase
 {
     protected function setUp(): void
     {
@@ -77,7 +89,7 @@ class NodesTest extends EndpointTestCase
     public function filtersByHierarchyOrReference(): void
     {
         $token = $this->token('nobody-machine', 'nodes.read');
-        $hierarchy = ['type' => 'parent', 'nodeAggregateId' => 'some-node'];
+        $hierarchy = ['type' => 'childOf', 'nodeAggregateId' => 'some-node'];
 
         $response = $this->get(self::listPath(['filterByHierarchy' => $hierarchy, 'filterByReference' => ['nodeAggregateId' => 'other-node']]), $token);
         self::assertSame(400, $response->getStatusCode(), (string)$response->getBody());
@@ -87,7 +99,7 @@ class NodesTest extends EndpointTestCase
         foreach ([
             [],
             ['filterByHierarchy' => $hierarchy],
-            ['filterByHierarchy' => ['type' => 'ancestor', 'nodeAggregateId' => 'some-node']],
+            ['filterByHierarchy' => ['type' => 'descendantOf', 'nodeAggregateId' => 'some-node']],
             ['filterByReference' => ['nodeAggregateId' => 'some-node']],
             ['filterByReference' => ['nodeAggregateId' => 'some-node', 'name' => 'relatedPages']],
             ['filterByNodeType' => 'Neos.Neos:Document,!Neos.Neos:Shortcut', 'search' => 'neos'],
@@ -96,13 +108,15 @@ class NodesTest extends EndpointTestCase
             self::assertSame(404, $response->getStatusCode(), json_encode($query) . ': ' . $response->getBody());
         }
 
-        // their schemas reject them: an unknown type, missing or unknown members, not an aggregate id, empty strings
+        // their schemas reject them: an unknown type (also the former parent and ancestor), missing or unknown members, not an aggregate id, empty strings
         foreach ([
             ['filterByHierarchy' => ['type' => 'child', 'nodeAggregateId' => 'some-node']],
+            ['filterByHierarchy' => ['type' => 'parent', 'nodeAggregateId' => 'some-node']],
+            ['filterByHierarchy' => ['type' => 'ancestor', 'nodeAggregateId' => 'some-node']],
             ['filterByHierarchy' => ['nodeAggregateId' => 'some-node']],
-            ['filterByHierarchy' => ['type' => 'parent']],
+            ['filterByHierarchy' => ['type' => 'childOf']],
             ['filterByHierarchy' => $hierarchy + ['unknown' => 'x']],
-            ['filterByHierarchy' => ['type' => 'parent', 'nodeAggregateId' => 'Not_An_Id']],
+            ['filterByHierarchy' => ['type' => 'childOf', 'nodeAggregateId' => 'Not_An_Id']],
             ['filterByReference' => ['name' => 'relatedPages']],
             ['filterByReference' => ['nodeAggregateId' => 'some-node', 'name' => '']],
             ['filterByNodeType' => ''],
@@ -117,7 +131,14 @@ class NodesTest extends EndpointTestCase
     public function rejectsInvalidFiltersSortsAndPages(): void
     {
         $token = $this->token('nobody-machine', 'nodes.read');
-        $filter = ['filterByHierarchy' => ['type' => 'parent', 'nodeAggregateId' => 'some-node']];
+        $filter = ['filterByHierarchy' => ['type' => 'childOf', 'nodeAggregateId' => 'some-node']];
+
+        // an empty node type name, before the content repository is looked up
+        foreach (['!', 'Neos.Neos:Document,!'] as $nodeTypes) {
+            $response = $this->get(self::listPath($filter + ['filterByNodeType' => $nodeTypes]), $token);
+            self::assertSame(400, $response->getStatusCode(), $nodeTypes . ': ' . $response->getBody());
+            self::assertStringStartsWith('filterByNodeType is invalid', self::json($response)['detail']);
+        }
 
         $response = $this->get(self::listPath($filter + ['filterByProperty' => 'title = ']), $token);
         self::assertSame(400, $response->getStatusCode(), (string)$response->getBody());
@@ -159,7 +180,7 @@ class NodesTest extends EndpointTestCase
     #[Test]
     public function requiresTheScope(): void
     {
-        foreach ([self::nodePath('some-node'), self::listPath(['filterByHierarchy' => ['type' => 'parent', 'nodeAggregateId' => 'some-node']])] as $path) {
+        foreach ([self::nodePath('some-node'), self::listPath(['filterByHierarchy' => ['type' => 'childOf', 'nodeAggregateId' => 'some-node']])] as $path) {
             $response = $this->get($path, $this->token('nobody-machine', 'me.read'));
 
             self::assertSame(403, $response->getStatusCode(), (string)$response->getBody());
@@ -360,38 +381,44 @@ class NodesTest extends EndpointTestCase
         $token = $this->token('editor-machine', 'nodes.update');
         $workspace = ['workspaceName' => 'user-editor'];
 
-        $response = $this->post(self::tagsPath('some-node', $workspace), $token, ['tag' => 'disabled']);
+        $response = $this->put(self::tagsPath('some-node', $workspace, 'disabled'), $token, []);
         self::assertSame(404, $response->getStatusCode(), (string)$response->getBody());
         self::assertSame('There is no content repository with the ID unknown', self::json($response)['detail']);
         self::assertSame(404, $this->delete(self::tagsPath('some-node', $workspace, 'disabled'), $token)->getStatusCode());
 
         // no default workspace for changes
-        self::assertSame(400, $this->post(self::tagsPath('some-node', []), $token, ['tag' => 'disabled'])->getStatusCode());
+        self::assertSame(400, $this->put(self::tagsPath('some-node', [], 'disabled'), $token, [])->getStatusCode());
         self::assertSame(400, $this->delete(self::tagsPath('some-node', [], 'disabled'), $token)->getStatusCode());
 
         // removed is up to deleteNode and the trash
-        foreach ([$this->post(self::tagsPath('some-node', $workspace), $token, ['tag' => 'removed']), $this->delete(self::tagsPath('some-node', $workspace, 'removed'), $token)] as $response) {
+        foreach ([$this->put(self::tagsPath('some-node', $workspace, 'removed'), $token, []), $this->delete(self::tagsPath('some-node', $workspace, 'removed'), $token)] as $response) {
             self::assertSame(422, $response->getStatusCode(), (string)$response->getBody());
         }
 
         // not a tag, their schemas reject them
         foreach (['Disabled', 'with space', str_repeat('a', 37)] as $tag) {
-            self::assertSame(400, $this->post(self::tagsPath('some-node', $workspace), $token, ['tag' => $tag])->getStatusCode(), $tag);
+            self::assertSame(400, $this->put(self::tagsPath('some-node', $workspace, $tag), $token, [])->getStatusCode(), $tag);
+            self::assertSame(400, $this->delete(self::tagsPath('some-node', $workspace, $tag), $token)->getStatusCode(), $tag);
         }
-        self::assertSame(400, $this->delete(self::tagsPath('some-node', $workspace, 'Disabled'), $token)->getStatusCode());
-        self::assertSame(400, $this->post(self::tagsPath('some-node', $workspace), $token, [])->getStatusCode());
+
+        // idempotent like asset tags: PUT on the tag, no POST with a body
+        $paths = self::json($this->get('/api/openapi.json', null))['paths'];
+        self::assertArrayNotHasKey('/cr/{contentRepositoryId}/nodes/{nodeAggregateId}/tags', $paths);
+        self::assertSame(['put', 'delete'], array_keys($paths['/cr/{contentRepositoryId}/nodes/{nodeAggregateId}/tags/{tag}']));
+        self::assertSame('tagNode', $paths['/cr/{contentRepositoryId}/nodes/{nodeAggregateId}/tags/{tag}']['put']['operationId']);
+        self::assertArrayNotHasKey('requestBody', $paths['/cr/{contentRepositoryId}/nodes/{nodeAggregateId}/tags/{tag}']['put']);
     }
 
     #[Test]
     public function taggingRequiresTheScopeAndThePrivilege(): void
     {
-        $workspace = ['workspaceName' => 'user-editor'];
+        $path = self::tagsPath('some-node', ['workspaceName' => 'user-editor'], 'disabled');
 
-        $response = $this->post(self::tagsPath('some-node', $workspace), $this->token('editor-machine', 'nodes.read'), ['tag' => 'disabled']);
+        $response = $this->put($path, $this->token('editor-machine', 'nodes.read'), []);
         self::assertSame(403, $response->getStatusCode(), (string)$response->getBody());
         self::assertStringContainsString('nodes.update', self::json($response)['detail']);
-        self::assertSame(403, $this->delete(self::tagsPath('some-node', $workspace, 'disabled'), $this->token('nobody-machine', 'nodes.update'))->getStatusCode());
-        self::assertSame(401, $this->post(self::tagsPath('some-node', $workspace), null, ['tag' => 'disabled'])->getStatusCode());
+        self::assertSame(403, $this->delete($path, $this->token('nobody-machine', 'nodes.update'))->getStatusCode());
+        self::assertSame(401, $this->put($path, null, [])->getStatusCode());
     }
 
     #[Test]
@@ -561,6 +588,127 @@ class NodesTest extends EndpointTestCase
         self::assertSame(400, $this->get(self::variantsPath('some-node', ['include' => 'variants']), $token)->getStatusCode());
         self::assertSame(403, $this->get(self::variantsPath('some-node', []), $this->token('nobody-machine', 'me.read'))->getStatusCode());
         self::assertSame(401, $this->get(self::variantsPath('some-node', []), null)->getStatusCode());
+    }
+
+    #[Test]
+    public function locationsOfNewNodesAndVariantsAreRelativeToTheirOperation(): void
+    {
+        $node = new Node(
+            ContentRepositoryId::fromString('default'),
+            WorkspaceName::fromString('user-editor'),
+            DimensionSpacePoint::fromString('{"language":"de"}'),
+            NodeAggregateId::fromString('new-node'),
+            null,
+            NodeTypeName::fromString('Neos.Neos:Page'),
+            'New',
+            NodeClassification::REGULAR,
+            false,
+            false,
+            false,
+            [],
+            [],
+            new NodeTimestamps('2026-10-01T09:30:00+00:00', null, '2026-10-01T09:30:00+00:00', null),
+            [],
+            null,
+            null,
+            null,
+            null,
+        );
+        $query = '?workspaceName=user-editor&dimensionSpacePoint=%7B%22language%22%3A%22de%22%7D';
+
+        $created = NodeCreated::node($node)->headers()['Location'];
+        self::assertSame('nodes/new-node' . $query, $created);
+        self::assertSame('/api/cr/default/nodes/new-node' . $query, (string)UriResolver::resolve(new Uri('/api/cr/default/nodes?workspaceName=user-editor'), new Uri($created)));
+
+        $variant = NodeCreated::variant($node)->headers()['Location'];
+        self::assertSame('../new-node' . $query, $variant);
+        self::assertSame('/api/cr/default/nodes/new-node' . $query, (string)UriResolver::resolve(new Uri('/api/cr/default/nodes/new-node/variants?workspaceName=user-editor'), new Uri($variant)));
+    }
+
+    #[Test]
+    public function writesNodesInAContentRepository(): void
+    {
+        $this->requireLiveWorkspaceAndAdministrator();
+        $siteNodeId = $this->siteNodeId();
+        $token = $this->token('admin-machine', 'nodes.read nodes.create nodes.update');
+        $inLive = ['workspaceName' => 'live', 'dimensionSpacePoint' => '{"language":"en_US"}'];
+
+        // a title with nothing to transliterate gets the node type's random uriPathSegment
+        $response = $this->post(self::path('', $inLive), $token, ['nodeType' => 'Neos.Demo:Document.Page', 'parentNodeAggregateId' => $siteNodeId, 'properties' => ['title' => '!!!']]);
+        self::assertSame(201, $response->getStatusCode(), (string)$response->getBody());
+        $page = self::json($response);
+        $id = $page['nodeAggregateId'];
+        self::assertMatchesRegularExpression('/^document-page-\d{3}$/', $page['properties']['uriPathSegment']);
+        self::assertSame('nodes/' . $id . '?workspaceName=live&dimensionSpacePoint=%7B%22language%22%3A%22en_US%22%7D', $response->getHeaderLine('Location'));
+
+        // references the node type doesn't declare, before anything is created
+        $response = $this->post(self::path('', $inLive), $token, ['nodeType' => 'Neos.Demo:Document.Page', 'parentNodeAggregateId' => $siteNodeId, 'references' => ['unknownReference' => []]]);
+        self::assertSame(422, $response->getStatusCode(), (string)$response->getBody());
+
+        $response = $this->get(self::path('', $inLive + ['filterByHierarchy' => ['type' => 'childOf', 'nodeAggregateId' => $siteNodeId]]), $token);
+        self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
+        self::assertContains($id, array_column(self::json($response)['data'], 'nodeAggregateId'));
+
+        // the body's point is no query parameter: 422s
+        foreach (['{not json}', '{"language":"fr"}'] as $point) {
+            $response = $this->post(self::path($id . '/variants', $inLive), $token, ['dimensionSpacePoint' => $point]);
+            self::assertSame(422, $response->getStatusCode(), $point . ': ' . $response->getBody());
+            self::assertStringContainsString('dimensionSpacePoint of the body', self::json($response)['detail']);
+        }
+        $response = $this->post(self::path($id . '/variants', $inLive), $token, ['dimensionSpacePoint' => '{"language":"de"}']);
+        self::assertSame(201, $response->getStatusCode(), (string)$response->getBody());
+        self::assertSame('../' . $id . '?workspaceName=live&dimensionSpacePoint=%7B%22language%22%3A%22de%22%7D', $response->getHeaderLine('Location'));
+        self::assertSame('{"language":"de"}', self::json($response)['dimensionSpacePoint']);
+
+        $response = $this->get(self::path($id . '/variants', ['workspaceName' => 'live']), $token);
+        self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
+        self::assertSame(['{"language":"en_US"}', '{"language":"de"}'], array_column(self::json($response)['data'], 'dimensionSpacePoint'));
+        $response = $this->get(self::path($id . '/variants', ['workspaceName' => 'unknown-workspace']), $token);
+        self::assertSame(404, $response->getStatusCode(), (string)$response->getBody());
+        self::assertSame('There is no workspace unknown-workspace in the content repository default', self::json($response)['detail']);
+
+        // tagging is idempotent, untagging a tag the node doesn't have a 404
+        foreach ([1, 2] as $time) {
+            $response = $this->put(self::path($id . '/tags/disabled', $inLive), $token, []);
+            self::assertSame(200, $response->getStatusCode(), $time . ': ' . $response->getBody());
+            self::assertSame(['disabled'], self::json($response)['tags']);
+            self::assertTrue(self::json($response)['isHidden']);
+        }
+        $response = $this->delete(self::path($id . '/tags/disabled', $inLive), $token);
+        self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
+        self::assertSame([], self::json($response)['tags']);
+        self::assertSame(404, $this->delete(self::path($id . '/tags/disabled', $inLive), $token)->getStatusCode());
+    }
+
+    /**
+     * The content repository with live, and an administrator to create the site
+     */
+    private function requireLiveWorkspaceAndAdministrator(): void
+    {
+        $this->requireLiveWorkspace();
+        $this->objectManager->get(UserService::class)->createUser('admin', 'password', 'Ada', 'Admin', ['Neos.Neos:Administrator']);
+        $this->addMachineClient('admin-machine', 'admin');
+        $this->persistenceManager->persistAll();
+    }
+
+    /**
+     * The site node of a new Neos.Demo site in live
+     */
+    private function siteNodeId(): string
+    {
+        $response = $this->post('/api/sites', $this->token('admin-machine', 'sites.create'), ['packageKey' => 'Neos.Demo', 'name' => 'Nodes Test', 'nodeTypeName' => 'Neos.Demo:Document.Homepage', 'nodeName' => 'nodes-test']);
+        self::assertSame(201, $response->getStatusCode(), (string)$response->getBody());
+        $siteNodeId = self::json($response)['nodeAggregateId'];
+        self::assertIsString($siteNodeId);
+        return $siteNodeId;
+    }
+
+    /**
+     * @param array<string, mixed> $query
+     */
+    private static function path(string $below, array $query): string
+    {
+        return '/api/cr/default/nodes' . ($below !== '' ? '/' . $below : '') . self::query($query);
     }
 
     /**

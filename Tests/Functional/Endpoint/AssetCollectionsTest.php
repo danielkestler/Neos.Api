@@ -4,8 +4,11 @@ declare(strict_types=1);
 namespace Neos\Api\Tests\Functional\Endpoint;
 
 use Neos\Media\Domain\Model\AssetCollection;
+use Neos\Media\Domain\Model\ImageVariant;
+use Neos\Media\Domain\Model\Tag;
 use Neos\Media\Domain\Repository\AssetCollectionRepository;
 use Neos\Media\Domain\Repository\AssetRepository;
+use Neos\Media\Domain\Repository\TagRepository;
 use Neos\Neos\Domain\Service\UserService;
 use PHPUnit\Framework\Attributes\Test;
 
@@ -14,6 +17,8 @@ class AssetCollectionsTest extends MediaTestCase
     private string $pressId;
 
     private string $assetId;
+
+    private string $eventsId;
 
     protected function setUp(): void
     {
@@ -26,9 +31,19 @@ class AssetCollectionsTest extends MediaTestCase
         $collectionRepository->add($press);
         $collectionRepository->add(new AssetCollection('Archive'));
 
+        $events = new Tag('Events');
+        $this->objectManager->get(TagRepository::class)->add($events);
+        $press->addTag($events);
+
         $asset = $this->addDocument('release.pdf');
         $press->addAsset($asset);
+        // variants aren't counted, as in Neos' lists
+        $image = $this->addImage('photo.png');
+        $press->addAsset($image);
+        $variant = new ImageVariant($image);
+        $this->objectManager->get(AssetRepository::class)->add($variant);
         $this->persistenceManager->persistAll();
+        $this->eventsId = $this->persistenceManager->getIdentifierByObject($events);
 
         $this->pressId = $this->persistenceManager->getIdentifierByObject($press);
         $this->assetId = $this->persistenceManager->getIdentifierByObject($asset);
@@ -42,7 +57,8 @@ class AssetCollectionsTest extends MediaTestCase
         self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
         self::assertSame(['total' => 2], self::json($response)['meta']);
         self::assertSame(['Archive', 'Press'], array_column(self::json($response)['data'], 'title'));
-        self::assertSame(['id' => $this->pressId, 'title' => 'Press', 'assetCount' => 1], self::json($response)['data'][1]);
+        self::assertSame(['id' => $this->pressId, 'title' => 'Press', 'assetCount' => 2, 'tags' => [['id' => $this->eventsId, 'label' => 'Events']]], self::json($response)['data'][1]);
+        self::assertSame(0, self::json($response)['data'][0]['assetCount']);
     }
 
     #[Test]
@@ -70,7 +86,7 @@ class AssetCollectionsTest extends MediaTestCase
         $response = $this->post('/api/assetcollections', $token, ['title' => 'Events']);
         self::assertSame(201, $response->getStatusCode(), (string)$response->getBody());
         self::assertSame('Events', self::json($response)['title']);
-        self::assertSame(0, self::json($response)['assetCount']);
+        self::assertSame([0, []], [self::json($response)['assetCount'], self::json($response)['tags']]);
         self::assertSame('assetcollections/' . self::json($response)['id'], $response->getHeaderLine('Location'));
 
         self::assertSame(400, $this->post('/api/assetcollections', $token, ['title' => ''])->getStatusCode());
@@ -83,7 +99,7 @@ class AssetCollectionsTest extends MediaTestCase
 
         $response = $this->patch('/api/assetcollections/' . $this->pressId, $token, ['title' => 'Press photos']);
         self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
-        self::assertSame(['id' => $this->pressId, 'title' => 'Press photos', 'assetCount' => 1], self::json($response));
+        self::assertSame(['id' => $this->pressId, 'title' => 'Press photos', 'assetCount' => 2], array_diff_key(self::json($response), ['tags' => true]));
 
         $unchanged = $this->patch('/api/assetcollections/' . $this->pressId, $token, []);
         self::assertSame('Press photos', self::json($unchanged)['title']);

@@ -21,7 +21,7 @@ final readonly class AssetSource implements ProvidesSchema
      * @param string $iconUri the URI of the source's icon
      * @param bool $isReadOnly whether its assets can only be read: only the ones of neos can be changed, the others are imported first
      * @param bool $supportsTagging whether its assets can be found by tag (filterByTag, filterByUntagged of listAssets)
-     * @param bool $supportsCollections whether its assets can be found by collection (filterByAssetCollection)
+     * @param bool $supportsCollections whether its assets can be found by collection (filterByCollection)
      * @param bool $supportsSorting whether its assets can be sorted (sort)
      */
     public function __construct(

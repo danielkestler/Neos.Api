@@ -133,9 +133,11 @@ roles:
       - privilegeTarget: "Neos.Api:Workspaces.Read"
         permission: GRANT
 
-  # as Neos grants Neos.Neos:Backend.DataSource
   "Neos.Neos:AbstractEditor":
     privileges:
+      # the entry point to the nodes, writing them stays with administrators
+      - privilegeTarget: "Neos.Api:Sites.Read"
+        permission: GRANT
       # which nodes may be changed in which workspaces is up to the account's workspace roles and node privileges
       - privilegeTarget: "Neos.Api:Nodes.Update"
         permission: GRANT
@@ -143,6 +145,7 @@ roles:
         permission: GRANT
       - privilegeTarget: "Neos.Api:Nodes.Delete"
         permission: GRANT
+      # as Neos grants Neos.Neos:Backend.DataSource
       - privilegeTarget: "Neos.Api:DataSources.Read"
         permission: GRANT
       # as Neos grants Neos.Workspace.Ui:Backend.CreateWorkspaces, which workspaces may be changed or deleted is up to
@@ -188,22 +191,33 @@ roles:
 
   "Neos.Neos:Editor":
     privileges:
-      - privilegeTarget: "Neos.Api:Users.Read"
-        permission: GRANT
       - privilegeTarget: "Neos.Api:ContentRepositories.Read"
         permission: GRANT
       - privilegeTarget: "Neos.Api:NodeTypes.Read"
         permission: GRANT
 
-  "Neos.Neos:Administrator":
+  # as Neos grants the users module: a user manager only manages users whose roles are a subset of their own, see
+  # AccountPrivileges::mayManage()
+  "Neos.Neos:UserManager":
     privileges:
+      - privilegeTarget: "Neos.Api:Users.Read"
+        permission: GRANT
       - privilegeTarget: "Neos.Api:Users.Update"
         permission: GRANT
       - privilegeTarget: "Neos.Api:Users.Create"
         permission: GRANT
       - privilegeTarget: "Neos.Api:Users.Delete"
         permission: GRANT
-      - privilegeTarget: "Neos.Api:Sites.Read"
+
+  "Neos.Neos:Administrator":
+    privileges:
+      - privilegeTarget: "Neos.Api:Users.Read"
+        permission: GRANT
+      - privilegeTarget: "Neos.Api:Users.Update"
+        permission: GRANT
+      - privilegeTarget: "Neos.Api:Users.Create"
+        permission: GRANT
+      - privilegeTarget: "Neos.Api:Users.Delete"
         permission: GRANT
       - privilegeTarget: "Neos.Api:Sites.Update"
         permission: GRANT

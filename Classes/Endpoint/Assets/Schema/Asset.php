@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Neos\Api\Endpoint\Assets\Schema;
 
+use Neos\Api\Endpoint\AssetTags\Schema\AssetTagReferenceList;
 use Neos\Flow\Persistence\PersistenceManagerInterface;
 use Neos\JsonSchema\ProvidesSchema;
 use Neos\JsonSchema\Schema;
@@ -90,10 +91,7 @@ final readonly class Asset implements ProvidesSchema
             $local?->getTitle(),
             $local?->getCaption(),
             $local?->getCopyrightNotice(),
-            $local !== null ? new AssetTagReferenceList(...array_map(
-                static fn (Model\Tag $tag) => AssetTagReference::from($tag, $persistenceManager),
-                self::sorted($local->getTags()->toArray(), static fn (Model\Tag $tag) => $tag->getLabel()),
-            )) : null,
+            $local !== null ? AssetTagReferenceList::of($local->getTags(), $persistenceManager) : null,
             $local !== null ? new AssetCollectionReferenceList(...array_map(
                 static fn (Model\AssetCollection $assetCollection) => AssetCollectionReference::from($assetCollection, $persistenceManager),
                 self::sorted($local->getAssetCollections()->toArray(), static fn (Model\AssetCollection $assetCollection) => $assetCollection->getTitle()),

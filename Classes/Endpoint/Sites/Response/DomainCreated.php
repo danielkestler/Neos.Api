@@ -3,44 +3,46 @@ declare(strict_types=1);
 
 namespace Neos\Api\Endpoint\Sites\Response;
 
-use Neos\Api\Endpoint\Sites\Schema\Site;
+use Neos\Api\Endpoint\Sites\Schema\Domain;
+use Neos\Api\Shared\Response\Created;
 use Neos\OpenApi\Binding\TypeReference;
-use Neos\OpenApi\Response\ApiResponse;
-use Neos\OpenApi\Support\HttpStatusCode;
-use Neos\OpenApi\Support\MediaTypeRange;
+use Neos\OpenApi\Response\ApiResponseWithHeaders;
 
 /**
- * A 201 with the site the new domain was added to
+ * A 201 with the new domain and where to find it
  */
-final readonly class DomainCreated implements ApiResponse
+final readonly class DomainCreated implements ApiResponseWithHeaders
 {
-    public function __construct(
-        private Site $site,
-    ) {
-    }
+    use Created;
 
-    public static function statusCode(): HttpStatusCode
-    {
-        return HttpStatusCode::fromInteger(201);
+    public function __construct(
+        private Domain $domain,
+    ) {
     }
 
     public static function description(): string
     {
-        return 'The domain was added, the body is the site with it';
+        return 'The domain was added to the site';
+    }
+
+    public static function locationDescription(): string
+    {
+        return 'The URI of the new domain, relative to the request URI';
     }
 
     public static function bodyType(): TypeReference
     {
-        return TypeReference::of(Site::class);
+        return TypeReference::of(Domain::class);
     }
 
-    public static function contentType(): MediaTypeRange
+    public function body(): Domain
     {
-        return MediaTypeRange::fromString('application/json');
+        return $this->domain;
     }
 
-    public function body(): Site
+    public function headers(): array
     {
-        return $this->site;
+        // resolved against POST …/sites/{siteNodeName}/domains, this is …/domains/{domainId}
+        return ['Location' => 'domains/' . $this->domain->id->value];
     }
 }

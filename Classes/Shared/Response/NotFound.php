@@ -24,6 +24,11 @@ final readonly class NotFound implements ApiResponse
         return new self(ProblemDocument::create(self::statusCode(), 'Not found', $detail));
     }
 
+    public static function contentRepository(string $contentRepositoryId): self
+    {
+        return self::because(sprintf('There is no content repository with the ID %s', $contentRepositoryId));
+    }
+
     public static function statusCode(): HttpStatusCode
     {
         return HttpStatusCode::fromInteger(404);

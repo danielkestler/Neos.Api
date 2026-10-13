@@ -23,7 +23,7 @@ final readonly class WorkspaceCreate implements ProvidesSchema
      * @param WorkspaceName|null $baseWorkspaceName the workspace changes are published to, one the account may read, live if left out
      * @param string|null $title the title Neos shows, trimmed, 1 to 200 letters, digits, spaces and punctuation. Required for a shared workspace, the user's name for a personal one if left out
      * @param string|null $description up to 500 letters, digits, spaces and punctuation, empty if left out
-     * @param WorkspaceVisibility|null $visibility only for a shared workspace, shared if left out
+     * @param WorkspaceVisibility|null $visibility only for a shared workspace, public if left out
      * @param WorkspaceName|null $name the name of the new workspace, unique in the content repository. If left out, derived from the title (shared) or the user's name (personal) as Neos does, with a number appended if it's taken
      */
     public function __construct(
@@ -43,7 +43,7 @@ final readonly class WorkspaceCreate implements ProvidesSchema
 
     public function visibility(): WorkspaceVisibility
     {
-        return $this->visibility ?? WorkspaceVisibility::SHARED;
+        return $this->visibility ?? WorkspaceVisibility::PUBLIC;
     }
 
     public function baseWorkspaceName(): WorkspaceName

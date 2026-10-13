@@ -129,13 +129,19 @@ final readonly class PropertyValues
     }
 
     /**
-     * As the content repository serializes dates (RFC 3339), with or without milliseconds
+     * As the content repository serializes dates (RFC 3339), with or without milliseconds. Impossible dates are null,
+     * PHP would roll them over (2026-02-31 becomes 2026-03-03) with only a warning
      */
     private static function date(string $value): ?\DateTimeImmutable
     {
-        return \DateTimeImmutable::createFromFormat(\DATE_RFC3339, $value)
-            ?: \DateTimeImmutable::createFromFormat(\DATE_RFC3339_EXTENDED, $value)
-            ?: null;
+        foreach ([\DATE_RFC3339, \DATE_RFC3339_EXTENDED] as $format) {
+            $date = \DateTimeImmutable::createFromFormat($format, $value);
+            $errors = \DateTimeImmutable::getLastErrors();
+            if ($date !== false && ($errors === false || $errors['warning_count'] === 0)) {
+                return $date;
+            }
+        }
+        return null;
     }
 
     /**

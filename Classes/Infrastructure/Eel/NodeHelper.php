@@ -4,19 +4,18 @@ declare(strict_types=1);
 namespace Neos\Api\Infrastructure\Eel;
 
 use Neos\Api\Infrastructure\ContentRepository\NodeSerializer;
+use Neos\Api\Infrastructure\ContentRepository\NodeTypeUi;
 use Neos\Api\Infrastructure\I18n\LabelTranslator;
 use Neos\Api\Shared\Schema\AcceptLanguage;
 use Neos\ContentRepository\Core\NodeType\NodeType;
 use Neos\ContentRepository\Core\Projection\ContentGraph\Filter\CountChildNodesFilter;
 use Neos\ContentRepository\Core\Projection\ContentGraph\Filter\FindChildNodesFilter;
 use Neos\ContentRepository\Core\Projection\ContentGraph\Node;
-use Neos\ContentRepository\Core\Projection\ContentGraph\Reference;
 use Neos\ContentRepositoryRegistry\ContentRepositoryRegistry;
 use Neos\Eel\ProtectedContextAwareInterface;
 use Neos\Flow\Annotations as Flow;
 use Neos\Flow\Mvc\ActionRequest;
 use Neos\Neos\Domain\SubtreeTagging\NeosSubtreeTag;
-use Neos\Neos\Service\IconNameMappingService;
 
 /**
  * Neos.Api.Node in Fusion: what views need about a node beyond Neos.Node, e.g. for trees of an editing UI
@@ -33,7 +32,7 @@ final class NodeHelper implements ProtectedContextAwareInterface
     protected NodeSerializer $nodeSerializer;
 
     #[Flow\Inject]
-    protected IconNameMappingService $iconNameMappingService;
+    protected NodeTypeUi $nodeTypeUi;
 
     #[Flow\Inject]
     protected LabelTranslator $labelTranslator;
@@ -77,15 +76,13 @@ final class NodeHelper implements ProtectedContextAwareInterface
     }
 
     /**
-     * The references the node type declares, each with the aggregate ids of the referenced nodes in their order,
-     * an empty list if there are none. An object, so a node without references encodes as {}, not []
+     * The references the node type declares, each with the referenced nodes in their order as Node.references of the
+     * nodes endpoint has them, {"nodeAggregateId": "…", "properties": {…}}, an empty list if there are none. An
+     * object, so a node without references encodes as {}, not []
      */
     public function references(Node $node): \stdClass
     {
-        return (object)array_map(
-            static fn (array $references) => array_map(static fn (Reference $reference) => $reference->node->aggregateId->value, $references),
-            $this->nodeSerializer->references($node),
-        );
+        return (object)$this->nodeSerializer->references($node);
     }
 
     /**
@@ -101,7 +98,7 @@ final class NodeHelper implements ProtectedContextAwareInterface
      */
     public function isHidden(Node $node): bool
     {
-        return $node->tags->withoutInherited()->contain(NeosSubtreeTag::disabled());
+        return $this->nodeSerializer->isHidden($node);
     }
 
     /**
@@ -109,7 +106,7 @@ final class NodeHelper implements ProtectedContextAwareInterface
      */
     public function isHiddenByAncestor(Node $node): bool
     {
-        return $node->tags->onlyInherited()->contain(NeosSubtreeTag::disabled());
+        return $this->nodeSerializer->isHiddenByAncestor($node);
     }
 
     /**
@@ -127,7 +124,7 @@ final class NodeHelper implements ProtectedContextAwareInterface
      */
     public function isShineThrough(Node $node): bool
     {
-        return !$node->dimensionSpacePoint->equals($node->originDimensionSpacePoint);
+        return $this->nodeSerializer->isShineThrough($node);
     }
 
     /**
@@ -135,34 +132,33 @@ final class NodeHelper implements ProtectedContextAwareInterface
      */
     public function timestamps(Node $node): array
     {
-        return [
-            'created' => $node->timestamps->created->format(\DateTimeInterface::ATOM),
-            'lastModified' => $node->timestamps->lastModified?->format(\DateTimeInterface::ATOM),
-            'originalCreated' => $node->timestamps->originalCreated->format(\DateTimeInterface::ATOM),
-            'originalLastModified' => $node->timestamps->originalLastModified?->format(\DateTimeInterface::ATOM),
-        ];
+        return $this->nodeSerializer->timestamps($node);
     }
 
     /**
-     * The node type's ui.icon as a Font Awesome class, legacy "icon-*" names converted as in the Neos UI
+     * The node type's ui.icon as Font Awesome classes, legacy names ("file", "icon-file") mapped as in the Neos UI and
+     * the node types endpoint
      */
     public function nodeTypeIcon(Node $node): ?string
     {
-        $icon = $this->nodeType($node)?->getConfiguration('ui.icon');
-        return is_string($icon) && $icon !== '' ? $this->iconNameMappingService->convert($icon) : null;
+        $nodeType = $this->nodeType($node);
+        return $nodeType !== null ? $this->nodeTypeUi->icon($nodeType) : null;
     }
 
     /**
-     * The node type's ui.label, translated to the Accept-Language of the request as all labels of the API
+     * The node type's ui.label, translated to the Accept-Language of the request as all labels of the API, its name
+     * if it has none as in the node types endpoint. Null if the node type doesn't exist anymore
      *
      * @param ActionRequest $request the Fusion global request
      */
     public function nodeTypeLabel(Node $node, ActionRequest $request): ?string
     {
+        $nodeType = $this->nodeType($node);
+        if ($nodeType === null) {
+            return null;
+        }
         $acceptLanguage = $request->getHttpRequest()->getHeaderLine('Accept-Language');
-        return $this->labelTranslator
-            ->forAcceptLanguage($acceptLanguage !== '' ? AcceptLanguage::fromString($acceptLanguage) : null)
-            ->label($this->nodeType($node)?->getLabel());
+        return $this->nodeTypeUi->label($nodeType, $this->labelTranslator->forAcceptLanguage($acceptLanguage !== '' ? AcceptLanguage::fromString($acceptLanguage) : null));
     }
 
     public function allowsCallOfMethod($methodName): bool

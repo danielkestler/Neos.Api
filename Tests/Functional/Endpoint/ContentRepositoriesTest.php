@@ -5,7 +5,9 @@ namespace Neos\Api\Tests\Functional\Endpoint;
 
 use Doctrine\DBAL\Platforms\AbstractMySQLPlatform;
 use Doctrine\ORM\EntityManagerInterface;
+use Neos\ContentRepositoryRegistry\ContentRepositoryRegistry;
 use Neos\Neos\Domain\Service\UserService;
+use Neos\Utility\ObjectAccess;
 use PHPUnit\Framework\Attributes\Test;
 
 class ContentRepositoriesTest extends EndpointTestCase
@@ -60,6 +62,29 @@ class ContentRepositoriesTest extends EndpointTestCase
         self::assertSame('application/problem+json', $response->getHeaderLine('Content-Type'));
         // with the header, which is an optional parameter
         self::assertSame(404, $this->get('/api/cr/unknown', $this->token('editor-machine', 'contentrepositories.read'), ['Accept-Language' => 'de'])->getStatusCode());
+    }
+
+    #[Test]
+    public function contentRepositoriesThatCantBeBuiltAreLeftOut(): void
+    {
+        $registry = $this->objectManager->get(ContentRepositoryRegistry::class);
+        $settings = ObjectAccess::getProperty($registry, 'settings', true);
+        $broken = $settings;
+        $broken['contentRepositories']['broken'] = ['preset' => 'nonexistent'];
+        $registry->injectSettings($broken);
+        try {
+            $response = $this->get('/api/cr/broken', $this->token('editor-machine', 'contentrepositories.read'));
+            self::assertSame(404, $response->getStatusCode(), (string)$response->getBody());
+            self::assertSame('There is no content repository with the ID broken', self::json($response)['detail']);
+
+            $this->requireContentRepository();
+            $response = $this->get('/api/cr', $this->token('editor-machine', 'contentrepositories.read'));
+            self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
+            self::assertNotContains('broken', array_column(self::json($response)['data'], 'id'));
+            self::assertContains('default', array_column(self::json($response)['data'], 'id'));
+        } finally {
+            $registry->injectSettings($settings);
+        }
     }
 
     #[Test]

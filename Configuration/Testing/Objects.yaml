@@ -1,0 +1,7 @@
+# Neos.Neos' Testing configuration gives the soft removal garbage collector the FakeClock of
+# Neos.ContentRepository.TestSuite, which isn't installed: every WorkspaceService and WorkspacePublishingService then
+# fails with "broken" from Flow's ObjectManager
+Neos\Neos\Domain\SubtreeTagging\SoftRemoval\SoftRemovalGarbageCollector:
+  arguments:
+    4:
+      object: 'Neos\ContentRepositoryRegistry\Factory\Clock\SystemClock'

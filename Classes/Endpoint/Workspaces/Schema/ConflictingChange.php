@@ -4,14 +4,10 @@ declare(strict_types=1);
 namespace Neos\Api\Endpoint\Workspaces\Schema;
 
 use Neos\Api\Endpoint\Nodes\Schema\NodeAggregateId;
-use Neos\ContentRepository\Core\ContentRepository;
+use Neos\Api\Endpoint\Workspaces\ChangeLocator;
 use Neos\ContentRepository\Core\Feature\WorkspaceRebase\ConflictingEvent;
-use Neos\ContentRepository\Core\Projection\ContentGraph\Filter\FindClosestNodeFilter;
-use Neos\ContentRepository\Core\Projection\ContentGraph\VisibilityConstraints;
-use Neos\ContentRepository\Core\SharedModel;
 use Neos\JsonSchema\ProvidesSchema;
 use Neos\JsonSchema\Schema;
-use Neos\Neos\Domain\Service\NodeTypeNameFactory;
 use Neos\Schematic\Discovery\AutoDiscoveringSchema;
 
 /**
@@ -36,33 +32,20 @@ final readonly class ConflictingChange implements ProvidesSchema
     }
 
     /**
-     * The document and site are looked up in the workspace (where the node still is), in any dimension space point
-     * it covers, without visibility constraints: a conflict about a hidden or removed node must still be grouped
+     * The document and site are located as for the changes (ChangeLocator): in the workspace, where the node still
+     * is, in any dimension space point it covers, without visibility constraints, so a conflict about a hidden or
+     * removed node is still grouped
      */
-    public static function from(ConflictingEvent $conflictingEvent, ContentRepository $contentRepository, SharedModel\Workspace\WorkspaceName $workspaceName): self
+    public static function from(ConflictingEvent $conflictingEvent, ChangeLocator $locator): self
     {
         $nodeAggregateId = $conflictingEvent->getAffectedNodeAggregateId();
-        $document = null;
-        $site = null;
-        if ($nodeAggregateId !== null) {
-            try {
-                $contentGraph = $contentRepository->getContentGraph($workspaceName);
-                foreach ($contentGraph->findNodeAggregateById($nodeAggregateId)?->coveredDimensionSpacePoints ?? [] as $dimensionSpacePoint) {
-                    $subgraph = $contentGraph->getSubgraph($dimensionSpacePoint, VisibilityConstraints::createEmpty());
-                    $document = $subgraph->findClosestNode($nodeAggregateId, FindClosestNodeFilter::create(nodeTypes: NodeTypeNameFactory::NAME_DOCUMENT));
-                    $site = $subgraph->findClosestNode($nodeAggregateId, FindClosestNodeFilter::create(nodeTypes: NodeTypeNameFactory::NAME_SITE));
-                    break;
-                }
-            } catch (\Exception) {
-                // the conflict is still worth reporting without them
-            }
-        }
+        $location = $nodeAggregateId !== null ? $locator->locate($nodeAggregateId, null) : null;
         $exception = $conflictingEvent->getException();
         $shortName = substr(strrchr('\\' . $exception::class, '\\') ?: '', 1);
         return new self(
             $nodeAggregateId !== null ? NodeAggregateId::fromString($nodeAggregateId->value) : null,
-            $document !== null ? NodeAggregateId::fromString($document->aggregateId->value) : null,
-            $site !== null ? NodeAggregateId::fromString($site->aggregateId->value) : null,
+            isset($location['document']) ? NodeAggregateId::fromString($location['document']->value) : null,
+            isset($location['site']) ? NodeAggregateId::fromString($location['site']->value) : null,
             $shortName === 'NodeAggregateCurrentlyDoesNotExist' ? 'node_has_been_deleted' : null,
             $exception->getMessage(),
         );

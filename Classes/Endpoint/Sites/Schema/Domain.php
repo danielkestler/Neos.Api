@@ -18,7 +18,7 @@ final readonly class Domain implements ProvidesSchema
      * @param UriScheme|null $scheme null if the domain works with the scheme of the request
      * @param Port|null $port null if the domain works with the port of the request
      * @param bool $isPrimary whether it is the site's explicit primary domain
-     * @param string $url the domain as a URL, e.g. https://www.example.com
+     * @param string $url the domain as Neos writes it, [scheme://]hostname[:port], e.g. https://www.example.com, or example.com:8080 for a domain without a scheme (it works with the scheme of the request): a URL only if the domain has a scheme
      */
     public function __construct(
         public DomainId $id,

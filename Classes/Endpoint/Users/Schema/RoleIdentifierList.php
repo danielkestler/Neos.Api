@@ -24,6 +24,14 @@ final readonly class RoleIdentifierList implements ProvidesSchema, \IteratorAggr
         $this->roles = array_values($roles);
     }
 
+    /**
+     * @return list<string>
+     */
+    public function identifiers(): array
+    {
+        return array_map(static fn (RoleIdentifier $role) => $role->value, $this->roles);
+    }
+
     public static function schema(): Schema
     {
         static $schema = null;

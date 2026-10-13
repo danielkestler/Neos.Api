@@ -59,6 +59,12 @@ class DataSourcesTest extends EndpointTestCase
 
         self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
         self::assertSame(['parentCategory' => 'news', 'tags' => ['a', 'b']], self::json($response)['data']['arguments']);
+
+        $parameters = array_column(self::json($this->get('/api/openapi.json', null))['paths']['/datasources/{dataSourceId}']['get']['parameters'], null, 'name');
+        self::assertSame('deepObject', $parameters['arguments']['style'] ?? null);
+        // the shared component, described by the operation
+        self::assertContains(['$ref' => '#/components/schemas/Arguments'], $parameters['arguments']['schema']['anyOf'] ?? []);
+        self::assertStringContainsString('dataSourceAdditionalData', $parameters['arguments']['description']);
     }
 
     #[Test]

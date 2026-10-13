@@ -10,7 +10,7 @@ use Neos\JsonSchema\Schema;
 use Neos\JsonSchema\Support\ObjectProperties;
 
 /**
- * The nodes below a node: ?filterByHierarchy[type]=parent&filterByHierarchy[nodeAggregateId]=…
+ * The nodes below a node: ?filterByHierarchy[type]=childOf&filterByHierarchy[nodeAggregateId]=…
  */
 final readonly class HierarchyFilter implements ProvidesSchema
 {
@@ -24,7 +24,7 @@ final readonly class HierarchyFilter implements ProvidesSchema
     {
         static $schema = null;
         return $schema ??= ObjectSchema::create(
-            description: 'The nodes below the node with the aggregate id: with type parent its direct child nodes (in their order unless sorted), with type ancestor all nodes below it',
+            description: 'The nodes below the node with the aggregate id: with type childOf its direct child nodes (in their order unless sorted), with type descendantOf all nodes below it',
             properties: ObjectProperties::create(
                 type: HierarchyFilterType::schema(),
                 nodeAggregateId: NodeAggregateId::schema(),

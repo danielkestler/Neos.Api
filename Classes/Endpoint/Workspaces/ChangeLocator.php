@@ -5,8 +5,6 @@ namespace Neos\Api\Endpoint\Workspaces;
 
 use Neos\ContentRepository\Core\DimensionSpace\DimensionSpacePoint;
 use Neos\ContentRepository\Core\DimensionSpace\OriginDimensionSpacePoint;
-use Neos\ContentRepository\Core\Feature\Security\Exception\AccessDenied;
-use Neos\ContentRepository\Core\Projection\ContentGraph\ContentGraphInterface;
 use Neos\ContentRepository\Core\Projection\ContentGraph\ContentSubgraphInterface;
 use Neos\ContentRepository\Core\Projection\ContentGraph\Filter\FindClosestNodeFilter;
 use Neos\ContentRepository\Core\Projection\ContentGraph\VisibilityConstraints;
@@ -23,11 +21,6 @@ use Neos\Neos\Domain\Service\NodeTypeNameFactory;
 #[Flow\Proxy(false)]
 final class ChangeLocator
 {
-    /**
-     * @var array{workspace?: ContentGraphInterface|null, base?: ContentGraphInterface|null}
-     */
-    private array $contentGraphs = [];
-
     /**
      * @var array<string, ContentSubgraphInterface> by base or workspace and dimension space point hash
      */
@@ -69,7 +62,7 @@ final class ChangeLocator
 
     private function anyCoveredDimensionSpacePoint(NodeAggregateId $nodeAggregateId): DimensionSpacePoint|null
     {
-        foreach ([$this->contentGraph(false), $this->contentGraph(true)] as $contentGraph) {
+        foreach ([$this->workspace->contentGraph(), $this->workspace->contentGraph(base: true)] as $contentGraph) {
             foreach ($contentGraph?->findNodeAggregateById($nodeAggregateId)?->coveredDimensionSpacePoints ?? [] as $dimensionSpacePoint) {
                 return $dimensionSpacePoint;
             }
@@ -79,29 +72,11 @@ final class ChangeLocator
 
     private function closest(NodeAggregateId $nodeAggregateId, DimensionSpacePoint $dimensionSpacePoint, string $nodeType, bool $inBase): NodeAggregateId|null
     {
-        $contentGraph = $this->contentGraph($inBase);
+        $contentGraph = $this->workspace->contentGraph($inBase);
         if ($contentGraph === null) {
             return null;
         }
         $subgraph = $this->subgraphs[($inBase ? 'base|' : 'workspace|') . $dimensionSpacePoint->hash] ??= $contentGraph->getSubgraph($dimensionSpacePoint, VisibilityConstraints::createEmpty());
         return $subgraph->findClosestNode($nodeAggregateId, FindClosestNodeFilter::create(nodeTypes: $nodeType))?->aggregateId;
-    }
-
-    /**
-     * The workspace's or its base's content graph, null for the base of a root workspace or one the content
-     * repository won't let read
-     */
-    private function contentGraph(bool $base): ContentGraphInterface|null
-    {
-        $key = $base ? 'base' : 'workspace';
-        if (!array_key_exists($key, $this->contentGraphs)) {
-            $workspaceName = $base ? $this->workspace->workspace->baseWorkspaceName : $this->workspace->workspace->workspaceName;
-            try {
-                $this->contentGraphs[$key] = $workspaceName !== null ? $this->workspace->contentRepository->getContentGraph($workspaceName) : null;
-            } catch (AccessDenied) {
-                $this->contentGraphs[$key] = null;
-            }
-        }
-        return $this->contentGraphs[$key];
     }
 }

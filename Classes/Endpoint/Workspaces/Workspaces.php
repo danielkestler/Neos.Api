@@ -14,12 +14,8 @@ use Neos\Api\Endpoint\Workspaces\RequestBody\WorkspaceRebase;
 use Neos\Api\Endpoint\Workspaces\RequestBody\WorkspaceUpdate;
 use Neos\Api\Endpoint\Workspaces\Response\WorkspaceConflict;
 use Neos\Api\Endpoint\Workspaces\Response\WorkspaceCreated;
-use Neos\Api\Endpoint\Workspaces\Schema\Change;
 use Neos\Api\Endpoint\Workspaces\Schema\ContentStreamId;
 use Neos\Api\Endpoint\Workspaces\Schema\ContentStreamPosition;
-use Neos\Api\Endpoint\Workspaces\Schema\ChangeList;
-use Neos\Api\Endpoint\Workspaces\Schema\Event;
-use Neos\Api\Endpoint\Workspaces\Schema\EventList;
 use Neos\Api\Endpoint\Workspaces\Schema\EventListingMeta;
 use Neos\Api\Endpoint\Workspaces\Schema\DiscardingResult;
 use Neos\Api\Endpoint\Workspaces\Schema\DocumentAggregateIdList;
@@ -39,8 +35,8 @@ use Neos\Api\Endpoint\Workspaces\Schema\WorkspaceRoleAssignmentListing;
 use Neos\Api\Endpoint\Workspaces\Schema\WorkspaceRoleSubjectId;
 use Neos\Api\Endpoint\Workspaces\Schema\WorkspaceRoleSubjectType;
 use Neos\Api\Infrastructure\ContentRepository\ContentRepositoryFinder;
+use Neos\Api\Infrastructure\ContentRepository\ContentStreamEvents;
 use Neos\Api\Infrastructure\ContentRepository\ContentStreamEventsFactory;
-use Neos\Api\Security\AccountPrivileges;
 use Neos\Api\Security\ApiAuthContextProvider;
 use Neos\Api\Security\ApiCaller;
 use Neos\Api\Security\ApiScopes;
@@ -53,13 +49,11 @@ use Neos\Api\Shared\Response\Conflict;
 use Neos\Api\Shared\Response\Forbidden;
 use Neos\Api\Shared\Response\NotFound;
 use Neos\Api\Shared\Response\UnprocessableContent;
-use Neos\Api\Shared\Schema\CursorListingLinks;
-use Neos\Api\Shared\Schema\ListingLinks;
-use Neos\Api\Shared\Schema\ListingMeta;
 use Neos\ContentRepository\Core\Feature\Security\Exception\AccessDenied;
 use Neos\ContentRepository\Core\Feature\WorkspaceCommandSkipped;
 use Neos\ContentRepository\Core\Feature\WorkspaceCreation\Exception\BaseWorkspaceDoesNotExist;
 use Neos\ContentRepository\Core\Feature\WorkspaceCreation\Exception\WorkspaceAlreadyExists;
+use Neos\ContentRepository\Core\ContentRepository;
 use Neos\ContentRepository\Core\Feature\WorkspaceModification\Exception\BaseWorkspaceEqualsWorkspaceException;
 use Neos\ContentRepository\Core\Feature\WorkspaceModification\Exception\CircularRelationBetweenWorkspacesException;
 use Neos\ContentRepository\Core\Feature\WorkspaceRebase\Exception\PartialWorkspaceRebaseFailed;
@@ -68,8 +62,8 @@ use Neos\ContentRepository\Core\NodeType\NodeTypeName;
 use Neos\ContentRepository\Core\SharedModel\Exception\NodeAggregateCurrentlyDoesNotExist;
 use Neos\ContentRepository\Core\SharedModel;
 use Neos\ContentRepository\Core\SharedModel\Exception\WorkspaceContainsPublishableChanges;
+use Neos\ContentRepository\Core\SharedModel\Exception\WorkspaceDoesNotExist;
 use Neos\ContentRepositoryRegistry\ContentRepositoryRegistry;
-use Neos\EventStore\Model\EventEnvelope;
 use Neos\Neos\Domain\Model;
 use Neos\Neos\Domain\Service\NodeTypeNameFactory;
 use Neos\Neos\Domain\Service\WorkspacePublishingService;
@@ -77,12 +71,11 @@ use Neos\Neos\Domain\Service\WorkspaceService;
 use Neos\Neos\Fusion\Cache\CacheFlushingStrategy;
 use Neos\Neos\Fusion\Cache\ContentCacheFlusher;
 use Neos\Neos\Fusion\Cache\FlushWorkspaceRequest;
-use Neos\Neos\Security\Authorization\ContentRepositoryAuthorizationService;
+use Neos\Flow\Security\Account;
 use Neos\OpenApi\Attributes\AuthContext;
 use Neos\OpenApi\Attributes\Operation;
 use Neos\OpenApi\Attributes\Parameter;
 use Neos\OpenApi\Attributes\RequestBody;
-use Neos\Party\Domain\Service\PartyService;
 use Psr\Http\Message\ServerRequestInterface;
 
 /**
@@ -97,9 +90,6 @@ final readonly class Workspaces
         private WorkspaceResolver $workspaceResolver,
         private WorkspacePublishingService $workspacePublishingService,
         private WorkspaceService $workspaceService,
-        private ContentRepositoryAuthorizationService $contentRepositoryAuthorizationService,
-        private AccountPrivileges $accountPrivileges,
-        private PartyService $partyService,
         private ContentCacheFlusher $contentCacheFlusher,
         private ChangeDiffer $changeDiffer,
         private WorkspaceRoleSubjects $workspaceRoleSubjects,
@@ -122,15 +112,11 @@ final readonly class Workspaces
     ): WorkspaceListing|NotFound {
         $contentRepository = $this->contentRepositoryFinder->find($contentRepositoryId->toContentRepositoryId());
         if ($contentRepository === null) {
-            return NotFound::because(sprintf('There is no content repository with the ID %s', $contentRepositoryId->value));
+            return NotFound::contentRepository($contentRepositoryId->value);
         }
-        // the token's account alone, as for its privileges, not Flow's security context
-        $roles = $this->accountPrivileges->rolesOf($caller->account);
-        $user = $this->partyService->getAssignedPartyOfAccount($caller->account);
-        $userId = $user instanceof Model\User ? $user->getId() : null;
         $workspaces = [];
         foreach ($contentRepository->findWorkspaces() as $workspace) {
-            $permissions = $this->contentRepositoryAuthorizationService->getWorkspacePermissions($contentRepository->id, $workspace->workspaceName, $roles, $userId);
+            $permissions = $this->workspaceResolver->permissionsOf($contentRepository->id, $workspace->workspaceName, $caller->account);
             if (!$permissions->read) {
                 continue;
             }
@@ -170,7 +156,7 @@ final readonly class Workspaces
         path: '/cr/{contentRepositoryId}/workspaces',
         method: 'POST',
         summary: 'Create a workspace',
-        description: 'Creates a workspace on the base workspace (live if left out, else one the account may read, else a 422) with Neos\' WorkspaceService, as the Neos workspace module does. A shared workspace (the default) needs a title, its name is derived from it if left out, and its visibility decides the role assignments: shared makes the caller its manager and every editor a collaborator, private only the caller its manager. A personal workspace is the caller\'s own, as Neos creates it on the first login: titled and named after the user if left out, without role assignments, and only one per user and content repository, a second one is a 409 that names the first. Root and unknown workspaces can\'t be created, a visibility for a personal workspace, an empty title or an account without a Neos user are 422s, a name that is taken a 409. The response is the new workspace as getWorkspace returns it.',
+        description: 'Creates a workspace on the base workspace (live if left out, else one the account may read, else a 422) with Neos\' WorkspaceService, as the Neos workspace module does. A shared workspace (the default) needs a title, its name is derived from it if left out, and its visibility decides the role assignments: public (the default) makes the caller its manager and every editor a collaborator, private only the caller its manager. A personal workspace is the caller\'s own, as Neos creates it on the first login: titled and named after the user if left out, without role assignments, and only one per user and content repository, a second one is a 409 that names the first. Root and unknown workspaces can\'t be created, a visibility for a personal workspace, an empty title or an account without a Neos user are 422s, a name that is taken a 409. An unknown content repository is a 404 before anything else. The response is the new workspace as getWorkspace returns it.',
         operationId: 'createWorkspace',
         security: [
             ApiAuthContextProvider::SCOPES => [ApiScopes::WORKSPACES_CREATE],
@@ -181,6 +167,10 @@ final readonly class Workspaces
         #[RequestBody(description: 'The workspace')] WorkspaceCreate $newWorkspace,
         #[AuthContext] ApiCaller $caller,
     ): WorkspaceCreated|NotFound|Forbidden|Conflict|UnprocessableContent {
+        $contentRepository = $this->contentRepositoryFinder->find($contentRepositoryId->toContentRepositoryId());
+        if ($contentRepository === null) {
+            return NotFound::contentRepository($contentRepositoryId->value);
+        }
         $classification = $newWorkspace->classification();
         if ($classification !== WorkspaceClassification::SHARED && $classification !== WorkspaceClassification::PERSONAL) {
             return UnprocessableContent::because(sprintf('Only shared and personal workspaces can be created, not %s ones', $classification->value));
@@ -202,27 +192,27 @@ final readonly class Workspaces
             return UnprocessableContent::because('A shared workspace needs a title');
         }
         // the creator of a shared workspace manages it, a personal one is the owner's: both need a Neos user
-        $user = $this->partyService->getAssignedPartyOfAccount($caller->account);
-        if (!$user instanceof Model\User) {
+        $user = $this->workspaceResolver->userOf($caller->account);
+        if ($user === null) {
             return UnprocessableContent::because('The account has no Neos user to create the workspace for');
-        }
-
-        $contentRepository = $this->contentRepositoryFinder->find($contentRepositoryId->toContentRepositoryId());
-        if ($contentRepository === null) {
-            return NotFound::because(sprintf('There is no content repository with the ID %s', $contentRepositoryId->value));
         }
         // in the body, not the path: a base the account may not read is unprocessable, as an unknown one
         $baseWorkspaceName = $newWorkspace->baseWorkspaceName();
-        if ($this->workspaceResolver->resolve($contentRepositoryId, $baseWorkspaceName, $caller->account) instanceof NotFound) {
+        if (!$this->isReadable($contentRepository, $baseWorkspaceName, $caller->account)) {
             return UnprocessableContent::because(sprintf('There is no workspace %s the account may read in the content repository %s', $baseWorkspaceName->value, $contentRepositoryId->value));
         }
         if ($classification === WorkspaceClassification::PERSONAL) {
             // Neos allows one per user and content repository, found by its metadata
-            foreach ($contentRepository->findWorkspaces() as $workspace) {
-                $metadata = $this->workspaceService->getWorkspaceMetadata($contentRepository->id, $workspace->workspaceName);
-                if ($metadata->classification === Model\WorkspaceClassification::PERSONAL && $metadata->ownerUserId?->equals($user->getId())) {
-                    return Conflict::because(sprintf('The user has a personal workspace %s in the content repository %s already', $workspace->workspaceName->value, $contentRepositoryId->value));
+            try {
+                $personalWorkspace = $this->workspaceService->getPersonalWorkspaceForUser($contentRepository->id, $user->getId());
+                return Conflict::because(sprintf('The user has a personal workspace %s in the content repository %s already', $personalWorkspace->workspaceName->value, $contentRepositoryId->value));
+            } catch (WorkspaceDoesNotExist) {
+                // its metadata is left, createPersonalWorkspace() refuses it below
+            } catch (\RuntimeException $exception) {
+                if ($exception->getCode() !== 1718293801) {
+                    throw $exception;
                 }
+                // none yet
             }
             try {
                 // as Neos names a user's personal workspace, WorkspaceService::createPersonalWorkspaceForUserIfMissing()
@@ -352,11 +342,10 @@ final readonly class Workspaces
         $contentRepositoryId = $workspace->contentRepository->id;
         $workspaceName = $workspace->workspace->workspaceName;
         // never deletable, whoever asks
-        $classification = $this->workspaceService->getWorkspaceMetadata($contentRepositoryId, $workspaceName)->classification;
-        if ($workspace->workspace->isRootWorkspace() || $classification === Model\WorkspaceClassification::ROOT) {
+        if ($workspace->workspace->isRootWorkspace()) {
             return UnprocessableContent::because(sprintf('The workspace %s is a root workspace, which can\'t be deleted', $workspaceName->value));
         }
-        if ($classification === Model\WorkspaceClassification::PERSONAL) {
+        if ($this->workspaceService->getWorkspaceMetadata($contentRepositoryId, $workspaceName)->classification === Model\WorkspaceClassification::PERSONAL) {
             return UnprocessableContent::because(sprintf('The workspace %s is a personal workspace, which is deleted with its user only', $workspaceName->value));
         }
         if (!$workspace->permissions->manage) {
@@ -370,8 +359,13 @@ final readonly class Workspaces
         if ($workspace->workspace->hasPublishableChanges() && !$force) {
             return Conflict::because(sprintf('The workspace %s has unpublished changes, publish or discard them first, or delete it with force=true to discard them with it', $workspaceName->value));
         }
-        // removes the content stream (and with it the changes), the metadata and the role assignments
-        $this->workspaceService->deleteWorkspace($contentRepositoryId, $workspaceName);
+        try {
+            // removes the content stream (and with it the changes), the metadata and the role assignments
+            $this->workspaceService->deleteWorkspace($contentRepositoryId, $workspaceName);
+        } catch (AccessDenied) {
+            // the content repository checks Flow's security context, which may know other roles than the token's account
+            return Forbidden::because(sprintf('You may not delete the workspace %s', $workspaceName->value));
+        }
         return null;
     }
 
@@ -380,13 +374,10 @@ final readonly class Workspaces
      */
     private function namesOf(SharedModel\ContentRepository\ContentRepositoryId $contentRepositoryId, SharedModel\Workspace\Workspaces $workspaces, ApiCaller $caller): string
     {
-        $roles = $this->accountPrivileges->rolesOf($caller->account);
-        $user = $this->partyService->getAssignedPartyOfAccount($caller->account);
-        $userId = $user instanceof Model\User ? $user->getId() : null;
         $names = [];
         $others = 0;
         foreach ($workspaces as $workspace) {
-            if ($this->contentRepositoryAuthorizationService->getWorkspacePermissions($contentRepositoryId, $workspace->workspaceName, $roles, $userId)->read) {
+            if ($this->workspaceResolver->permissionsOf($contentRepositoryId, $workspace->workspaceName, $caller->account)->read) {
                 $names[] = $workspace->workspaceName->value;
             } else {
                 $others++;
@@ -397,6 +388,15 @@ final readonly class Workspaces
             $names[] = sprintf('%d other%s the account may not read', $others, $others === 1 ? '' : 's');
         }
         return implode(', ', $names);
+    }
+
+    /**
+     * Whether the workspace (one a request body names, so a 422 if not) exists and the token's account may read it
+     */
+    private function isReadable(ContentRepository $contentRepository, WorkspaceName $workspaceName, Account $account): bool
+    {
+        return $contentRepository->findWorkspaceByName($workspaceName->toWorkspaceName()) !== null
+            && $this->workspaceResolver->permissionsOf($contentRepository->id, $workspaceName->toWorkspaceName(), $account)->read;
     }
 
     #[Operation(
@@ -420,18 +420,18 @@ final readonly class Workspaces
             return $workspace;
         }
         // never, whoever asks
-        if ($workspace->workspace->baseWorkspaceName === null) {
+        if ($workspace->workspace->isRootWorkspace()) {
             return UnprocessableContent::because(sprintf('The workspace %s is a root workspace, it has no base to change', $workspaceName->value));
         }
         if (!$workspace->permissions->manage) {
             return Forbidden::because(sprintf('You may not manage the workspace %s', $workspaceName->value));
         }
         // the body names it, so it's a 422, not the 404 of the path
-        if ($this->workspaceResolver->resolve($contentRepositoryId, $change->baseWorkspaceName, $caller->account) instanceof NotFound) {
+        if (!$this->isReadable($workspace->contentRepository, $change->baseWorkspaceName, $caller->account)) {
             return UnprocessableContent::because(sprintf('There is no workspace %s in the content repository %s to base the workspace on', $change->baseWorkspaceName->value, $contentRepositoryId->value));
         }
         // the content repository would skip the command
-        if ($workspace->workspace->baseWorkspaceName->equals($change->baseWorkspaceName->toWorkspaceName())) {
+        if ($workspace->workspace->baseWorkspaceName?->equals($change->baseWorkspaceName->toWorkspaceName())) {
             return $this->workspaceOf($workspace);
         }
         try {
@@ -460,7 +460,7 @@ final readonly class Workspaces
         path: '/cr/{contentRepositoryId}/workspaces/{workspaceName}/publish',
         method: 'POST',
         summary: 'Publish the changes of a workspace',
-        description: 'Publishes the workspace\'s changes to its base workspace with Neos\' WorkspacePublishingService, as the Neos UI and workspace module do: all of them if the body is left out or empty, the ones in a site with siteAggregateId, or the ones in some documents with documentAggregateIds (each document with its content, not its child documents). Documents are published one after the other, the content repository has no command for several: ancestors first, as a new page needs its new parent in the base workspace. If one of them conflicts, the ones before it stay published, as in Neos\' workspace module. An outdated workspace is rebased on its base workspace first: if its changes conflict with the base\'s, or the selected changes can\'t be published without others they depend on, it is a 409 that lists the conflicting changes. The workspace must be one the account may read (else a 404 as an unknown one) and write to, as must be its base workspace (else a 403). A root workspace like live has no base to publish to: a 422, whoever asks. Both siteAggregateId and documentAggregateIds, an empty documentAggregateIds, and a site or document that is no such node in the workspace the account may read are 422s. The response counts the published changes as Neos does, 0 if there were none, and is the workspace afterwards.',
+        description: 'Publishes the workspace\'s changes to its base workspace with Neos\' WorkspacePublishingService, as the Neos UI and workspace module do: all of them if the body is left out or empty, the ones in a site with siteAggregateId, or the ones in some documents with documentAggregateIds (each document with its content, not its child documents). Documents are published one after the other, the content repository has no command for several: ancestors first, as a new page needs its new parent in the base workspace. If one of them conflicts, the ones before it stay published, as in Neos\' workspace module: the 409 lists them in completedDocumentAggregateIds and counts their changes in numberOfCompletedChanges. An outdated workspace is rebased on its base workspace first: if its changes conflict with the base\'s, or the selected changes can\'t be published without others they depend on, it is a 409 that lists the conflicting changes of nodes the account may read and counts the others (inaccessibleConflicts). A selected site or document removed meanwhile by another request is a 409 as well (title removed). The workspace must be one the account may read (else a 404 as an unknown one) and write to, as must be its base workspace (else a 403). A root workspace like live has no base to publish to: a 422, whoever asks. Both siteAggregateId and documentAggregateIds, an empty documentAggregateIds, and a site or document that is no such node in the workspace the account may read are 422s. The response counts the published changes as Neos does, 0 if there were none, and is the workspace afterwards.',
         operationId: 'publishWorkspace',
         security: [
             ApiAuthContextProvider::SCOPES => [ApiScopes::WORKSPACES_PUBLISH],
@@ -477,61 +477,30 @@ final readonly class Workspaces
             return $workspace;
         }
         // never, whoever asks
-        $baseWorkspaceName = $workspace->workspace->baseWorkspaceName;
-        if ($baseWorkspaceName === null) {
+        if ($workspace->workspace->isRootWorkspace()) {
             return UnprocessableContent::because(sprintf('The workspace %s is a root workspace, it has no base to publish to', $workspaceName->value));
         }
+        $baseWorkspaceName = $workspace->workspace->baseWorkspaceName->value;
         if (!$workspace->permissions->write) {
             return Forbidden::because(sprintf('You may not publish the workspace %s', $workspaceName->value));
         }
         // Neos' auth provider requires it as well, with Flow's security context: checked with the token's account first
-        if (!$this->mayWriteTo($workspace->contentRepository->id, $baseWorkspaceName, $caller)) {
-            return Forbidden::because(sprintf('You may not publish to the base workspace %s', $baseWorkspaceName->value));
+        if (!$this->workspaceResolver->permissionsOf($workspace->contentRepository->id, $workspace->workspace->baseWorkspaceName, $caller->account)->write) {
+            return Forbidden::because(sprintf('You may not publish to the base workspace %s', $baseWorkspaceName));
         }
         $scope = $this->changeScopeOf($workspace, $selection->siteAggregateId, $selection->documentAggregateIds);
         if ($scope instanceof UnprocessableContent) {
             return $scope;
         }
-
-        $crId = $workspace->contentRepository->id;
-        $name = $workspace->workspace->workspaceName;
-        $published = 0;
-        $publishedDocuments = [];
-        try {
-            if ($scope === null) {
-                $published = self::countUnlessSkipped(fn () => $this->workspacePublishingService->publishWorkspace($crId, $name)->numberOfPublishedChanges);
-            } elseif ($scope instanceof SharedModel\Node\NodeAggregateId) {
-                $published = self::countUnlessSkipped(fn () => $this->workspacePublishingService->publishChangesInSite($crId, $name, $scope)->numberOfPublishedChanges);
-            } else {
-                // ancestors first: a new page needs its new parent in the base workspace
-                foreach (DocumentAncestry::in($workspace->contentRepository->getContentGraph($name))->ancestorsFirst($scope) as $documentId) {
-                    $published += self::countUnlessSkipped(fn () => $this->workspacePublishingService->publishChangesInDocument($crId, $name, $documentId)->numberOfPublishedChanges);
-                    $publishedDocuments[] = $documentId->value;
-                }
-            }
-        } catch (AccessDenied) {
-            // Neos checks with Flow's security context, which may know other roles than the token's account
-            return Forbidden::because(sprintf('You may not publish the workspace %s to %s', $workspaceName->value, $baseWorkspaceName->value));
-        } catch (WorkspaceRebaseFailed|PartialWorkspaceRebaseFailed $exception) {
-            return WorkspaceConflict::of($exception, $workspace->contentRepository, $name, sprintf(
-                '%s%s',
-                $exception instanceof PartialWorkspaceRebaseFailed
-                    ? sprintf('The selected changes of the workspace %s can\'t be published without others they depend on, publish more of them or all', $workspaceName->value)
-                    : sprintf('The changes of the workspace %s conflict with its base workspace %s, which changed meanwhile', $workspaceName->value, $baseWorkspaceName->value),
-                $publishedDocuments !== [] ? sprintf('. The documents %s were published before (%d changes)', implode(', ', $publishedDocuments), $published) : '',
-            ));
-        } catch (NodeAggregateCurrentlyDoesNotExist) {
-            // checked before, removed meanwhile
-            return UnprocessableContent::because(sprintf('A selected site or document no longer exists in the workspace %s', $workspaceName->value));
-        }
-        return new PublishingResult($published, $this->workspaceOf($workspace));
+        $published = $this->publishOrDiscard($workspace, $scope, true);
+        return is_int($published) ? new PublishingResult($published, $this->workspaceOf($workspace)) : $published;
     }
 
     #[Operation(
         path: '/cr/{contentRepositoryId}/workspaces/{workspaceName}/discard',
         method: 'POST',
         summary: 'Discard the changes of a workspace',
-        description: 'Discards the workspace\'s unpublished changes with Neos\' WorkspacePublishingService, as the Neos UI and workspace module do, they are lost then: all of them if the body is left out or empty, the ones in a site with siteAggregateId, or the ones in some documents with documentAggregateIds (each document with its content, not its child documents). Documents are discarded one after the other, the content repository has no command for several: descendants first, as discarding a new page first would leave its new child pages without a parent. If one of them conflicts, the ones before it stay discarded, as in Neos\' workspace module. Discarding some changes replays the others on the base workspace: if they conflict with it (an outdated workspace) or depend on the discarded ones, it is a 409 that lists the conflicting changes. The workspace must be one the account may read (else a 404 as an unknown one) and write to (else a 403). A root workspace like live has no changes to discard: a 422, whoever asks. Both siteAggregateId and documentAggregateIds, an empty documentAggregateIds, and a site or document that is no such node in the workspace the account may read are 422s. The response counts the discarded changes as Neos does, 0 if there were none, and is the workspace afterwards.',
+        description: 'Discards the workspace\'s unpublished changes with Neos\' WorkspacePublishingService, as the Neos UI and workspace module do, they are lost then: all of them if the body is left out or empty, the ones in a site with siteAggregateId, or the ones in some documents with documentAggregateIds (each document with its content, not its child documents). Documents are discarded one after the other, the content repository has no command for several: descendants first, as discarding a new page first would leave its new child pages without a parent. If one of them conflicts, the ones before it stay discarded, as in Neos\' workspace module: the 409 lists them in completedDocumentAggregateIds and counts their changes in numberOfCompletedChanges. Discarding some changes replays the others on the base workspace: if they conflict with it (an outdated workspace) or depend on the discarded ones, it is a 409 that lists the conflicting changes of nodes the account may read and counts the others (inaccessibleConflicts). A selected site or document removed meanwhile by another request is a 409 as well (title removed). The workspace must be one the account may read (else a 404 as an unknown one) and write to (else a 403). A root workspace like live has no changes to discard: a 422, whoever asks. Both siteAggregateId and documentAggregateIds, an empty documentAggregateIds, and a site or document that is no such node in the workspace the account may read are 422s. The response counts the discarded changes as Neos does, 0 if there were none, and is the workspace afterwards.',
         operationId: 'discardWorkspace',
         security: [
             ApiAuthContextProvider::SCOPES => [ApiScopes::WORKSPACES_PUBLISH],
@@ -548,7 +517,7 @@ final readonly class Workspaces
             return $workspace;
         }
         // never, whoever asks: changes are discarded by forking the base again
-        if ($workspace->workspace->baseWorkspaceName === null) {
+        if ($workspace->workspace->isRootWorkspace()) {
             return UnprocessableContent::because(sprintf('The workspace %s is a root workspace, it has no changes to discard', $workspaceName->value));
         }
         if (!$workspace->permissions->write) {
@@ -558,39 +527,83 @@ final readonly class Workspaces
         if ($scope instanceof UnprocessableContent) {
             return $scope;
         }
+        $discarded = $this->publishOrDiscard($workspace, $scope, false);
+        return is_int($discarded) ? new DiscardingResult($discarded, $this->workspaceOf($workspace)) : $discarded;
+    }
 
+    /**
+     * Publishes or discards the changes of the scope (changeScopeOf()) and counts them as Neos does. Documents go one
+     * by one: ancestors first for publishing (a new page needs its new parent in the base workspace), descendants
+     * first for discarding (a new page must not lose its new parent while it is kept). The documents done before a
+     * conflict stay so, the 409 names them
+     *
+     * @param SharedModel\Node\NodeAggregateId|list<SharedModel\Node\NodeAggregateId>|null $scope
+     */
+    private function publishOrDiscard(ReadableWorkspace $workspace, SharedModel\Node\NodeAggregateId|array|null $scope, bool $publish): int|Forbidden|WorkspaceConflict
+    {
         $crId = $workspace->contentRepository->id;
         $name = $workspace->workspace->workspaceName;
-        $discarded = 0;
-        $discardedDocuments = [];
+        $baseName = $workspace->workspace->baseWorkspaceName?->value;
+        $service = $this->workspacePublishingService;
+        $count = 0;
+        $completedDocuments = [];
         try {
             if ($scope === null) {
-                $discarded = self::countUnlessSkipped(fn () => $this->workspacePublishingService->discardAllWorkspaceChanges($crId, $name)->numberOfDiscardedChanges);
+                $count = self::countUnlessSkipped(fn () => $publish
+                    ? $service->publishWorkspace($crId, $name)->numberOfPublishedChanges
+                    : $service->discardAllWorkspaceChanges($crId, $name)->numberOfDiscardedChanges);
             } elseif ($scope instanceof SharedModel\Node\NodeAggregateId) {
-                $discarded = self::countUnlessSkipped(fn () => $this->workspacePublishingService->discardChangesInSite($crId, $name, $scope)->numberOfDiscardedChanges);
+                $count = self::countUnlessSkipped(fn () => $publish
+                    ? $service->publishChangesInSite($crId, $name, $scope)->numberOfPublishedChanges
+                    : $service->discardChangesInSite($crId, $name, $scope)->numberOfDiscardedChanges);
             } else {
-                // descendants first: a new page must not lose its new parent while it is kept
-                foreach (DocumentAncestry::in($workspace->contentRepository->getContentGraph($name))->descendantsFirst($scope) as $documentId) {
-                    $discarded += self::countUnlessSkipped(fn () => $this->workspacePublishingService->discardChangesInDocument($crId, $name, $documentId)->numberOfDiscardedChanges);
-                    $discardedDocuments[] = $documentId->value;
+                $ancestry = DocumentAncestry::in($workspace->contentGraph());
+                foreach ($publish ? $ancestry->ancestorsFirst($scope) : $ancestry->descendantsFirst($scope) as $documentId) {
+                    $count += self::countUnlessSkipped(fn () => $publish
+                        ? $service->publishChangesInDocument($crId, $name, $documentId)->numberOfPublishedChanges
+                        : $service->discardChangesInDocument($crId, $name, $documentId)->numberOfDiscardedChanges);
+                    $completedDocuments[] = $documentId;
                 }
             }
         } catch (AccessDenied) {
             // Neos checks with Flow's security context, which may know other roles than the token's account
-            return Forbidden::because(sprintf('You may not discard the changes of the workspace %s', $workspaceName->value));
+            return Forbidden::because($publish
+                ? sprintf('You may not publish the workspace %s to %s', $name->value, $baseName)
+                : sprintf('You may not discard the changes of the workspace %s', $name->value));
         } catch (WorkspaceRebaseFailed|PartialWorkspaceRebaseFailed $exception) {
-            return WorkspaceConflict::of($exception, $workspace->contentRepository, $name, sprintf(
-                '%s%s',
-                $exception instanceof PartialWorkspaceRebaseFailed
-                    ? sprintf('The other changes of the workspace %s depend on the ones to discard, discard more of them or all', $workspaceName->value)
-                    : sprintf('The changes of the workspace %s to keep conflict with its base workspace %s, which changed meanwhile', $workspaceName->value, $workspace->workspace->baseWorkspaceName->value),
-                $discardedDocuments !== [] ? sprintf('. The changes of the documents %s were discarded before (%d changes)', implode(', ', $discardedDocuments), $discarded) : '',
-            ));
+            $detail = match (true) {
+                $publish && $exception instanceof PartialWorkspaceRebaseFailed => sprintf('The selected changes of the workspace %s can\'t be published without others they depend on, publish more of them or all', $name->value),
+                $publish => sprintf('The changes of the workspace %s conflict with its base workspace %s, which changed meanwhile', $name->value, $baseName),
+                $exception instanceof PartialWorkspaceRebaseFailed => sprintf('The other changes of the workspace %s depend on the ones to discard, discard more of them or all', $name->value),
+                default => sprintf('The changes of the workspace %s to keep conflict with its base workspace %s, which changed meanwhile', $name->value, $baseName),
+            };
+            // the documents done before have given the workspace a new content stream
+            return WorkspaceConflict::of($exception, $completedDocuments !== [] ? $workspace->refreshed() : $workspace, $detail . self::completedDocumentsDetail($completedDocuments, $count, $publish), $completedDocuments, $count);
         } catch (NodeAggregateCurrentlyDoesNotExist) {
             // checked before, removed meanwhile
-            return UnprocessableContent::because(sprintf('A selected site or document no longer exists in the workspace %s', $workspaceName->value));
+            return WorkspaceConflict::removedMeanwhile(
+                sprintf('A selected site or document was removed from the workspace %s meanwhile', $name->value) . self::completedDocumentsDetail($completedDocuments, $count, $publish),
+                $completedDocuments,
+                $count,
+            );
         }
-        return new DiscardingResult($discarded, $this->workspaceOf($workspace));
+        return $count;
+    }
+
+    /**
+     * @param list<SharedModel\Node\NodeAggregateId> $completedDocuments
+     */
+    private static function completedDocumentsDetail(array $completedDocuments, int $count, bool $published): string
+    {
+        if ($completedDocuments === []) {
+            return '';
+        }
+        return sprintf(
+            '. The changes of the documents %s were %s before (%d changes, see completedDocumentAggregateIds)',
+            implode(', ', array_map(static fn (SharedModel\Node\NodeAggregateId $id) => $id->value, $completedDocuments)),
+            $published ? 'published' : 'discarded',
+            $count,
+        );
     }
 
     /**
@@ -642,20 +655,6 @@ final readonly class Workspaces
     }
 
     /**
-     * Whether the token's account may write to the workspace, by its workspace roles or as the owner
-     */
-    private function mayWriteTo(SharedModel\ContentRepository\ContentRepositoryId $contentRepositoryId, SharedModel\Workspace\WorkspaceName $workspaceName, ApiCaller $caller): bool
-    {
-        $user = $this->partyService->getAssignedPartyOfAccount($caller->account);
-        return $this->contentRepositoryAuthorizationService->getWorkspacePermissions(
-            $contentRepositoryId,
-            $workspaceName,
-            $this->accountPrivileges->rolesOf($caller->account),
-            $user instanceof Model\User ? $user->getId() : null,
-        )->write;
-    }
-
-    /**
      * The changes a publish or discard counted, 0 if the content repository skipped it as there were none (in the
      * selection)
      *
@@ -674,7 +673,7 @@ final readonly class Workspaces
         path: '/cr/{contentRepositoryId}/workspaces/{workspaceName}/rebase',
         method: 'POST',
         summary: 'Rebase a workspace',
-        description: 'Brings the workspace up to date with its base workspace (RebaseWorkspace through Neos\' WorkspacePublishingService, as the Neos UI\'s synchronize does): its changes are applied again on top of the base\'s current content, so it sees what was published there since. The body is optional, its strategy is fail if left out: changes that conflict with the base (e.g. creating a node with an ID the base has meanwhile, or changing a node removed there for good; a node deleteNode removed there is only tagged and doesn\'t conflict) fail the rebase with a 409 that lists them, and nothing is changed. force rebases anyway and drops the conflicting changes for good, the others are kept. The workspace must be one the account may read (else a 404, as an unknown one) and write to, as a collaborator, manager or owner (else a 403). Root workspaces like live have no base to rebase on, a 422 whoever asks. A workspace that is up to date already is a 200 as well, with fail nothing happens. The response is the workspace as getWorkspace returns it, up to date.',
+        description: 'Brings the workspace up to date with its base workspace (RebaseWorkspace through Neos\' WorkspacePublishingService, as the Neos UI\'s synchronize does): its changes are applied again on top of the base\'s current content, so it sees what was published there since. The body is optional, its strategy is fail if left out: changes that conflict with the base (e.g. creating a node with an ID the base has meanwhile, or changing a node removed there for good; a node deleteNode removed there is only tagged and doesn\'t conflict) fail the rebase with a 409 that lists them (the ones of nodes the account may read, the others are counted in inaccessibleConflicts), and nothing is changed. force rebases anyway and drops the conflicting changes for good, the others are kept. The workspace must be one the account may read (else a 404, as an unknown one) and write to, as a collaborator, manager or owner (else a 403). Root workspaces like live have no base to rebase on, a 422 whoever asks. A workspace that is up to date already is a 200 as well, with fail nothing happens. The response is the workspace as getWorkspace returns it, up to date.',
         operationId: 'rebaseWorkspace',
         security: [
             ApiAuthContextProvider::SCOPES => [ApiScopes::WORKSPACES_PUBLISH],
@@ -692,7 +691,7 @@ final readonly class Workspaces
             return $workspace;
         }
         // never, whoever asks
-        if ($workspace->workspace->baseWorkspaceName === null) {
+        if ($workspace->workspace->isRootWorkspace()) {
             return UnprocessableContent::because(sprintf('The workspace %s is a root workspace, it has no base to rebase on', $workspaceName->value));
         }
         if (!$workspace->permissions->write) {
@@ -707,7 +706,8 @@ final readonly class Workspaces
             // the content repository checks Flow's security context, which may know other roles than the token's account
             return Forbidden::because(sprintf('You may not write to the workspace %s', $workspaceName->value));
         } catch (WorkspaceRebaseFailed $exception) {
-            return WorkspaceConflict::of($exception, $workspace->contentRepository, $workspace->workspace->workspaceName, sprintf('The changes of the workspace %s conflict with its base workspace %s, nothing was rebased. Rebase with strategy force to drop the conflicting changes and keep the others.', $workspaceName->value, $workspace->workspace->baseWorkspaceName->value));
+            // nothing changed, the workspace has its content stream still
+            return WorkspaceConflict::of($exception, $workspace, sprintf('The changes of the workspace %s conflict with its base workspace %s, nothing was rebased. Rebase with strategy force to drop the conflicting changes and keep the others.', $workspaceName->value, $workspace->workspace->baseWorkspaceName?->value));
         }
         return $this->workspaceOf($workspace);
     }
@@ -744,10 +744,10 @@ final readonly class Workspaces
     }
 
     #[Operation(
-        path: '/cr/{contentRepositoryId}/workspaces/{workspaceName}/roles/{subjectType}/{subject}',
+        path: '/cr/{contentRepositoryId}/workspaces/{workspaceName}/roles/{subjectType}/{subjectId}',
         method: 'PUT',
         summary: 'Assign a workspace role',
-        description: 'Gives the user (subjectType user, subject its Neos user ID) or the group (subjectType group, subject a Flow role identifier like Neos.Neos:AbstractEditor, every account with that role) the role in the workspace: viewer (may read it), collaborator (may also change its content and publish or discard the changes) or manager (may also change its title, description and roles and delete it). A subject has one role per workspace: assigning another one replaces it, the same one changes nothing. An unknown user or Flow role is a 422. The workspace must be one the account may read (else a 404, as an unknown one) and manage, as its owner, a manager or a Neos administrator (else a 403). Personal workspaces are their owner\'s only, their roles can\'t be assigned, as in the Neos workspace module: a 422, whoever asks. Your own user\'s role can\'t be lowered, so you don\'t lock yourself out, ask another manager (a 422). The response is the assignment.',
+        description: 'Gives the user (subjectType user, subjectId its Neos user ID) or the group (subjectType group, subjectId a Flow role identifier like Neos.Neos:AbstractEditor, every account with that role) the role in the workspace: viewer (may read it), collaborator (may also change its content and publish or discard the changes) or manager (may also change its title, description and roles and delete it). A subject has one role per workspace: assigning another one replaces it (Neos unassigns and assigns, if the assignment fails the previous role is given back), the same one changes nothing. A role changed by another request meanwhile is a 409. An unknown user or Flow role is a 422. The workspace must be one the account may read (else a 404, as an unknown one) and manage, as its owner, a manager or a Neos administrator (else a 403). Personal workspaces are their owner\'s only, their roles can\'t be assigned, as in the Neos workspace module: a 422, whoever asks. Your own user\'s role can\'t be lowered, so you don\'t lock yourself out, ask another manager (a 422). The response is the assignment.',
         operationId: 'assignWorkspaceRole',
         security: [
             ApiAuthContextProvider::SCOPES => [ApiScopes::WORKSPACES_ROLES],
@@ -757,7 +757,7 @@ final readonly class Workspaces
         ContentRepositoryId $contentRepositoryId,
         WorkspaceName $workspaceName,
         WorkspaceRoleSubjectType $subjectType,
-        WorkspaceRoleSubjectId $subject,
+        WorkspaceRoleSubjectId $subjectId,
         #[RequestBody(description: 'The role')] WorkspaceRoleAssign $assignment,
         #[AuthContext] ApiCaller $caller,
     ): WorkspaceRoleAssignment|NotFound|Forbidden|Conflict|UnprocessableContent {
@@ -774,11 +774,11 @@ final readonly class Workspaces
         if (!$workspace->permissions->manage) {
             return Forbidden::because(sprintf('You may not manage the workspace %s', $workspaceName->value));
         }
-        $roleSubject = $this->workspaceRoleSubjects->existingSubjectOf($subjectType, $subject);
+        $roleSubject = $this->workspaceRoleSubjects->existingSubjectOf($subjectType, $subjectId);
         if ($roleSubject === null) {
             return UnprocessableContent::because($subjectType === WorkspaceRoleSubjectType::USER
-                ? sprintf('There is no Neos user with the ID %s', $subject->value)
-                : sprintf('There is no Flow role %s', $subject->value));
+                ? sprintf('There is no Neos user with the ID %s', $subjectId->value)
+                : sprintf('There is no Flow role %s', $subjectId->value));
         }
         $role = $assignment->role->toWorkspaceRole();
         $existing = $this->roleAssignmentOf($crId, $name, $roleSubject);
@@ -789,19 +789,35 @@ final readonly class Workspaces
             return UnprocessableContent::because('You can\'t lower your own role in the workspace, ask another manager');
         }
         $newAssignment = Model\WorkspaceRoleAssignment::create($roleSubject, $role);
+        // whether the previous role was given back after the new one couldn't be assigned, null if there was none
+        $restored = null;
         try {
             // Neos has one role per subject, a change is replacing it
             if ($existing !== null) {
                 $this->workspaceService->unassignWorkspaceRole($crId, $name, $roleSubject);
             }
-            $this->workspaceService->assignWorkspaceRole($crId, $name, $newAssignment);
+            try {
+                $this->workspaceService->assignWorkspaceRole($crId, $name, $newAssignment);
+            } catch (AccessDenied|\RuntimeException $exception) {
+                // two calls, not atomic: the subject gets its previous role back
+                if ($existing !== null) {
+                    $restored = $this->reassign($crId, $name, $existing);
+                }
+                throw $exception;
+            }
         } catch (AccessDenied) {
             // the service checks Flow's security context, which may know other roles than the token's account
             return Forbidden::because(sprintf('You may not manage the workspace %s', $workspaceName->value));
         } catch (\RuntimeException $exception) {
             // assigned or unassigned by another request meanwhile
             if (in_array($exception->getCode(), [1728476154, 1728477071], true)) {
-                return Conflict::because(sprintf('The role of %s %s in the workspace %s was changed meanwhile, try again', $subjectType->value, $subject->value, $workspaceName->value));
+                return Conflict::because(sprintf(
+                    'The role of %s %s in the workspace %s was changed meanwhile, try again%s',
+                    $subjectType->value,
+                    $subjectId->value,
+                    $workspaceName->value,
+                    $restored === false ? sprintf('. Its role %s was unassigned and couldn\'t be given back', strtolower($existing->role->value)) : '',
+                ));
             }
             throw $exception;
         }
@@ -809,10 +825,10 @@ final readonly class Workspaces
     }
 
     #[Operation(
-        path: '/cr/{contentRepositoryId}/workspaces/{workspaceName}/roles/{subjectType}/{subject}',
+        path: '/cr/{contentRepositoryId}/workspaces/{workspaceName}/roles/{subjectType}/{subjectId}',
         method: 'DELETE',
         summary: 'Unassign a workspace role',
-        description: 'Takes the role in the workspace from the user (subjectType user, subject its Neos user ID) or group (subjectType group, subject a Flow role identifier): it may then do in the workspace only what another of its roles allows. A subject without a role in the workspace is a 404. The user or Flow role needn\'t exist anymore, so assignments they left behind can be removed. The workspace must be one the account may read (else a 404, as an unknown one) and manage, as its owner, a manager or a Neos administrator (else a 403). Your own user\'s role can\'t be removed, so you don\'t lock yourself out, as in the Neos workspace module: ask another manager (a 422).',
+        description: 'Takes the role in the workspace from the user (subjectType user, subjectId its Neos user ID) or group (subjectType group, subjectId a Flow role identifier): it may then do in the workspace only what another of its roles allows. A subject without a role in the workspace is a 404. The user or Flow role needn\'t exist anymore, so assignments they left behind can be removed. The workspace must be one the account may read (else a 404, as an unknown one) and manage, as its owner, a manager or a Neos administrator (else a 403). Your own user\'s role can\'t be removed, so you don\'t lock yourself out, as in the Neos workspace module: ask another manager (a 422).',
         operationId: 'unassignWorkspaceRole',
         security: [
             ApiAuthContextProvider::SCOPES => [ApiScopes::WORKSPACES_ROLES],
@@ -822,7 +838,7 @@ final readonly class Workspaces
         ContentRepositoryId $contentRepositoryId,
         WorkspaceName $workspaceName,
         WorkspaceRoleSubjectType $subjectType,
-        WorkspaceRoleSubjectId $subject,
+        WorkspaceRoleSubjectId $subjectId,
         #[AuthContext] ApiCaller $caller,
     ): NotFound|Forbidden|UnprocessableContent|null {
         $workspace = $this->workspaceResolver->resolve($contentRepositoryId, $workspaceName, $caller->account);
@@ -834,8 +850,8 @@ final readonly class Workspaces
         }
         $crId = $workspace->contentRepository->id;
         $name = $workspace->workspace->workspaceName;
-        $notFound = NotFound::because(sprintf('The %s %s has no role in the workspace %s', $subjectType->value, $subject->value, $workspaceName->value));
-        $roleSubject = $this->workspaceRoleSubjects->subjectOf($subjectType, $subject);
+        $notFound = NotFound::because(sprintf('The %s %s has no role in the workspace %s', $subjectType->value, $subjectId->value, $workspaceName->value));
+        $roleSubject = $this->workspaceRoleSubjects->subjectOf($subjectType, $subjectId);
         if ($roleSubject === null || $this->roleAssignmentOf($crId, $name, $roleSubject) === null) {
             return $notFound;
         }
@@ -856,6 +872,19 @@ final readonly class Workspaces
         return null;
     }
 
+    /**
+     * Assigns the role again, whether that worked: not if another request assigned one meanwhile
+     */
+    private function reassign(SharedModel\ContentRepository\ContentRepositoryId $contentRepositoryId, SharedModel\Workspace\WorkspaceName $workspaceName, Model\WorkspaceRoleAssignment $assignment): bool
+    {
+        try {
+            $this->workspaceService->assignWorkspaceRole($contentRepositoryId, $workspaceName, $assignment);
+            return true;
+        } catch (AccessDenied|\RuntimeException) {
+            return false;
+        }
+    }
+
     private function roleAssignmentOf(SharedModel\ContentRepository\ContentRepositoryId $contentRepositoryId, SharedModel\Workspace\WorkspaceName $workspaceName, Model\WorkspaceRoleSubject $subject): Model\WorkspaceRoleAssignment|null
     {
         foreach ($this->workspaceService->getWorkspaceRoleAssignments($contentRepositoryId, $workspaceName) as $assignment) {
@@ -868,15 +897,15 @@ final readonly class Workspaces
 
     private function isCallersUser(Model\WorkspaceRoleSubject $subject, ApiCaller $caller): bool
     {
-        $user = $this->partyService->getAssignedPartyOfAccount($caller->account);
-        return $user instanceof Model\User && $subject->equals(Model\WorkspaceRoleSubject::createForUser($user->getId()));
+        $user = $this->workspaceResolver->userOf($caller->account);
+        return $user !== null && $subject->equals(Model\WorkspaceRoleSubject::createForUser($user->getId()));
     }
 
     #[Operation(
         path: '/cr/{contentRepositoryId}/workspaces/{workspaceName}/changes',
         method: 'GET',
         summary: 'List the changes of a workspace',
-        description: 'What changed in the workspace compared to its base workspace and isn\'t published yet, one item per node variant (or per node aggregate for changes to all of its variants, like its name or node type), as Neos\' pending changes projection keeps it, sorted by aggregate id and dimension space point. documentAggregateId and siteAggregateId are the closest document (the node itself if it is one) and the site of the node in the workspace, found also for hidden and deleted nodes (in the base workspace for a node removed for good), e.g. to group the changes by document as the Neos workspace module does. filterByDocument keeps the changes in a document (of the document itself and its content, not of its child documents), filterBySite the ones in a site, filterByChangeType the ones with one of the kinds of change: filterByChangeType=deleted is the workspace\'s trash, the nodes deleted in it and not published yet, which restoreNode brings back. The filters combine. include=diff adds what each change of the page does to its node compared to the base workspace (diff, null if not included). The workspace must be one the account may read, by its workspace roles or as the owner. Changes of a node the account may not read are left out. Changes of a node that no longer exists in the workspace are listed: it has no permissions left to check. offset and limit (25 by default, 100 at most) choose the page of the filtered changes, meta.total counts them, links tell about the other pages.',
+        description: 'What changed in the workspace compared to its base workspace and isn\'t published yet, one item per node variant (or per node aggregate for changes to all of its variants, like its name or node type), as Neos\' pending changes projection keeps it, sorted by documentAggregateId (the changes of one document together, the ones without a document last), then by aggregate id and dimension space point. documentAggregateId and siteAggregateId are the closest document (the node itself if it is one) and the site of the node in the workspace, found also for hidden and deleted nodes (in the base workspace for a node removed for good), e.g. to group the changes by document as the Neos workspace module does. filterByDocument keeps the changes in a document (of the document itself and its content, not of its child documents), filterBySite the ones in a site, filterByChangeType the ones with one of the kinds of change: filterByChangeType=deleted is the workspace\'s trash, the nodes deleted in it and not published yet, which restoreNode brings back. The filters combine. include=diff adds what each change of the page does to its node compared to the base workspace (diff, null if not included). The workspace must be one the account may read, by its workspace roles or as the owner. Changes of a node the account may not read are left out. Changes of a node that no longer exists in the workspace are listed: it has no permissions left to check. offset and limit (25 by default, 100 at most) choose the page of the filtered changes, meta.total counts them, links tell about the other pages.',
         operationId: 'listWorkspaceChanges',
         security: [
             ApiAuthContextProvider::SCOPES => [ApiScopes::WORKSPACES_READ],
@@ -900,54 +929,22 @@ final readonly class Workspaces
         #[Parameter(in: 'query', description: 'How many items at most, 25 if omitted, 100 at most')]
         Limit|null $limit = null,
     ): PaginatedChangeListing|BadRequest|NotFound {
-        $offset ??= Offset::none();
-        $limit ??= Limit::default();
-        $include ??= IncludePaths::none();
-        $unsupported = $include->unsupported(['diff']);
-        if ($unsupported !== null) {
-            return $unsupported;
+        $query = ChangeQuery::create($filterByDocument, $filterBySite, $filterByChangeType, $include ?? IncludePaths::none(), $offset ?? Offset::none(), $limit ?? Limit::default());
+        if ($query instanceof BadRequest) {
+            return $query;
         }
         $workspace = $this->workspaceResolver->resolve($contentRepositoryId, $workspaceName, $caller->account);
         if ($workspace instanceof NotFound) {
             return $workspace;
         }
-        $locator = new ChangeLocator($workspace);
-        // the documents and sites are looked up for the page only, unless a filter needs them
-        $filtersByLocation = $filterByDocument !== null || $filterBySite !== null;
-        $changes = [];
-        // the projection reads them all at once and can't check permissions or filter, so that's done and paged here
-        foreach ($this->workspacePublishingService->pendingWorkspaceChanges($workspace->contentRepository->id, $workspace->workspace->workspaceName) as $pendingChange) {
-            if (!$workspace->mayReadNodeAggregate($pendingChange->nodeAggregateId)) {
-                continue;
-            }
-            $change = Change::from($pendingChange, $filtersByLocation ? $locator : null);
-            if (
-                ($filterByChangeType !== null && !$filterByChangeType->matches($change))
-                || ($filterByDocument !== null && $change->documentAggregateId?->value !== $filterByDocument->value)
-                || ($filterBySite !== null && $change->siteAggregateId?->value !== $filterBySite->value)
-            ) {
-                continue;
-            }
-            $changes[] = ['change' => $change, 'pendingChange' => $pendingChange];
-        }
-        // the projection has no order
-        usort($changes, static fn (array $a, array $b) => [$a['change']->nodeAggregateId->value, $a['change']->originDimensionSpacePoint?->value] <=> [$b['change']->nodeAggregateId->value, $b['change']->originDimensionSpacePoint?->value]);
-        $page = [];
-        foreach (array_slice($changes, $offset->value, $limit->value) as ['pendingChange' => $pendingChange]) {
-            $page[] = Change::from($pendingChange, $locator, $include->includes('diff') ? $this->changeDiffer->diff($workspace, $pendingChange) : null);
-        }
-        return new PaginatedChangeListing(
-            new ChangeList(...$page),
-            new ListingMeta(count($changes)),
-            ListingLinks::for($request, $offset, $limit, count($changes)),
-        );
+        return $query->page($request, $this->workspacePublishingService->pendingWorkspaceChanges($workspace->contentRepository->id, $workspace->workspace->workspaceName), $workspace, $this->changeDiffer);
     }
 
     #[Operation(
         path: '/cr/{contentRepositoryId}/workspaces/{workspaceName}/events',
         method: 'GET',
         summary: 'List the events of a workspace',
-        description: 'The events of the workspace\'s current content stream: what was changed in it since it was created or last published, discarded or rebased, which each start a new content stream. Oldest first, sort=-sequenceNumber for newest first (sequenceNumber is the only field to sort by). The workspace must be one the account may read, by its workspace roles or as the owner. Events about a node the account may not read are left out. Events about a node that no longer exists in the workspace, e.g. its removal, are listed: it has no permissions left to check. after and limit (25 by default, 100 at most) choose the page: after is the sequenceNumber of the last event of the page before in the listing\'s order (so newer events oldest first, older ones newest first), links.next continues after this page, null on the last one. meta.contentStreamId is the content stream the events are from, meta.forkedFrom where it branched off its base workspace\'s (null for one that wasn\'t forked, e.g. live\'s). A client that polls for new events (oldest first, after the last one it saw) compares meta.contentStreamId with the one of its last page: if it differs, the workspace was published, discarded or rebased in between, the events it has are no longer the workspace\'s, and it starts over without after.',
+        description: 'The events of the workspace\'s current content stream: what was changed in it since it was created or last published, discarded or rebased, which each start a new content stream. Oldest first, sort=-sequenceNumber for newest first (sequenceNumber is the only field to sort by). The workspace must be one the account may read, by its workspace roles or as the owner. Events about a node the account may not read are left out. Events about a node that no longer exists in the workspace, e.g. its removal, are listed: it has no permissions left to check. In the events listed, the IDs of other nodes the account may not read (parent, siblings, reference targets, tethered children: every value of a payload key ending in nodeAggregateId or nodeAggregateIds) are null. after and limit (25 by default, 100 at most) choose the page: after is the sequenceNumber of the last event of the page before in the listing\'s order (so newer events oldest first, older ones newest first). Newest first, links.next continues after this page and is null on the last one. Oldest first, links.next is always there, after the last event of the page or, on an empty page, with the same after: a client polling for new events follows it. meta.contentStreamId is the content stream the events are from, meta.forkedFrom where it branched off its base workspace\'s (null for one that wasn\'t forked, e.g. live\'s). An after lower than the sequenceNumber of the current content stream\'s first event is from an earlier one: the workspace was published, discarded or rebased since, the events the client has are no longer the workspace\'s, and it is a 409, the client starts over without after.',
         operationId: 'listWorkspaceEvents',
         security: [
             ApiAuthContextProvider::SCOPES => [ApiScopes::WORKSPACES_READ],
@@ -964,15 +961,10 @@ final readonly class Workspaces
         Limit|null $limit = null,
         #[Parameter(in: 'query', description: 'sequenceNumber (oldest first, the default) or -sequenceNumber (newest first)')]
         Sort|null $sort = null,
-    ): PaginatedEventListing|BadRequest|NotFound {
-        $limit ??= Limit::default();
-        $newestFirst = match ($sort?->value) {
-            null, 'sequenceNumber' => false,
-            '-sequenceNumber' => true,
-            default => null,
-        };
-        if ($newestFirst === null) {
-            return BadRequest::because(sprintf('Can\'t sort by %s, only by sequenceNumber or -sequenceNumber', $sort?->value));
+    ): PaginatedEventListing|BadRequest|NotFound|Conflict {
+        $query = EventQuery::create($after, $limit ?? Limit::default(), $sort);
+        if ($query instanceof BadRequest) {
+            return $query;
         }
         $workspace = $this->workspaceResolver->resolve($contentRepositoryId, $workspaceName, $caller->account);
         if ($workspace instanceof NotFound) {
@@ -980,36 +972,13 @@ final readonly class Workspaces
         }
         $contentStreamId = $workspace->workspace->currentContentStreamId;
         $contentStreamEvents = $this->contentRepositoryRegistry->buildService($workspace->contentRepository->id, new ContentStreamEventsFactory());
-        $fork = $contentStreamEvents->findFork($contentStreamId);
+        $firstEvent = $contentStreamEvents->findFirst($contentStreamId);
+        if ($query->isBefore($firstEvent)) {
+            return Conflict::because(sprintf('The events after %d are from an earlier content stream of the workspace %s: it was published, discarded or rebased since, its events start at %d. Start over without after', $after?->value, $workspaceName->value, $firstEvent?->sequenceNumber->value));
+        }
+        $fork = $firstEvent !== null ? ContentStreamEvents::forkOf($firstEvent) : null;
         $meta = new EventListingMeta(ContentStreamId::from($contentStreamId), $fork !== null ? ContentStreamPosition::from($fork) : null);
-        $stream = $contentStreamEvents->load($contentStreamId);
-        $stream = $newestFirst ? $stream->backwards() : $stream;
-
-        $events = [];
-        // the next sequence number to read from in the listing's order; sequence numbers start at 1
-        $next = $newestFirst ? ($after !== null ? $after->value - 1 : null) : ($after !== null ? $after->value + 1 : 1);
-        // in batches: the event store reads all events of a query at once, and left out events don't count
-        do {
-            if ($next === 0) {
-                break;
-            }
-            $page = $next === null ? $stream : ($newestFirst
-                ? $stream->withMaximumSequenceNumber(SequenceNumber::fromInteger($next)->toSequenceNumber())
-                : $stream->withMinimumSequenceNumber(SequenceNumber::fromInteger($next)->toSequenceNumber()));
-            $batch = iterator_to_array($page->limit($limit->value + 1), false);
-            foreach ($batch as $envelope) {
-                $next = $envelope->sequenceNumber->value + ($newestFirst ? -1 : 1);
-                if (!self::isAboutReadableNode($envelope, $workspace)) {
-                    continue;
-                }
-                // one more than the page, so there is a next one
-                if (count($events) === $limit->value) {
-                    return self::eventListing($request, $limit, $events, $meta, true);
-                }
-                $events[] = Event::from($envelope);
-            }
-        } while (count($batch) === $limit->value + 1);
-        return self::eventListing($request, $limit, $events, $meta, false);
+        return $query->page($request, $contentStreamEvents->load($contentStreamId), $workspace, $meta);
     }
 
     /**
@@ -1024,29 +993,6 @@ final readonly class Workspaces
             $workspace->contentRepository->findWorkspaceByName($workspaceName) ?? $workspace->workspace,
             $this->workspaceService->getWorkspaceMetadata($contentRepositoryId, $workspaceName),
             $workspace->permissions,
-        );
-    }
-
-    /**
-     * Whether the event isn't about a node (but e.g. its content stream) or about one the account may read
-     */
-    private static function isAboutReadableNode(EventEnvelope $envelope, ReadableWorkspace $workspace): bool
-    {
-        $payload = json_decode($envelope->event->data->value, true, flags: JSON_THROW_ON_ERROR);
-        $nodeAggregateId = is_array($payload) ? ($payload['nodeAggregateId'] ?? null) : null;
-        return !is_string($nodeAggregateId) || $workspace->mayReadNodeAggregate(SharedModel\Node\NodeAggregateId::fromString($nodeAggregateId));
-    }
-
-    /**
-     * @param list<Event> $events
-     */
-    private static function eventListing(ServerRequestInterface $request, Limit $limit, array $events, EventListingMeta $meta, bool $hasMore): PaginatedEventListing
-    {
-        $last = end($events);
-        return new PaginatedEventListing(
-            new EventList(...$events),
-            $meta,
-            CursorListingLinks::for($request, $limit, $hasMore && $last !== false ? $last->sequenceNumber->value : null),
         );
     }
 }

@@ -74,6 +74,9 @@ class ViewsTest extends EndpointTestCase
 
         $parameters = array_column(self::json($this->get('/api/openapi.json', null))['paths']['/views/{viewName}']['get']['parameters'], null, 'name');
         self::assertSame('deepObject', $parameters['arguments']['style'] ?? null);
+        // the shared component, described by the operation
+        self::assertContains(['$ref' => '#/components/schemas/Arguments'], $parameters['arguments']['schema']['anyOf'] ?? []);
+        self::assertStringContainsString('arguments[fusionPath]', $parameters['arguments']['description']);
     }
 
     #[Test]
@@ -96,7 +99,7 @@ class ViewsTest extends EndpointTestCase
             $response = $this->get(self::viewPath('navigation', $query), $this->token('editor-machine', 'views.read'));
 
             self::assertSame(404, $response->getStatusCode(), (string)$response->getBody());
-            self::assertSame('There is no site to render the view for, give contentRepositoryId and nodeAggregateId', self::json($response)['detail']);
+            self::assertSame('There is no default site to render the view for, give a contentRepositoryId', self::json($response)['detail']);
         }
     }
 

@@ -5,7 +5,6 @@ namespace Neos\Api\Endpoint\Me\Schema;
 
 use Neos\Api\Endpoint\Users\Schema\Account;
 use Neos\Api\Endpoint\Users\Schema\User;
-use Neos\Api\Shared\Schema\AccessTokenGrant;
 use Neos\JsonSchema\ProvidesSchema;
 use Neos\JsonSchema\Schema;
 use Neos\Schematic\Discovery\AutoDiscoveringSchema;

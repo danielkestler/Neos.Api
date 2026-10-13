@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Neos\Api\Endpoint\Sites\Schema;
 
+use Neos\Api\Shared\Schema\PackageKey;
 use Neos\JsonSchema\ProvidesSchema;
 use Neos\JsonSchema\Schema;
 use Neos\Schematic\Discovery\AutoDiscoveringSchema;

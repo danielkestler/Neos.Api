@@ -6,6 +6,7 @@ namespace Neos\Api\Infrastructure\ContentRepository;
 use Neos\ContentRepository\Core\SharedModel\ContentRepository\ContentRepositoryId;
 use Neos\Flow\Annotations as Flow;
 use Neos\Neos\Domain\Model\Site;
+use Neos\Neos\Domain;
 use Neos\Neos\Domain\Repository\SiteRepository;
 
 /**
@@ -22,11 +23,17 @@ final readonly class SiteFinder
     /**
      * The default site (Neos.Neos.defaultSiteNodeName, else the first online site) if it is in the content
      * repository, else the first online site of the content repository by name, null if it has none. Without a
-     * content repository, the default site
+     * content repository, the default site. A configured default site that is missing or offline is skipped, as if
+     * none were configured
      */
     public function findDefault(?ContentRepositoryId $contentRepositoryId = null): ?Site
     {
-        $default = $this->siteRepository->findDefault();
+        try {
+            $default = $this->siteRepository->findDefault();
+        } catch (Domain\Exception) {
+            // SiteRepository throws for a configured default site that is missing or offline
+            $default = $contentRepositoryId === null ? $this->siteRepository->findFirstOnline() : null;
+        }
         if ($contentRepositoryId === null || $default?->getConfiguration()->contentRepositoryId->equals($contentRepositoryId) === true) {
             return $default;
         }

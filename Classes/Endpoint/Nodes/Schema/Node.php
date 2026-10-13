@@ -16,7 +16,6 @@ use Neos\JsonSchema\ProvidesSchema;
 use Neos\JsonSchema\Schema;
 use Neos\JsonSchema\StringSchema;
 use Neos\JsonSchema\Support\ObjectProperties;
-use Neos\Neos\Domain\SubtreeTagging\NeosSubtreeTag;
 
 /**
  * A node with its properties and, if included, its references, children and variants
@@ -69,14 +68,14 @@ final readonly class Node implements ProvidesSchema
             NodeTypeName::fromString($node->nodeTypeName->value),
             $nodeSerializer->label($node),
             NodeClassification::from($node->classification->value),
-            $node->tags->withoutInherited()->contain(NeosSubtreeTag::disabled()),
-            $node->tags->onlyInherited()->contain(NeosSubtreeTag::disabled()),
-            !$node->dimensionSpacePoint->equals($node->originDimensionSpacePoint),
+            $nodeSerializer->isHidden($node),
+            $nodeSerializer->isHiddenByAncestor($node),
+            $nodeSerializer->isShineThrough($node),
             self::sorted($node->tags->withoutInherited()->toStringArray()),
             self::sorted($node->tags->onlyInherited()->toStringArray()),
-            NodeTimestamps::from($node->timestamps),
+            new NodeTimestamps(...$nodeSerializer->timestamps($node)),
             $nodeSerializer->properties($node->properties),
-            $includeReferences ? self::references($nodeSerializer->references($node), $nodeSerializer) : null,
+            $includeReferences ? $nodeSerializer->references($node) : null,
             $children,
             $variants,
             $ancestors,
@@ -138,26 +137,5 @@ final readonly class Node implements ProvidesSchema
     {
         sort($tags);
         return $tags;
-    }
-
-    /**
-     * Objects where they are empty: the serializer can't tell an empty map from an empty list, but keeps an empty
-     * stdClass as {}
-     *
-     * @param array<string, list<ContentGraph\Reference>> $references
-     * @return array<string, list<array{nodeAggregateId: string, properties: array<string, mixed>|\stdClass}>>|\stdClass
-     */
-    private static function references(array $references, NodeSerializer $nodeSerializer): array|\stdClass
-    {
-        if ($references === []) {
-            return new \stdClass();
-        }
-        return array_map(static fn (array $named) => array_map(static function (ContentGraph\Reference $reference) use ($nodeSerializer) {
-            $properties = $reference->properties !== null ? $nodeSerializer->properties($reference->properties) : [];
-            return [
-                'nodeAggregateId' => $reference->node->aggregateId->value,
-                'properties' => $properties === [] ? new \stdClass() : $properties,
-            ];
-        }, $named), $references);
     }
 }

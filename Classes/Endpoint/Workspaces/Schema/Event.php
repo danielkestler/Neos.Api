@@ -37,7 +37,10 @@ final readonly class Event implements ProvidesSchema
     ) {
     }
 
-    public static function from(EventEnvelope $envelope): self
+    /**
+     * @param array<string, mixed>|\stdClass $payload the event's data, decoded (JsonValues::decodeObject()) and redacted by the caller
+     */
+    public static function from(EventEnvelope $envelope, array|\stdClass $payload): self
     {
         $event = $envelope->event;
         return new self(
@@ -46,7 +49,7 @@ final readonly class Event implements ProvidesSchema
             $event->id->value,
             $event->type->value,
             $envelope->recordedAt->format(\DateTimeInterface::ATOM),
-            JsonValues::decodeObject($event->data->value),
+            $payload,
             match (true) {
                 $event->metadata === null => null,
                 // encodes as [] otherwise

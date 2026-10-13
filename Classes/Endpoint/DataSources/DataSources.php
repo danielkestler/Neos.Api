@@ -4,7 +4,6 @@ declare(strict_types=1);
 namespace Neos\Api\Endpoint\DataSources;
 
 use Neos\Api\Endpoint\ContentRepositories\Schema\ContentRepositoryId;
-use Neos\Api\Endpoint\DataSources\Parameter\DataSourceArguments;
 use Neos\Api\Endpoint\DataSources\Response\DataSourceFailed;
 use Neos\Api\Endpoint\DataSources\Response\DataSourceResult;
 use Neos\Api\Endpoint\DataSources\Schema\DataSource;
@@ -15,14 +14,12 @@ use Neos\Api\Endpoint\Nodes\Schema\DimensionSpacePoint;
 use Neos\Api\Endpoint\Nodes\Schema\NodeAggregateId;
 use Neos\Api\Endpoint\Nodes\SubgraphResolver;
 use Neos\Api\Endpoint\Workspaces\Schema\WorkspaceName;
-use Neos\Api\Infrastructure\ContentRepository\SiteFinder;
 use Neos\Api\Security\ApiAuthContextProvider;
 use Neos\Api\Security\ApiScopes;
+use Neos\Api\Shared\Parameter\Arguments;
 use Neos\Api\Shared\Response\BadRequest;
 use Neos\Api\Shared\Response\NotFound;
-use Neos\ContentRepository\Core\Projection\ContentGraph\ContentSubgraphInterface;
 use Neos\ContentRepository\Core\Projection\ContentGraph\Node;
-use Neos\ContentRepository\Core\SharedModel;
 use Neos\Flow\ObjectManagement\ObjectManagerInterface;
 use Neos\Neos\Service\Controller\DataSourceController;
 use Neos\Neos\Service\DataSource\DataSourceInterface;
@@ -42,7 +39,6 @@ final readonly class DataSources
     public function __construct(
         private ObjectManagerInterface $objectManager,
         private SubgraphResolver $subgraphResolver,
-        private SiteFinder $siteFinder,
         private LoggerInterface $logger,
     ) {
     }
@@ -81,7 +77,7 @@ final readonly class DataSources
         DataSourceId $dataSourceId,
         ServerRequestInterface $request,
         #[Parameter(in: 'query', description: 'The arguments to call the data source with: arguments[name]=value, arrays as arguments[name][]=value. What the Neos UI sends from editorOptions.dataSourceAdditionalData')]
-        DataSourceArguments|null $arguments = null,
+        Arguments|null $arguments = null,
         #[Parameter(in: 'query', description: 'The content repository of the node, the one of the default site if omitted. Only with nodeAggregateId')]
         ContentRepositoryId|null $contentRepositoryId = null,
         #[Parameter(in: 'query', description: 'The aggregate id of the node to call the data source for, e.g. the one edited in the inspector. No node if omitted')]
@@ -106,12 +102,11 @@ final readonly class DataSources
                 return $node;
             }
         }
-        // the parameter only validates them, see DataSourceArguments
-        $values = $arguments !== null ? $request->getQueryParams()['arguments'] ?? [] : [];
+        // the parameter only validates the arguments, see Arguments
         /** @var DataSourceInterface $dataSource */
         $dataSource = $this->objectManager->get($className);
         try {
-            return DataSourceResult::of($dataSource->getData($node, is_array($values) ? $values : []));
+            return DataSourceResult::of($dataSource->getData($node, Arguments::values($request)));
         } catch (\Throwable $throwable) {
             $this->logger->error(sprintf('The data source %s failed: %s', $dataSourceId->value, $throwable->getMessage()), ['exception' => $throwable]);
             return DataSourceFailed::because(sprintf('The data source %s failed', $dataSourceId->value));
@@ -120,25 +115,13 @@ final readonly class DataSources
 
     private function node(NodeAggregateId $nodeAggregateId, ?ContentRepositoryId $contentRepositoryId, ?WorkspaceName $workspaceName, ?DimensionSpacePoint $dimensionSpacePoint): Node|NotFound|BadRequest
     {
-        $id = $contentRepositoryId?->toContentRepositoryId() ?? $this->siteFinder->findDefault()?->getConfiguration()->contentRepositoryId;
-        if ($id === null) {
-            return NotFound::because('There is no default site to read the node in, give contentRepositoryId');
-        }
-        $subgraph = $this->subgraphResolver->resolve(
-            $id,
-            $workspaceName?->toWorkspaceName() ?? SharedModel\Workspace\WorkspaceName::forLive(),
+        return $this->subgraphResolver->resolveNode(
+            $contentRepositoryId,
+            $nodeAggregateId->toNodeAggregateId(),
+            $workspaceName,
             $dimensionSpacePoint,
             excludeDisabled: false,
+            withoutContentRepository: 'There is no default site to read the node in, give contentRepositoryId',
         );
-        if (!$subgraph instanceof ContentSubgraphInterface) {
-            return $subgraph;
-        }
-        return $subgraph->findNodeById($nodeAggregateId->toNodeAggregateId())
-            ?? NotFound::because(sprintf(
-                'There is no node %s in the workspace %s and the dimension space point %s',
-                $nodeAggregateId->value,
-                $subgraph->getWorkspaceName()->value,
-                $subgraph->getDimensionSpacePoint()->toJson(),
-            ));
     }
 }

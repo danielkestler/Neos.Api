@@ -18,10 +18,10 @@ use Neos\OpenApi\Support\MediaTypeRange;
 final readonly class RenderedView implements ApiResponse
 {
     /**
-     * @param array<mixed> $data
+     * @param array<string, mixed>|\stdClass $data an empty object as \stdClass, so it is encoded as {}
      */
     public function __construct(
-        private array $data,
+        private array|\stdClass $data,
     ) {
     }
 
@@ -46,9 +46,9 @@ final readonly class RenderedView implements ApiResponse
     }
 
     /**
-     * @return array<mixed>
+     * @return array<string, mixed>|\stdClass
      */
-    public function body(): array
+    public function body(): array|\stdClass
     {
         return $this->data;
     }

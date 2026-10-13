@@ -3,32 +3,49 @@ declare(strict_types=1);
 
 namespace Neos\Api\Infrastructure\ContentRepository;
 
+use Neos\Api\Security\AccountPrivileges;
+use Neos\ContentRepository\Core\ContentRepository;
 use Neos\ContentRepository\Core\DimensionSpace\DimensionSpacePoint;
 use Neos\ContentRepository\Core\DimensionSpace\OriginDimensionSpacePoint;
 use Neos\ContentRepository\Core\Feature\Security\Exception\AccessDenied;
+use Neos\ContentRepository\Core\Projection\ContentGraph\ContentGraphInterface;
 use Neos\ContentRepository\Core\Projection\ContentGraph\ContentSubgraphInterface;
 use Neos\ContentRepository\Core\Projection\ContentGraph\Node;
+use Neos\ContentRepository\Core\Projection\ContentGraph\VisibilityConstraints;
 use Neos\ContentRepository\Core\SharedModel\ContentRepository\ContentRepositoryId;
 use Neos\ContentRepository\Core\SharedModel\Exception\WorkspaceDoesNotExist;
 use Neos\ContentRepository\Core\SharedModel\Node\NodeAggregateId;
 use Neos\ContentRepository\Core\SharedModel\Workspace\WorkspaceName;
+use Neos\ContentRepositoryRegistry\ContentRepositoryRegistry;
 use Neos\Flow\Annotations as Flow;
-use Neos\Flow\Security\Context;
-use Neos\Neos\Domain\Model\Site;
+use Neos\Flow\Security\Policy\PolicyService;
+use Neos\Flow\Security\Policy\Role;
+use Neos\Neos\Domain\Model;
 use Neos\Neos\Domain\Service\NodeTypeNameFactory;
 use Neos\Neos\Domain\SubtreeTagging\NeosVisibilityConstraints;
 use Neos\Neos\Security\Authorization\ContentRepositoryAuthorizationService;
+use Neos\OAuth\Security\OAuthContext;
+use Neos\Party\Domain\Service\PartyService;
 
 /**
- * The subgraphs the API reads nodes from, with the account's visibility
+ * The subgraphs the API reads nodes from, with the visibility of the request's access token's account
+ *
+ * The workspace permissions and visibility constraints come from the token's account roles
+ * (AccountPrivileges::rolesOf()) and its Neos user, as for the workspaces, not Flow's security context, which may hold
+ * the roles of other tokens as well. The content repository's own check on getContentGraph() (Flow's security
+ * context) stays as a fallback
  */
 #[Flow\Scope('singleton')]
 final readonly class ContentSubgraphs
 {
     public function __construct(
         private ContentRepositoryFinder $contentRepositoryFinder,
+        private ContentRepositoryRegistry $contentRepositoryRegistry,
         private ContentRepositoryAuthorizationService $contentRepositoryAuthorizationService,
-        private Context $securityContext,
+        private AccountPrivileges $accountPrivileges,
+        private OAuthContext $oauthContext,
+        private PartyService $partyService,
+        private PolicyService $policyService,
     ) {
     }
 
@@ -43,27 +60,24 @@ final readonly class ContentSubgraphs
     public function find(ContentRepositoryId $contentRepositoryId, WorkspaceName $workspaceName, DimensionSpacePoint $dimensionSpacePoint, bool $excludeDisabled): ?ContentSubgraphInterface
     {
         $contentRepository = $this->contentRepositoryFinder->find($contentRepositoryId);
-        if ($contentRepository === null) {
-            return null;
-        }
-        try {
-            if (!$excludeDisabled) {
-                return $contentRepository->getContentSubgraph($workspaceName, $dimensionSpacePoint);
-            }
-            $visibilityConstraints = $this->contentRepositoryAuthorizationService
-                ->getVisibilityConstraints($contentRepository->id, $this->securityContext->getRoles())
-                ->merge(NeosVisibilityConstraints::excludeDisabled());
-            return $contentRepository->getContentGraph($workspaceName)->getSubgraph($dimensionSpacePoint, $visibilityConstraints);
-        } catch (WorkspaceDoesNotExist | AccessDenied) {
-            return null;
-        }
+        return $contentRepository !== null ? $this->findIn($contentRepository, $workspaceName, $dimensionSpacePoint, $excludeDisabled) : null;
+    }
+
+    /**
+     * As find(), for a content repository found already
+     */
+    public function findIn(ContentRepository $contentRepository, WorkspaceName $workspaceName, DimensionSpacePoint $dimensionSpacePoint, bool $excludeDisabled): ?ContentSubgraphInterface
+    {
+        $roles = $this->roles();
+        return $this->readableContentGraph($contentRepository, $workspaceName, $roles)
+            ?->getSubgraph($dimensionSpacePoint, $this->visibilityConstraints($contentRepository, $roles, $excludeDisabled));
     }
 
     /**
      * The site node of the site in the live workspace and the site's default dimension space point, the one the
      * frontend renders for its home page. Null if there is none or the account may not read it, see find()
      */
-    public function findSiteNode(Site $site, bool $excludeDisabled): ?Node
+    public function findSiteNode(Model\Site $site, bool $excludeDisabled): ?Node
     {
         $configuration = $site->getConfiguration();
         $subgraph = $this->find($configuration->contentRepositoryId, WorkspaceName::forLive(), $configuration->defaultDimensionSpacePoint, $excludeDisabled);
@@ -74,7 +88,7 @@ final readonly class ContentSubgraphs
      * The site node of the site in the subgraph, null if there is none or the subgraph is of another content
      * repository
      */
-    public function findSiteNodeIn(ContentSubgraphInterface $subgraph, Site $site): ?Node
+    public function findSiteNodeIn(ContentSubgraphInterface $subgraph, Model\Site $site): ?Node
     {
         if (!$subgraph->getContentRepositoryId()->equals($site->getConfiguration()->contentRepositoryId)) {
             return null;
@@ -85,49 +99,103 @@ final readonly class ContentSubgraphs
 
     /**
      * The node in the other dimension space points its aggregate occupies (its content variants, not the points that
-     * only fall back to it), in the order of the content dimensions, each read in that point as the account sees it,
-     * so a variant the account may not see is left out
+     * only fall back to it), in the order of the content dimensions, each read in that point with the visibility the
+     * node was read with, so a variant the account may not see is left out
      *
      * @return list<Node>
      */
-    public function findVariants(Node $node, bool $excludeDisabled): array
+    public function findVariants(Node $node): array
     {
+        $contentRepository = $this->contentRepositoryRegistry->get($node->contentRepositoryId);
+        try {
+            $contentGraph = $contentRepository->getContentGraph($node->workspaceName);
+        } catch (WorkspaceDoesNotExist | AccessDenied) {
+            return [];
+        }
         return array_values(array_filter(
-            $this->findAllVariants($node->contentRepositoryId, $node->workspaceName, $node->aggregateId, $excludeDisabled) ?? [],
+            $this->variantsIn($contentRepository, $contentGraph, $node->aggregateId, $node->visibilityConstraints),
             static fn (Node $variant) => !$variant->originDimensionSpacePoint->equals($node->originDimensionSpacePoint),
         ));
     }
 
     /**
      * The aggregate in each dimension space point it occupies, in the order of the content dimensions, each read in
-     * that point as the account sees it, so a variant the account may not see is left out. Null if the content
-     * repository or workspace doesn't exist or the account may not read it, see find()
+     * that point as the account sees it, so a variant the account may not see is left out. Null if the workspace
+     * doesn't exist or the account may not read it, see find()
      *
      * @return list<Node>|null
      */
-    public function findAllVariants(ContentRepositoryId $contentRepositoryId, WorkspaceName $workspaceName, NodeAggregateId $nodeAggregateId, bool $excludeDisabled): ?array
+    public function findAllVariants(ContentRepository $contentRepository, WorkspaceName $workspaceName, NodeAggregateId $nodeAggregateId, bool $excludeDisabled): ?array
     {
-        $contentRepository = $this->contentRepositoryFinder->find($contentRepositoryId);
-        if ($contentRepository === null) {
-            return null;
-        }
-        try {
-            $nodeAggregate = $contentRepository->getContentGraph($workspaceName)->findNodeAggregateById($nodeAggregateId);
-        } catch (WorkspaceDoesNotExist | AccessDenied) {
-            return null;
+        $roles = $this->roles();
+        $contentGraph = $this->readableContentGraph($contentRepository, $workspaceName, $roles);
+        return $contentGraph !== null
+            ? $this->variantsIn($contentRepository, $contentGraph, $nodeAggregateId, $this->visibilityConstraints($contentRepository, $roles, $excludeDisabled))
+            : null;
+    }
+
+    /**
+     * @return list<Node>
+     */
+    private function variantsIn(ContentRepository $contentRepository, ContentGraphInterface $contentGraph, NodeAggregateId $nodeAggregateId, VisibilityConstraints $visibilityConstraints): array
+    {
+        $nodeAggregate = $contentGraph->findNodeAggregateById($nodeAggregateId);
+        if ($nodeAggregate === null) {
+            return [];
         }
         $variants = [];
         // the occupied points are in no particular order
         foreach ($contentRepository->getVariationGraph()->getDimensionSpacePoints() as $dimensionSpacePoint) {
-            if ($nodeAggregate?->occupiesDimensionSpacePoint(OriginDimensionSpacePoint::fromDimensionSpacePoint($dimensionSpacePoint)) !== true) {
+            if (!$nodeAggregate->occupiesDimensionSpacePoint(OriginDimensionSpacePoint::fromDimensionSpacePoint($dimensionSpacePoint))) {
                 continue;
             }
-            $variant = $this->find($contentRepositoryId, $workspaceName, $dimensionSpacePoint, $excludeDisabled)
-                ?->findNodeById($nodeAggregateId);
+            $variant = $contentGraph->getSubgraph($dimensionSpacePoint, $visibilityConstraints)->findNodeById($nodeAggregateId);
             if ($variant !== null) {
                 $variants[] = $variant;
             }
         }
         return $variants;
+    }
+
+    /**
+     * The content graph of the workspace if the account may read it, null if it doesn't exist or it may not
+     *
+     * @param array<string, Role> $roles
+     */
+    private function readableContentGraph(ContentRepository $contentRepository, WorkspaceName $workspaceName, array $roles): ?ContentGraphInterface
+    {
+        $account = $this->oauthContext->authenticatedGrant()?->account;
+        $user = $account !== null ? $this->partyService->getAssignedPartyOfAccount($account) : null;
+        $permissions = $this->contentRepositoryAuthorizationService->getWorkspacePermissions($contentRepository->id, $workspaceName, $roles, $user instanceof Model\User ? $user->getId() : null);
+        if (!$permissions->read) {
+            return null;
+        }
+        try {
+            return $contentRepository->getContentGraph($workspaceName);
+        } catch (WorkspaceDoesNotExist | AccessDenied) {
+            return null;
+        }
+    }
+
+    /**
+     * @param array<string, Role> $roles
+     */
+    private function visibilityConstraints(ContentRepository $contentRepository, array $roles, bool $excludeDisabled): VisibilityConstraints
+    {
+        $visibilityConstraints = $this->contentRepositoryAuthorizationService->getVisibilityConstraints($contentRepository->id, $roles);
+        return $excludeDisabled ? $visibilityConstraints->merge(NeosVisibilityConstraints::excludeDisabled()) : $visibilityConstraints;
+    }
+
+    /**
+     * The roles of the request's access token's account, only Neos.Flow:Everybody without one
+     *
+     * @return array<string, Role>
+     */
+    private function roles(): array
+    {
+        $account = $this->oauthContext->authenticatedGrant()?->account;
+        return $account !== null
+            ? $this->accountPrivileges->rolesOf($account)
+            : ['Neos.Flow:Everybody' => $this->policyService->getRole('Neos.Flow:Everybody')];
     }
 }

@@ -3,7 +3,6 @@ declare(strict_types=1);
 
 namespace Neos\Api\Endpoint\Nodes\Schema;
 
-use Neos\ContentRepository\Core\Projection\ContentGraph;
 use Neos\JsonSchema\Nullable;
 use Neos\JsonSchema\ObjectSchema;
 use Neos\JsonSchema\ProvidesSchema;
@@ -12,7 +11,7 @@ use Neos\JsonSchema\StringSchema;
 use Neos\JsonSchema\Support\ObjectProperties;
 
 /**
- * When a node was created and last modified, as ISO 8601
+ * When a node was created and last modified, as ISO 8601, see NodeSerializer::timestamps()
  */
 final readonly class NodeTimestamps implements ProvidesSchema
 {
@@ -22,16 +21,6 @@ final readonly class NodeTimestamps implements ProvidesSchema
         public string $originalCreated,
         public string|null $originalLastModified,
     ) {
-    }
-
-    public static function from(ContentGraph\Timestamps $timestamps): self
-    {
-        return new self(
-            $timestamps->created->format(\DateTimeInterface::ATOM),
-            $timestamps->lastModified?->format(\DateTimeInterface::ATOM),
-            $timestamps->originalCreated->format(\DateTimeInterface::ATOM),
-            $timestamps->originalLastModified?->format(\DateTimeInterface::ATOM),
-        );
     }
 
     public static function schema(): Schema

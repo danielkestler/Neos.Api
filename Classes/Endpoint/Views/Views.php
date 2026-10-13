@@ -8,7 +8,6 @@ use Neos\Api\Endpoint\Nodes\Schema\DimensionSpacePoint;
 use Neos\Api\Endpoint\Nodes\Schema\NodeAggregateId;
 use Neos\Api\Endpoint\Nodes\SubgraphResolver;
 use Neos\Api\Endpoint\Workspaces\Schema\WorkspaceName;
-use Neos\Api\Endpoint\Views\Parameter\ViewArguments;
 use Neos\Api\Endpoint\Views\Response\RenderedView;
 use Neos\Api\Endpoint\Views\Schema\RenderingModeName;
 use Neos\Api\Endpoint\Views\Schema\View;
@@ -23,6 +22,7 @@ use Neos\Api\Security\AccountPrivileges;
 use Neos\Api\Security\ApiAuthContextProvider;
 use Neos\Api\Security\ApiCaller;
 use Neos\Api\Security\ApiScopes;
+use Neos\Api\Shared\Parameter\Arguments;
 use Neos\Api\Shared\Response\BadRequest;
 use Neos\Api\Shared\Response\Forbidden;
 use Neos\Api\Shared\Response\NotFound;
@@ -129,7 +129,7 @@ final readonly class Views
         #[Parameter(in: 'query', description: 'The rendering mode, the Fusion global renderingMode. frontend if omitted, the Neos UI uses e.g. inPlace')]
         RenderingModeName|null $renderingMode = null,
         #[Parameter(in: 'query', description: 'The arguments of the view: arguments[name]=value, arrays as arguments[name][]=value, e.g. arguments[fusionPath] for fusionPathHtml')]
-        ViewArguments|null $arguments = null,
+        Arguments|null $arguments = null,
     ): RenderedView|NotFound|BadRequest|Forbidden {
         $view = $this->views[$viewName->value] ?? null;
         if ($view === null) {
@@ -143,12 +143,13 @@ final readonly class Views
         if ($mode->name !== RenderingMode::FRONTEND && !$this->accountPrivileges->isGranted($caller->account, self::BACKEND_ACCESS)) {
             return Forbidden::because(sprintf('The rendering mode %s needs the privilege %s', $mode->name, self::BACKEND_ACCESS));
         }
-        $id = $contentRepositoryId?->toContentRepositoryId() ?? $this->siteFinder->findDefault()?->getConfiguration()->contentRepositoryId;
-        if ($id === null) {
-            return NotFound::because('There is no site to render the view for, give contentRepositoryId and nodeAggregateId');
-        }
-        $workspace = $workspaceName?->toWorkspaceName() ?? SharedModel\Workspace\WorkspaceName::forLive();
-        $subgraph = $this->subgraphResolver->resolve($id, $workspace, $dimensionSpacePoint, self::excludeDisabled($workspace, $mode));
+        $subgraph = $this->subgraphResolver->resolve(
+            $contentRepositoryId,
+            $workspaceName,
+            $dimensionSpacePoint,
+            self::excludeDisabled($workspaceName?->toWorkspaceName() ?? SharedModel\Workspace\WorkspaceName::forLive(), $mode),
+            withoutContentRepository: 'There is no default site to render the view for, give a contentRepositoryId',
+        );
         if (!$subgraph instanceof ContentSubgraphInterface) {
             return $subgraph;
         }
@@ -157,10 +158,9 @@ final readonly class Views
             return $nodes;
         }
         [$contextNode, $site] = $nodes;
-        // the parameter only validates them, see ViewArguments
-        $values = $arguments !== null ? $request->getQueryParams()['arguments'] ?? [] : [];
         try {
-            $data = $this->viewRenderer->render($contextNode, $site, $view['prototype'], $mode, $request, is_array($values) ? $values : [], $view['renderErrors'] ?? false);
+            // the parameter only validates them, see Arguments
+            $data = $this->viewRenderer->render($contextNode, $site, $view['prototype'], $mode, $request, Arguments::values($request), $view['renderErrors'] ?? false);
         } catch (InvalidViewArgument $exception) {
             return BadRequest::because($exception->getMessage());
         }
@@ -175,9 +175,9 @@ final readonly class Views
      */
     private function node(ContentSubgraphInterface $subgraph, NodeAggregateId $nodeAggregateId): array|NotFound
     {
-        $node = $subgraph->findNodeById($nodeAggregateId->toNodeAggregateId());
-        if ($node === null) {
-            return NotFound::because(sprintf('There is no node %s in the workspace %s and the dimension space point %s', $nodeAggregateId->value, $subgraph->getWorkspaceName()->value, $subgraph->getDimensionSpacePoint()->toJson()));
+        $node = $this->subgraphResolver->findNode($subgraph, $nodeAggregateId->toNodeAggregateId());
+        if (!$node instanceof Node) {
+            return $node;
         }
         $site = $subgraph->findClosestNode($node->aggregateId, FindClosestNodeFilter::create(nodeTypes: NodeTypeNameFactory::NAME_SITE));
         if ($site === null) {
@@ -195,7 +195,7 @@ final readonly class Views
     {
         $site = $this->siteFinder->findDefault($subgraph->getContentRepositoryId());
         if ($site === null) {
-            return NotFound::because(sprintf('There is no site in the content repository %s to render the view for, give an nodeAggregateId', $subgraph->getContentRepositoryId()->value));
+            return NotFound::because(sprintf('There is no site in the content repository %s to render the view for, give a nodeAggregateId', $subgraph->getContentRepositoryId()->value));
         }
         $siteNode = $this->contentSubgraphs->findSiteNodeIn($subgraph, $site);
         if ($siteNode === null) {

@@ -8,8 +8,8 @@ use Neos\Api\Endpoint\AssetTags\RequestBody\AssetTagUpdate;
 use Neos\Api\Endpoint\AssetTags\Response\AssetTagCreated;
 use Neos\Api\Endpoint\AssetTags\Schema\AssetTag;
 use Neos\Api\Endpoint\AssetTags\Schema\AssetTagId;
-use Neos\Api\Endpoint\AssetTags\Schema\AssetTagList;
 use Neos\Api\Endpoint\AssetTags\Schema\AssetTagListing;
+use Neos\Api\Infrastructure\Http\JsonBody;
 use Neos\Api\Security\ApiAuthContextProvider;
 use Neos\Api\Security\ApiScopes;
 use Neos\Api\Shared\Response\NotFound;
@@ -31,6 +31,7 @@ final readonly class AssetTags
 {
     public function __construct(
         private TagRepository $tagRepository,
+        private AssetTagFinder $assetTagFinder,
         private AssetRepository $assetRepository,
         private PersistenceManagerInterface $persistenceManager,
     ) {
@@ -40,7 +41,7 @@ final readonly class AssetTags
         path: '/assettags',
         method: 'GET',
         summary: 'List the asset tags',
-        description: 'All tags of the media library as a tree: the tags at the root in data, each with its child tags in children, sorted by label. meta.total counts all tags. The tags are the account\'s, as Neos\' media privileges allow.',
+        description: 'All tags of the media library as a tree: the tags at the root in data, each with its child tags in children, sorted by label. meta.total counts all tags. The tags, and the assets assetCount counts, are the account\'s, as Neos\' media privileges allow.',
         operationId: 'listAssetTags',
         security: [
             ApiAuthContextProvider::SCOPES => [ApiScopes::ASSETTAGS_READ],
@@ -48,15 +49,8 @@ final readonly class AssetTags
     )]
     public function list(): AssetTagListing
     {
-        /** @var list<Model\Tag> $tags */
-        $tags = $this->tagRepository->findAll()->toArray();
-        return new AssetTagListing(
-            new AssetTagList(...array_map(
-                $this->assetTag(...),
-                array_values(array_filter($tags, static fn (Model\Tag $tag) => $tag->getParent() === null)),
-            )),
-            new ListingMeta(count($tags)),
-        );
+        $tree = $this->assetTagFinder->tree();
+        return new AssetTagListing($tree->roots(), new ListingMeta($tree->count()));
     }
 
     #[Operation(
@@ -74,9 +68,9 @@ final readonly class AssetTags
     ): AssetTagCreated|UnprocessableContent {
         $parent = null;
         if ($newTag->parentId !== null) {
-            $parent = $this->findTag($newTag->parentId);
+            $parent = $this->assetTagFinder->find($newTag->parentId);
             if ($parent === null) {
-                return UnprocessableContent::because(sprintf('There is no asset tag with the ID %s', $newTag->parentId->value));
+                return UnprocessableContent::because(AssetTagFinder::noTag($newTag->parentId));
             }
         }
         $tag = new Model\Tag($newTag->label->value);
@@ -98,8 +92,8 @@ final readonly class AssetTags
     )]
     public function get(AssetTagId $assetTagId): AssetTag|NotFound
     {
-        $tag = $this->findTag($assetTagId);
-        return $tag !== null ? $this->assetTag($tag) : self::notFound($assetTagId);
+        $tag = $this->assetTagFinder->find($assetTagId);
+        return $tag !== null ? $this->assetTag($tag) : NotFound::because(AssetTagFinder::noTag($assetTagId));
     }
 
     #[Operation(
@@ -117,21 +111,20 @@ final readonly class AssetTags
         #[RequestBody(description: 'The changes')] AssetTagUpdate $patch,
         ServerRequestInterface $request,
     ): AssetTag|NotFound|UnprocessableContent {
-        $tag = $this->findTag($assetTagId);
+        $tag = $this->assetTagFinder->find($assetTagId);
         if ($tag === null) {
-            return self::notFound($assetTagId);
+            return NotFound::because(AssetTagFinder::noTag($assetTagId));
         }
         // AssetTagUpdate can't tell a parentId null from one left out
-        $body = json_decode((string)$request->getBody(), true, flags: JSON_THROW_ON_ERROR);
-        if (array_key_exists('parentId', $body)) {
+        if (JsonBody::has($request, 'parentId')) {
             if ($patch->parentId === null) {
                 // to the root: Tag::setParent() takes no null. Not removed from the old parent's children, they remove
                 // orphans (orphanRemoval), which would delete it. The children are read from the parent column again
                 ObjectAccess::setProperty($tag, 'parent', null, true);
             } else {
-                $parent = $this->findTag($patch->parentId);
+                $parent = $this->assetTagFinder->find($patch->parentId);
                 if ($parent === null) {
-                    return UnprocessableContent::because(sprintf('There is no asset tag with the ID %s', $patch->parentId->value));
+                    return UnprocessableContent::because(AssetTagFinder::noTag($patch->parentId));
                 }
                 for ($ancestor = $parent; $ancestor !== null; $ancestor = $ancestor->getParent()) {
                     if ($ancestor === $tag) {
@@ -161,9 +154,9 @@ final readonly class AssetTags
     )]
     public function delete(AssetTagId $assetTagId): NotFound|null
     {
-        $tag = $this->findTag($assetTagId);
+        $tag = $this->assetTagFinder->find($assetTagId);
         if ($tag === null) {
-            return self::notFound($assetTagId);
+            return NotFound::because(AssetTagFinder::noTag($assetTagId));
         }
         // deepest first: the children remove orphans (orphanRemoval) anyway, but not from the assets
         foreach (array_reverse(self::subtree($tag)) as $removed) {
@@ -177,15 +170,9 @@ final readonly class AssetTags
         return null;
     }
 
-    private function findTag(AssetTagId $assetTagId): ?Model\Tag
-    {
-        $tag = $this->tagRepository->findByIdentifier($assetTagId->value);
-        return $tag instanceof Model\Tag ? $tag : null;
-    }
-
     private function assetTag(Model\Tag $tag): AssetTag
     {
-        return AssetTag::from($tag, $this->persistenceManager, $this->assetRepository);
+        return $this->assetTagFinder->tree()->assetTag($tag);
     }
 
     /**
@@ -200,10 +187,5 @@ final readonly class AssetTags
             array_push($tags, ...self::subtree($child));
         }
         return $tags;
-    }
-
-    private static function notFound(AssetTagId $assetTagId): NotFound
-    {
-        return NotFound::because(sprintf('There is no asset tag with the ID %s', $assetTagId->value));
     }
 }

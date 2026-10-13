@@ -8,12 +8,12 @@ use Neos\JsonSchema\Schema;
 use Neos\Schematic\Discovery\AutoDiscoveringSchema;
 
 /**
- * What a user can be created or changed with
+ * What a user can be created or changed with, by the caller
  */
 final readonly class UserOptions implements ProvidesSchema
 {
     /**
-     * @param AccountRoleList $roles the non-abstract roles, ordered by label
+     * @param AccountRoleList $roles the roles the caller can give users, ordered by label: all roles that aren't abstract for administrators, else the caller's own
      */
     public function __construct(
         public AccountRoleList $roles,

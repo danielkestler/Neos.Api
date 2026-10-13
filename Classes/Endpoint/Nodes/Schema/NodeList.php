@@ -10,7 +10,7 @@ use Neos\OpenApi\Spec\SchemaObjectMap;
 use Neos\Schematic\Serialization\Serializer;
 
 /**
- * A list of nodes: a node's children or variants, or a listing's data. Not Nodes: that's the endpoint
+ * A list of nodes: a node's children, variants or ancestors, or a listing's data. Not Nodes: that's the endpoint
  *
  * Node contains itself through this list, which neither schematic nor the hoister can express with types: the items
  * are a $ref to the Node component, and Node types its member iterable, so the hoister doesn't follow it into a
@@ -34,7 +34,7 @@ final readonly class NodeList implements ProvidesSchema, \IteratorAggregate
     {
         static $schema = null;
         return $schema ??= ArraySchema::create(
-            description: 'Nodes. In a node only if included, else null: with include=children the direct child nodes in their order, with include=variants the node in its other origin dimension space points (its content variants, not the points that only fall back to it) in the order of the content dimensions',
+            description: 'Nodes. In a node only if included, else null: with include=children the direct child nodes in their order, with include=variants the node in its other origin dimension space points (its content variants, not the points that only fall back to it) in the order of the content dimensions, with include=ancestors the nodes above it up to its site node, nearest first',
             items: SchemaObjectMap::reference('Node'),
         );
     }

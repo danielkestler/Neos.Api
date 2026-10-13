@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 namespace Neos\Api\Endpoint\Users\Schema;
 
-use Neos\Api\Endpoint\Sites\Schema\PackageKey;
+use Neos\Api\Shared\Schema\PackageKey;
 use Neos\Flow\Security\Policy\Role;
 use Neos\JsonSchema\ProvidesSchema;
 use Neos\JsonSchema\Schema;

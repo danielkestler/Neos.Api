@@ -163,10 +163,26 @@ class MeTest extends EndpointTestCase
     }
 
     #[Test]
+    public function nullResetsTheInterfaceLanguage(): void
+    {
+        $token = $this->token('editor-machine', 'me.update');
+        self::assertSame('de', self::json($this->patch('/api/me/profile', $token, ['interfaceLanguage' => 'de']))['interfaceLanguage']);
+
+        // left out, it stays
+        self::assertSame('de', self::json($this->patch('/api/me/profile', $token, ['firstName' => 'Edda']))['interfaceLanguage']);
+
+        $response = $this->patch('/api/me/profile', $token, ['interfaceLanguage' => null]);
+        self::assertSame(200, $response->getStatusCode(), (string)$response->getBody());
+        self::assertSame('en', self::json($response)['interfaceLanguage']);
+        $this->persistenceManager->clearState();
+        self::assertNull($this->objectManager->get(UserService::class)->getUser('editor')->getPreferences()->getInterfaceLanguage());
+    }
+
+    #[Test]
     public function rejectsInvalidProfileChanges(): void
     {
         $token = $this->token('editor-machine', 'me.update');
-        foreach ([['email' => 'not-an-email'], ['firstName' => ''], ['firstName' => 42], ['preferences' => ['a', 'b']], ['label' => 'Edith']] as $body) {
+        foreach ([['email' => 'not-an-email'], ['firstName' => ''], ['firstName' => 42], ['lastName' => str_repeat('a', 101)], ['preferences' => ['a', 'b']], ['label' => 'Edith']] as $body) {
             $response = $this->patch('/api/me/profile', $token, $body);
 
             self::assertSame(400, $response->getStatusCode(), json_encode($body) . ': ' . $response->getBody());
@@ -199,6 +215,21 @@ class MeTest extends EndpointTestCase
         $hashService = $this->objectManager->get(HashService::class);
         self::assertTrue($hashService->validatePassword('new-password', $account->getCredentialsSource()));
         self::assertFalse($hashService->validatePassword('password', $account->getCredentialsSource()));
+    }
+
+    #[Test]
+    public function changingThePasswordRevokesTheOtherTokens(): void
+    {
+        $otherToken = $this->token('editor-machine', 'me.read');
+        $token = $this->token('editor-machine', 'me.read me.password');
+
+        $response = $this->put('/api/me/password', $token, ['currentPassword' => 'password', 'newPassword' => 'new-password']);
+
+        self::assertSame(204, $response->getStatusCode(), (string)$response->getBody());
+        $this->persistenceManager->clearState();
+        self::assertSame(401, $this->get('/api/me', $otherToken)->getStatusCode());
+        // the token of the request stays valid
+        self::assertSame(200, $this->get('/api/me', $token)->getStatusCode());
     }
 
     #[Test]

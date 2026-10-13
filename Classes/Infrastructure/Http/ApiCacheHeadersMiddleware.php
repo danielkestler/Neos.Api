@@ -4,7 +4,6 @@ declare(strict_types=1);
 namespace Neos\Api\Infrastructure\Http;
 
 use Neos\Api\Infrastructure\I18n\LabelTranslator;
-use Neos\Flow\Annotations as Flow;
 use Neos\Flow\Http\ServerRequestAttributes;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
@@ -23,13 +22,15 @@ use Psr\Http\Server\RequestHandlerInterface;
  */
 final class ApiCacheHeadersMiddleware implements MiddlewareInterface
 {
-    #[Flow\Inject]
-    protected LabelTranslator $labelTranslator;
-
     /**
      * The name of the API in Neos.OpenApi.FlowAdapter.apis, see Settings.yaml
      */
     private const string API_NAME = 'neos';
+
+    public function __construct(
+        private readonly LabelTranslator $labelTranslator,
+    ) {
+    }
 
     public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
     {

@@ -14,10 +14,11 @@ use Neos\Flow\Persistence\PersistenceManagerInterface;
 use Neos\Flow\ResourceManagement\ResourceManager;
 use Neos\Media\Domain\Model\AssetInterface;
 use Neos\Neos\Domain\NodeLabel\NodeLabelGeneratorInterface;
+use Neos\Neos\Domain\SubtreeTagging\NeosSubtreeTag;
 
 /**
  * What the API tells about a node beyond its own fields, the same for the nodes endpoint and the views
- * (Neos.Api.Node): its label, properties and references as JSON-safe values
+ * (Neos.Api.Node): its label, state, timestamps, properties and references as JSON-safe values
  */
 #[Flow\Scope('singleton')]
 final readonly class NodeSerializer
@@ -55,17 +56,71 @@ final readonly class NodeSerializer
     }
 
     /**
-     * The references the node type declares, each with the references in their order, an empty list if there are none
+     * The references the node type declares, each with the referenced nodes in their order as
+     * {"nodeAggregateId": "…", "properties": {…}} (the reference's properties serialized as the node's), an empty list
+     * if there are none. Objects where they are empty, so they encode as {}, not []
      *
-     * @return array<string, list<Reference>>
+     * @return array<string, list<array{nodeAggregateId: string, properties: array<string, mixed>|\stdClass}>>|\stdClass
      */
-    public function references(Node $node): array
+    public function references(Node $node): array|\stdClass
     {
         $references = array_fill_keys(array_keys($this->nodeType($node)?->getReferences() ?? []), []);
         foreach ($this->contentRepositoryRegistry->subgraphForNode($node)->findReferences($node->aggregateId, FindReferencesFilter::create()) as $reference) {
-            $references[$reference->name->value][] = $reference;
+            $references[$reference->name->value][] = $this->reference($reference);
         }
-        return $references;
+        return $references === [] ? new \stdClass() : $references;
+    }
+
+    /**
+     * Whether the node itself is hidden, not just inside a hidden node
+     */
+    public function isHidden(Node $node): bool
+    {
+        return $node->tags->withoutInherited()->contain(NeosSubtreeTag::disabled());
+    }
+
+    /**
+     * Whether the node is inside a hidden node, which hides it as well
+     */
+    public function isHiddenByAncestor(Node $node): bool
+    {
+        return $node->tags->onlyInherited()->contain(NeosSubtreeTag::disabled());
+    }
+
+    /**
+     * Whether the node is shown in its dimension space point with the content of another one (a fallback), e.g. en_UK
+     * showing en_US
+     */
+    public function isShineThrough(Node $node): bool
+    {
+        return !$node->dimensionSpacePoint->equals($node->originDimensionSpacePoint);
+    }
+
+    /**
+     * When the node was created and last modified as ISO 8601, the original ones are of the live workspace
+     *
+     * @return array{created: string, lastModified: string|null, originalCreated: string, originalLastModified: string|null}
+     */
+    public function timestamps(Node $node): array
+    {
+        return [
+            'created' => $node->timestamps->created->format(\DateTimeInterface::ATOM),
+            'lastModified' => $node->timestamps->lastModified?->format(\DateTimeInterface::ATOM),
+            'originalCreated' => $node->timestamps->originalCreated->format(\DateTimeInterface::ATOM),
+            'originalLastModified' => $node->timestamps->originalLastModified?->format(\DateTimeInterface::ATOM),
+        ];
+    }
+
+    /**
+     * @return array{nodeAggregateId: string, properties: array<string, mixed>|\stdClass}
+     */
+    private function reference(Reference $reference): array
+    {
+        $properties = $reference->properties !== null ? $this->properties($reference->properties) : [];
+        return [
+            'nodeAggregateId' => $reference->node->aggregateId->value,
+            'properties' => $properties === [] ? new \stdClass() : $properties,
+        ];
     }
 
     private function nodeType(Node $node): ?NodeType

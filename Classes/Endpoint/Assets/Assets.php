@@ -4,27 +4,34 @@ declare(strict_types=1);
 namespace Neos\Api\Endpoint\Assets;
 
 use Doctrine\Common\Collections\ArrayCollection;
+use Neos\Api\Endpoint\AssetCollections\AssetCollectionFinder;
 use Neos\Api\Endpoint\AssetCollections\Schema\AssetCollectionId;
 use Neos\Api\Endpoint\Assets\RequestBody\AssetUpdate;
 use Neos\Api\Endpoint\Assets\RequestBody\AssetVariantCreate;
 use Neos\Api\Endpoint\Assets\Response\AssetCreated;
+use Neos\Api\Endpoint\Assets\Response\AssetImportFailed;
 use Neos\Api\Endpoint\Assets\Schema\Asset;
 use Neos\Api\Endpoint\Assets\Schema\AssetId;
 use Neos\Api\Endpoint\Assets\Schema\AssetList;
+use Neos\Api\Endpoint\Assets\Schema\AssetListing;
 use Neos\Api\Endpoint\Assets\Schema\AssetSource;
 use Neos\Api\Endpoint\Assets\Schema\AssetSourceId;
 use Neos\Api\Endpoint\Assets\Schema\AssetSourceList;
 use Neos\Api\Endpoint\Assets\Schema\AssetSourceListing;
+use Neos\Api\Endpoint\Assets\Schema\AssetTitle;
 use Neos\Api\Endpoint\Assets\Schema\AssetType;
 use Neos\Api\Endpoint\Assets\Schema\AssetUsage;
 use Neos\Api\Endpoint\Assets\Schema\AssetUsageList;
 use Neos\Api\Endpoint\Assets\Schema\AssetUsageListing;
 use Neos\Api\Endpoint\Assets\Schema\AssetUsageListingMeta;
+use Neos\Api\Endpoint\Assets\Schema\CropRectangle;
 use Neos\Api\Endpoint\Assets\Schema\PaginatedAssetListing;
+use Neos\Api\Endpoint\AssetTags\AssetTagFinder;
 use Neos\Api\Endpoint\AssetTags\Schema\AssetTagId;
 use Neos\Api\Endpoint\Nodes\Schema\Node;
 use Neos\Api\Infrastructure\ContentRepository\ContentSubgraphs;
 use Neos\Api\Infrastructure\ContentRepository\NodeSerializer;
+use Neos\Api\Infrastructure\Http\MultipartForm;
 use Neos\Api\Security\ApiAuthContextProvider;
 use Neos\Api\Security\ApiScopes;
 use Neos\Api\Shared\Parameter\Limit;
@@ -38,28 +45,27 @@ use Neos\Api\Shared\Schema\ListingLinks;
 use Neos\Api\Shared\Schema\ListingMeta;
 use Neos\ContentRepository\Core\Projection\ContentGraph\Filter\FindClosestNodeFilter;
 use Neos\Flow\Persistence\PersistenceManagerInterface;
+use Neos\Flow\ResourceManagement\Exception as ResourceException;
 use Neos\Flow\ResourceManagement\PersistentResource;
 use Neos\Flow\ResourceManagement\ResourceManager;
 use Neos\Media\Domain\Model;
 use Neos\Media\Domain\Model\AssetSource\AssetProxy\AssetProxyInterface;
 use Neos\Media\Domain\Model\AssetSource\AssetProxy\HasRemoteOriginalInterface;
-use Neos\Media\Domain\Model\AssetSource\SupportsCollectionsInterface;
-use Neos\Media\Domain\Model\AssetSource\SupportsSortingInterface;
-use Neos\Media\Domain\Model\AssetSource\SupportsTaggingInterface;
-use Neos\Media\Domain\Repository\AssetCollectionRepository;
+use Neos\Media\Domain\Model\AssetSource\AssetSourceConnectionExceptionInterface;
+use Neos\Media\Domain\Model\AssetSource\Neos\NeosAssetProxy;
 use Neos\Media\Domain\Repository\AssetRepository;
-use Neos\Media\Domain\Repository\TagRepository;
 use Neos\Media\Domain\Service\AssetService;
 use Neos\Media\Domain\Service\AssetSourceService;
+use Neos\Media\Domain\Service\ImageService;
 use Neos\Media\Domain\Strategy\AssetModelMappingStrategyInterface;
 use Neos\Media\Exception\AssetServiceException;
 use Neos\Media\Exception\AssetSourceServiceException;
+use Neos\Media\Exception\ImageFileException;
 use Neos\Neos\AssetUsage\Dto\AssetUsageReference;
 use Neos\Neos\Domain\Service\NodeTypeNameFactory;
 use Neos\OpenApi\Attributes\Operation;
 use Neos\OpenApi\Attributes\Parameter;
 use Neos\OpenApi\Attributes\RequestBody;
-use Neos\Schematic\Exception\InstantiationFailed;
 use Neos\Utility\MediaTypes;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Message\UploadedFileInterface;
@@ -69,23 +75,14 @@ use Psr\Http\Message\UploadedFileInterface;
  */
 final readonly class Assets
 {
-    private const string NEOS = 'neos';
-
-    /**
-     * The sort fields of listAssets → the properties the asset sources sort by, as the Neos media browser does
-     */
-    private const array SORT_FIELDS = [
-        'name' => 'resource.filename',
-        'lastModified' => 'lastModified',
-    ];
-
     public function __construct(
         private AssetSourceService $assetSourceService,
         private AssetResolver $assetResolver,
+        private AssetTagFinder $assetTagFinder,
+        private AssetCollectionFinder $assetCollectionFinder,
         private AssetService $assetService,
         private AssetRepository $assetRepository,
-        private TagRepository $tagRepository,
-        private AssetCollectionRepository $assetCollectionRepository,
+        private ImageService $imageService,
         private ContentSubgraphs $contentSubgraphs,
         private NodeSerializer $nodeSerializer,
         private PersistenceManagerInterface $persistenceManager,
@@ -116,7 +113,7 @@ final readonly class Assets
         path: '/assets/{assetSourceId}',
         method: 'GET',
         summary: 'List the assets of an asset source',
-        description: 'A page of the assets of the asset source (see listAssetSources), an unknown one is a 404. filterByAssetType narrows down to a type, filterByAssetCollection to a collection. Then either search (in title, caption and filename), filterByTag or filterByUntagged: the asset sources can do only one of them at a time, several are a 400. The tag and collection filters need a source that supports them (see listAssetSources), unknown tags and collections are 400s. sort is by name or lastModified, -lastModified if not given, for a source that supports sorting; sort on any other is a 400. Image variants aren\'t listed, they belong to their image. offset and limit (25 by default, 100 at most) choose the page, meta.total and links tell about the others.',
+        description: 'A page of the assets of the asset source (see listAssetSources), an unknown one is a 404. filterByAssetType narrows down to a type, filterByCollection to a collection. Then either search (in title, caption and filename), filterByTag or filterByUntagged: the asset sources can do only one of them at a time, several are a 400. The tag and collection filters need a source that supports them (see listAssetSources), unknown tags and collections are 400s. sort is by name or lastModified, -lastModified if not given, for a source that supports sorting; sort on any other is a 400. Image variants aren\'t listed, they belong to their image (see listAssetVariants). offset and limit (25 by default, 100 at most) choose the page, meta.total and links tell about the others.',
         operationId: 'listAssets',
         security: [
             ApiAuthContextProvider::SCOPES => [ApiScopes::ASSETS_READ],
@@ -128,7 +125,7 @@ final readonly class Assets
         #[Parameter(in: 'query', description: 'Only the assets of this type')]
         AssetType|null $filterByAssetType = null,
         #[Parameter(in: 'query', description: 'Only the assets in this collection')]
-        AssetCollectionId|null $filterByAssetCollection = null,
+        AssetCollectionId|null $filterByCollection = null,
         #[Parameter(in: 'query', description: 'Only the assets with this tag')]
         AssetTagId|null $filterByTag = null,
         #[Parameter(in: 'query', description: 'Only the assets without tags, if true')]
@@ -144,67 +141,25 @@ final readonly class Assets
     ): PaginatedAssetListing|BadRequest|NotFound {
         $offset ??= Offset::none();
         $limit ??= Limit::default();
-        $search = $search !== null && trim($search) !== '' ? $search : null;
-        if (count(array_filter([$search !== null, $filterByTag !== null, $filterByUntagged])) > 1) {
-            return BadRequest::because('search, filterByTag and filterByUntagged can\'t be combined');
-        }
-        $orderings = [];
-        foreach ($sort?->fields() ?? [] as ['field' => $field, 'descending' => $descending]) {
-            if (!isset(self::SORT_FIELDS[$field])) {
-                return BadRequest::because(sprintf('The assets can\'t be sorted by %s, only by %s', $field, implode(', ', array_keys(self::SORT_FIELDS))));
-            }
-            $orderings[self::SORT_FIELDS[$field]] = $descending ? SupportsSortingInterface::ORDER_DESCENDING : SupportsSortingInterface::ORDER_ASCENDING;
-        }
-
         $assetSource = $this->assetResolver->findAssetSource($assetSourceId);
         if ($assetSource === null) {
             return AssetResolver::noAssetSource($assetSourceId);
         }
-        $repository = $this->assetResolver->repository($assetSource);
-        if (($filterByTag !== null || $filterByUntagged) && !$repository instanceof SupportsTaggingInterface) {
-            return BadRequest::because(sprintf('The asset source %s doesn\'t support tags', $assetSourceId->value));
+        $query = AssetQuery::create($filterByAssetType, $filterByCollection, $filterByTag, $filterByUntagged, $search, $sort);
+        if ($query instanceof BadRequest) {
+            return $query;
         }
-        if ($filterByAssetCollection !== null && !$repository instanceof SupportsCollectionsInterface) {
-            return BadRequest::because(sprintf('The asset source %s doesn\'t support collections', $assetSourceId->value));
-        }
-        if ($orderings !== [] && !$repository instanceof SupportsSortingInterface) {
-            return BadRequest::because(sprintf('The asset source %s doesn\'t support sorting', $assetSourceId->value));
-        }
-
-        if ($filterByAssetType !== null) {
-            $repository->filterByType($filterByAssetType->toAssetTypeFilter());
-        }
-        if ($filterByAssetCollection !== null) {
-            $assetCollection = $this->assetCollectionRepository->findByIdentifier($filterByAssetCollection->value);
-            if (!$assetCollection instanceof Model\AssetCollection) {
-                return BadRequest::because(sprintf('There is no asset collection with the ID %s', $filterByAssetCollection->value));
-            }
-            /** @var SupportsCollectionsInterface $repository */
-            $repository->filterByCollection($assetCollection);
-        }
-        if ($repository instanceof SupportsSortingInterface) {
-            $repository->orderBy($orderings ?: [self::SORT_FIELDS['lastModified'] => SupportsSortingInterface::ORDER_DESCENDING]);
-        }
-        if ($filterByTag !== null) {
-            $tag = $this->tagRepository->findByIdentifier($filterByTag->value);
-            if (!$tag instanceof Model\Tag) {
-                return BadRequest::because(sprintf('There is no asset tag with the ID %s', $filterByTag->value));
-            }
-            $result = $repository->findByTag($tag);
-        } elseif ($filterByUntagged) {
-            $result = $repository->findUntagged();
-        } elseif ($search !== null) {
-            $result = $repository->findBySearchTerm($search);
-        } else {
-            $result = $repository->findAll();
+        $result = $query->find($assetSourceId->value, $this->assetResolver->repository($assetSource), $this->assetTagFinder, $this->assetCollectionFinder);
+        if ($result instanceof BadRequest) {
+            return $result;
         }
 
         $total = $result->count();
-        $query = $result->getQuery();
-        $query->setOffset($offset->value);
-        $query->setLimit($limit->value);
+        $page = $result->getQuery();
+        $page->setOffset($offset->value);
+        $page->setLimit($limit->value);
         return new PaginatedAssetListing(
-            new AssetList(...array_map($this->asset(...), $query->execute()->toArray())),
+            new AssetList(...array_map($this->asset(...), $page->execute()->toArray())),
             new ListingMeta($total),
             ListingLinks::for($request, $offset, $limit, $total),
         );
@@ -227,13 +182,13 @@ final readonly class Assets
     }
 
     #[Operation(
-        path: '/assets/{assetSourceId}/{assetId}/usage',
+        path: '/assets/{assetSourceId}/{assetId}/usages',
         method: 'GET',
         summary: 'List the usages of an asset',
-        description: 'The nodes that use the asset (or a variant of it) in a property, in every workspace and dimension space point, each with its document. Only the ones the account may read are listed, meta.inaccessible counts the others: an asset is in use even if none are listed. A remote asset that isn\'t imported has none.',
+        description: 'The nodes that use the asset (or a variant of it) in a property, in every workspace and dimension space point, each with its document. It returns node content, so it needs nodes.read besides assets.read. Only the ones the account may read are listed, meta.inaccessible counts the others: an asset is in use even if none are listed. A remote asset that isn\'t imported has none.',
         operationId: 'listAssetUsages',
         security: [
-            ApiAuthContextProvider::SCOPES => [ApiScopes::ASSETS_READ],
+            ApiAuthContextProvider::SCOPES => [ApiScopes::ASSETS_READ, ApiScopes::NODES_READ],
         ],
     )]
     public function listUsages(AssetSourceId $assetSourceId, AssetId $assetId): AssetUsageListing|NotFound
@@ -258,10 +213,35 @@ final readonly class Assets
     }
 
     #[Operation(
+        path: '/assets/{assetSourceId}/{assetId}/variants',
+        method: 'GET',
+        summary: 'List the variants of an image',
+        description: 'The image variants of an image of neos (see createAssetVariant, also the ones made from presets), oldest first. Other assets, variants and remote assets have none.',
+        operationId: 'listAssetVariants',
+        security: [
+            ApiAuthContextProvider::SCOPES => [ApiScopes::ASSETS_READ],
+        ],
+    )]
+    public function listVariants(AssetSourceId $assetSourceId, AssetId $assetId): AssetListing|NotFound
+    {
+        $proxy = $this->assetResolver->findAsset($assetSourceId, $assetId);
+        if (!$proxy instanceof AssetProxyInterface) {
+            return $proxy;
+        }
+        $image = $proxy instanceof NeosAssetProxy ? $proxy->getAsset() : null;
+        $variants = $image instanceof Model\Image && !$image instanceof Model\ImageVariant ? $image->getVariants() : [];
+        usort($variants, static fn (Model\ImageVariant $a, Model\ImageVariant $b) => $a->getLastModified() <=> $b->getLastModified());
+        return AssetListing::of(new AssetList(...array_map(
+            fn (Model\ImageVariant $variant) => $this->asset($this->assetResolver->neosProxy($variant)),
+            $variants,
+        )));
+    }
+
+    #[Operation(
         path: '/assets/{assetSourceId}/{assetId}',
         method: 'PATCH',
         summary: 'Change an asset',
-        description: 'Changes the metadata of an asset of neos, what is left out or null stays as it is. tagIds and assetCollectionIds replace all tags and collections of the asset ([] removes them), unknown ones are a 422. Assets of other sources are a 422: import them first.',
+        description: 'Changes the metadata of an asset of neos, what is left out or null stays as it is. tagIds and collectionIds replace all tags and collections of the asset ([] removes them), unknown ones are a 422; tags and collections the account can\'t see stay. Assets of other sources are a 422: import them first.',
         operationId: 'updateAsset',
         security: [
             ApiAuthContextProvider::SCOPES => [ApiScopes::ASSETS_UPDATE],
@@ -276,29 +256,31 @@ final readonly class Assets
         if (!$asset instanceof Model\Asset) {
             return $asset;
         }
-        $tags = [];
-        foreach ($patch->tagIds ?? [] as $tagId) {
-            $tag = $this->tagRepository->findByIdentifier($tagId->value);
-            if (!$tag instanceof Model\Tag) {
-                return UnprocessableContent::because(sprintf('There is no asset tag with the ID %s', $tagId->value));
-            }
-            $tags[] = $tag;
+        $tags = $this->assetTagFinder->findAll($patch->tagIds ?? []);
+        if ($tags instanceof UnprocessableContent) {
+            return $tags;
         }
-        $assetCollections = [];
-        foreach ($patch->assetCollectionIds ?? [] as $assetCollectionId) {
-            $assetCollection = $this->assetCollectionRepository->findByIdentifier($assetCollectionId->value);
-            if (!$assetCollection instanceof Model\AssetCollection) {
-                return UnprocessableContent::because(sprintf('There is no asset collection with the ID %s', $assetCollectionId->value));
-            }
-            $assetCollections[] = $assetCollection;
+        $collections = $this->assetCollectionFinder->findAll($patch->collectionIds ?? []);
+        if ($collections instanceof UnprocessableContent) {
+            return $collections;
         }
         $patch->applyTo($asset);
         if ($patch->tagIds !== null) {
-            $asset->setTags(new ArrayCollection(self::distinct($tags)));
+            // one by one, never setTags(): Doctrine would delete all rows of the asset's tags, also of the ones the
+            // account can't see (getTags() only has the visible ones)
+            foreach ($asset->getTags()->toArray() as $tag) {
+                if (!in_array($tag, $tags, true)) {
+                    $asset->removeTag($tag);
+                }
+            }
+            foreach ($tags as $tag) {
+                $asset->addTag($tag);
+            }
         }
-        if ($patch->assetCollectionIds !== null) {
-            // a new collection: setAssetCollections() compares it with the current one
-            $asset->setAssetCollections(new ArrayCollection(self::distinct($assetCollections)));
+        if ($patch->collectionIds !== null) {
+            // the collections own the relation: setAssetCollections() adds the asset to or removes it from each that
+            // changes, the ones the account can't see stay
+            $asset->setAssetCollections(new ArrayCollection($collections));
         }
         return $this->changed($asset);
     }
@@ -319,14 +301,14 @@ final readonly class Assets
         if (!$asset instanceof Model\Asset) {
             return $asset;
         }
-        // Neos doesn't check variants, but nodes use them as well
-        if ($this->assetService->isInUse($asset)) {
-            return Conflict::because('The asset is in use, see listAssetUsages');
+        // remove() checks the usages, but not of variants, which nodes use as well
+        if ($asset instanceof Model\ImageVariant && $this->assetService->isInUse($asset)) {
+            return self::inUse();
         }
         try {
             $this->assetRepository->remove($asset);
-        } catch (AssetServiceException $exception) {
-            return Conflict::because($exception->getMessage());
+        } catch (AssetServiceException) {
+            return self::inUse();
         }
         $this->persistenceManager->persistAll();
         return null;
@@ -348,11 +330,11 @@ final readonly class Assets
         if (!$asset instanceof Model\Asset) {
             return $asset;
         }
-        $tag = $this->tagRepository->findByIdentifier($assetTagId->value);
-        if (!$tag instanceof Model\Tag) {
-            return NotFound::because(sprintf('There is no asset tag with the ID %s', $assetTagId->value));
+        $tag = $this->assetTagFinder->find($assetTagId);
+        if ($tag === null) {
+            return NotFound::because(AssetTagFinder::noTag($assetTagId));
         }
-        return $asset->addTag($tag) ? $this->changed($asset) : $this->asset($this->assetResolver->neosProxy($asset));
+        return $asset->addTag($tag) ? $this->changed($asset) : $this->neosAsset($asset);
     }
 
     #[Operation(
@@ -371,8 +353,8 @@ final readonly class Assets
         if (!$asset instanceof Model\Asset) {
             return $asset;
         }
-        $tag = $this->tagRepository->findByIdentifier($assetTagId->value);
-        if (!$tag instanceof Model\Tag || !$asset->removeTag($tag)) {
+        $tag = $this->assetTagFinder->find($assetTagId);
+        if ($tag === null || !$asset->removeTag($tag)) {
             return NotFound::because(sprintf('The asset has no tag with the ID %s', $assetTagId->value));
         }
         return $this->changed($asset);
@@ -394,15 +376,15 @@ final readonly class Assets
         if (!$asset instanceof Model\Asset) {
             return $asset;
         }
-        $assetCollection = $this->assetCollectionRepository->findByIdentifier($assetCollectionId->value);
-        if (!$assetCollection instanceof Model\AssetCollection) {
-            return NotFound::because(sprintf('There is no asset collection with the ID %s', $assetCollectionId->value));
+        $collection = $this->assetCollectionFinder->find($assetCollectionId);
+        if ($collection === null) {
+            return NotFound::because(AssetCollectionFinder::noCollection($assetCollectionId));
         }
-        $assetCollections = $asset->getAssetCollections()->toArray();
-        if (in_array($assetCollection, $assetCollections, true)) {
-            return $this->asset($this->assetResolver->neosProxy($asset));
+        $collections = $asset->getAssetCollections()->toArray();
+        if (in_array($collection, $collections, true)) {
+            return $this->neosAsset($asset);
         }
-        $asset->setAssetCollections(new ArrayCollection([...array_values($assetCollections), $assetCollection]));
+        $asset->setAssetCollections(new ArrayCollection([...array_values($collections), $collection]));
         return $this->changed($asset);
     }
 
@@ -422,12 +404,12 @@ final readonly class Assets
         if (!$asset instanceof Model\Asset) {
             return $asset;
         }
-        $assetCollection = $this->assetCollectionRepository->findByIdentifier($assetCollectionId->value);
-        $assetCollections = $asset->getAssetCollections()->toArray();
-        if (!$assetCollection instanceof Model\AssetCollection || !in_array($assetCollection, $assetCollections, true)) {
+        $collection = $this->assetCollectionFinder->find($assetCollectionId);
+        $collections = $asset->getAssetCollections()->toArray();
+        if ($collection === null || !in_array($collection, $collections, true)) {
             return NotFound::because(sprintf('The asset is in no asset collection with the ID %s', $assetCollectionId->value));
         }
-        $asset->setAssetCollections(new ArrayCollection(array_values(array_filter($assetCollections, static fn (Model\AssetCollection $other) => $other !== $assetCollection))));
+        $asset->setAssetCollections(new ArrayCollection(array_values(array_filter($collections, static fn (Model\AssetCollection $other) => $other !== $collection))));
         return $this->changed($asset);
     }
 
@@ -435,7 +417,7 @@ final readonly class Assets
         path: '/assets/{assetSourceId}',
         method: 'POST',
         summary: 'Upload an asset',
-        description: 'Uploads a file into neos, the only asset source that takes uploads (others are a 422, an unknown one a 404), as an asset of the type its media type maps to (an image, document, video or audio), as the Neos media browser does. The body is multipart/form-data, not JSON (the document can\'t describe it): resource the file (required), title, assetCollectionId the collection to put it in, tagIds[] the tags to give it (repeated). A missing file or a malformed field is a 400, an unknown collection or tag a 422. A file that is in neos already (the same content) isn\'t added again: that asset gets the collection and tags and is the response, a 200 instead of the 201.',
+        description: 'Uploads a file into neos, the only asset source that takes uploads (others are a 422, an unknown one a 404), as an asset of the type its media type maps to (an image, document, video or audio), as the Neos media browser does. The body is multipart/form-data, not JSON (the document can\'t describe it): file the file (required), title (at most 255 characters), collectionIds[] the collections to put it in and tagIds[] the tags to give it (each repeated). A missing file or a malformed field is a 400, an unknown collection or tag a 422, a file whose name says image but that isn\'t one a 422. A file that is in neos already (the same content) isn\'t added again: the response is that asset as it is, a 200 instead of the 201, the fields aren\'t applied to it (that is updateAsset).',
         operationId: 'createAsset',
         security: [
             ApiAuthContextProvider::SCOPES => [ApiScopes::ASSETS_CREATE],
@@ -447,93 +429,62 @@ final readonly class Assets
         if ($assetSource === null) {
             return AssetResolver::noAssetSource($assetSourceId);
         }
-        if ($assetSource->getIdentifier() !== self::NEOS || $assetSource->isReadOnly()) {
+        if (!AssetResolver::isNeos($assetSource)) {
             return UnprocessableContent::because(sprintf('The asset source %s takes no uploads, only neos does', $assetSourceId->value));
         }
-        $form = MultipartForm::of($request);
-        $file = $form->file('resource');
-        if ($file === null) {
-            return BadRequest::because($form->uploadError('resource'));
-        }
-        $tagIds = $form->strings('tagIds');
-        $assetCollectionId = $form->string('assetCollectionId');
-        if ($tagIds === null) {
-            return BadRequest::because('tagIds must be repeated tagIds[] fields');
-        }
-        try {
-            $tagIds = array_map(AssetTagId::fromString(...), $tagIds);
-            $assetCollectionId = $assetCollectionId !== null ? AssetCollectionId::fromString($assetCollectionId) : null;
-        } catch (InstantiationFailed) {
-            return BadRequest::because('assetCollectionId must be the ID of an asset collection, tagIds[] IDs of asset tags');
-        }
-        $tags = [];
-        foreach ($tagIds as $tagId) {
-            $tag = $this->tagRepository->findByIdentifier($tagId->value);
-            if (!$tag instanceof Model\Tag) {
-                return UnprocessableContent::because(sprintf('There is no asset tag with the ID %s', $tagId->value));
-            }
-            $tags[] = $tag;
-        }
-        $assetCollection = $assetCollectionId !== null ? $this->assetCollectionRepository->findByIdentifier($assetCollectionId->value) : null;
-        if ($assetCollectionId !== null && !$assetCollection instanceof Model\AssetCollection) {
-            return UnprocessableContent::because(sprintf('There is no asset collection with the ID %s', $assetCollectionId->value));
+        $upload = AssetUpload::fromForm(MultipartForm::of($request), $this->assetTagFinder, $this->assetCollectionFinder);
+        if (!$upload instanceof AssetUpload) {
+            return $upload;
         }
 
-        // one asset per file, as the media browser does: checked before the file is imported
-        $existing = $this->assetRepository->findOneByResourceSha1(self::sha1($file));
-        $asset = $existing instanceof Model\Asset && !$existing instanceof Model\ImageVariant ? $existing : null;
-        if ($asset === null) {
-            $resource = $this->importResource($file);
-            $className = $this->assetModelMappingStrategy->map($resource);
-            $asset = new $className($resource);
-            if (!$asset instanceof Model\Asset) {
-                throw new \RuntimeException(sprintf('The asset model %s isn\'t an asset', $className), 1791800003);
-            }
-            $title = $form->string('title');
-            if ($title !== null) {
-                $asset->setTitle($title);
-            }
-            $this->assetRepository->add($asset);
+        // one asset per file, as the media browser does: checked before the file is imported. It stays as it is, the
+        // upload only needs assets.create
+        $existing = $this->assetRepository->findOneByResourceSha1(self::sha1($upload->file));
+        if ($existing instanceof Model\Asset && !$existing instanceof Model\ImageVariant) {
+            return $this->neosAsset($existing);
         }
-        foreach ($tags as $tag) {
-            $asset->addTag($tag);
+        $resource = $this->importResource($upload->file);
+        $unreadable = $this->unreadableImage($resource);
+        if ($unreadable !== null) {
+            return $unreadable;
         }
-        $assetCollections = $asset->getAssetCollections()->toArray();
-        if ($assetCollection !== null && !in_array($assetCollection, $assetCollections, true)) {
-            $asset->setAssetCollections(new ArrayCollection([...array_values($assetCollections), $assetCollection]));
+        $className = $this->assetModelMappingStrategy->map($resource);
+        $asset = new $className($resource);
+        if (!$asset instanceof Model\Asset) {
+            throw new \RuntimeException(sprintf('The asset model %s isn\'t an asset', $className), 1791800003);
         }
-        if ($existing === $asset) {
-            return $this->changed($asset);
-        }
+        $upload->applyTo($asset);
+        $this->assetRepository->add($asset);
         $this->persistenceManager->persistAll();
-        return AssetCreated::uploaded($this->asset($this->assetResolver->neosProxy($asset)));
+        return AssetCreated::uploaded($this->neosAsset($asset));
     }
 
     #[Operation(
-        path: '/assets/{assetSourceId}/{assetId}/resource',
-        method: 'POST',
+        path: '/assets/{assetSourceId}/{assetId}/file',
+        method: 'PUT',
         summary: 'Replace the file of an asset',
-        description: 'Replaces the file of an asset of neos and keeps the asset: its ID, metadata and usages, as the Neos media browser does. The body is multipart/form-data, not JSON (the document can\'t describe it): resource the new file (required), keepOriginalFilename (true/false, false if left out) to keep the current filename with the new file\'s extension, generateRedirects (true/false, true if left out) to redirect the old file\'s URI to the new one if Neos.RedirectHandler is installed. An image, audio or video can only be replaced by a file of the same kind, an image variant has no file of its own (replace its original image): both 422s, as are assets of other sources. A missing file or a malformed field is a 400.',
-        operationId: 'replaceAssetResource',
+        description: 'Replaces the file of an asset of neos and keeps the asset: its ID, metadata and usages, as the Neos media browser does. The body is multipart/form-data, not JSON (the document can\'t describe it): file the new file (required), keepOriginalFilename (true/false, false if left out) to keep the current filename with the new file\'s extension, generateRedirects (true/false, true if left out) to redirect the old file\'s URI to the new one if Neos.RedirectHandler is installed. An image, audio or video can only be replaced by a file of the same kind (by its name), an image by a file that is one, an image variant has no file of its own (replace its original image): all 422s, as are assets of other sources. A missing file or a malformed field is a 400.',
+        operationId: 'replaceAssetFile',
         security: [
             ApiAuthContextProvider::SCOPES => [ApiScopes::ASSETS_UPDATE],
         ],
     )]
-    public function replaceResource(AssetSourceId $assetSourceId, AssetId $assetId, ServerRequestInterface $request): Asset|NotFound|BadRequest|UnprocessableContent
+    public function replaceFile(AssetSourceId $assetSourceId, AssetId $assetId, ServerRequestInterface $request): Asset|NotFound|BadRequest|UnprocessableContent
     {
-        $form = MultipartForm::of($request);
-        $file = $form->file('resource');
-        if ($file === null) {
-            return BadRequest::because($form->uploadError('resource'));
-        }
-        $keepOriginalFilename = $form->bool('keepOriginalFilename', false);
-        $generateRedirects = $form->bool('generateRedirects', true);
-        if ($keepOriginalFilename === null || $generateRedirects === null) {
-            return BadRequest::because('keepOriginalFilename and generateRedirects must be true or false');
-        }
         $asset = $this->assetResolver->findAssetToChange($assetSourceId, $assetId);
         if (!$asset instanceof Model\Asset) {
             return $asset;
+        }
+        $form = MultipartForm::of($request);
+        $file = $form->file('file');
+        if ($file === null) {
+            return BadRequest::because($form->uploadError('file'));
+        }
+        try {
+            $keepOriginalFilename = $form->bool('keepOriginalFilename', false);
+            $generateRedirects = $form->bool('generateRedirects', true);
+        } catch (\UnexpectedValueException $exception) {
+            return BadRequest::because($exception->getMessage());
         }
         if ($asset instanceof Model\ImageVariant) {
             return UnprocessableContent::because('An image variant has no file of its own, replace the file of its original image (originalAssetId)');
@@ -544,25 +495,30 @@ final readonly class Assets
         if (in_array($currentType, ['image', 'audio', 'video'], true) && MediaTypes::parseMediaType($newMediaType)['type'] !== $currentType) {
             return UnprocessableContent::because(sprintf('An asset of the type %s can only be replaced by another %s file, not by %s', $currentType, $currentType, $newMediaType));
         }
-        $this->assetService->replaceAssetResource($asset, $this->importResource($file), [
+        $resource = $this->importResource($file);
+        $unreadable = $this->unreadableImage($resource);
+        if ($unreadable !== null) {
+            return $unreadable;
+        }
+        $this->assetService->replaceAssetResource($asset, $resource, [
             'keepOriginalFilename' => $keepOriginalFilename,
             'generateRedirects' => $generateRedirects,
         ]);
         $this->persistenceManager->persistAll();
-        return $this->asset($this->assetResolver->neosProxy($asset));
+        return $this->neosAsset($asset);
     }
 
     #[Operation(
         path: '/assets/{assetSourceId}/{assetId}/import',
         method: 'POST',
         summary: 'Import a remote asset',
-        description: 'Imports the asset of a remote asset source into neos, as the Neos media browser does when it is used: its file, and its IPTC title, caption and copyright notice if it has them. The response is the asset in neos (its localAssetId), a 201, or a 200 if it was imported before. The assets of neos are a 422, there is nothing to import.',
+        description: 'Imports the asset of a remote asset source into neos, as the Neos media browser does when it is used: its file, and its IPTC title (cut to 255 characters), caption and copyright notice if it has them. The response is the asset in neos (its localAssetId), a 201, or a 200 if it was imported before. The assets of neos are a 422, there is nothing to import; a remote source that fails to deliver the file a 502.',
         operationId: 'importAsset',
         security: [
             ApiAuthContextProvider::SCOPES => [ApiScopes::ASSETS_CREATE],
         ],
     )]
-    public function import(AssetSourceId $assetSourceId, AssetId $assetId): AssetCreated|Asset|NotFound|UnprocessableContent
+    public function import(AssetSourceId $assetSourceId, AssetId $assetId): AssetCreated|Asset|NotFound|UnprocessableContent|AssetImportFailed
     {
         $proxy = $this->assetResolver->findAsset($assetSourceId, $assetId);
         if ($proxy instanceof NotFound) {
@@ -576,13 +532,20 @@ final readonly class Assets
             $importedAsset = $this->assetSourceService->importAsset($assetSourceId->value, $assetId->value);
         } catch (AssetSourceServiceException $exception) {
             return UnprocessableContent::because($exception->getMessage());
+        } catch (ResourceException|AssetSourceConnectionExceptionInterface|ImageFileException) {
+            // Neos logs the details
+            return AssetImportFailed::because(sprintf('The asset source %s didn\'t deliver the file of the asset %s', $assetSourceId->value, $assetId->value));
         }
-        $this->persistenceManager->persistAll();
         $localAsset = $this->assetRepository->findByIdentifier($importedAsset->getLocalAssetIdentifier());
-        if (!$localAsset instanceof Model\AssetInterface) {
+        if (!$localAsset instanceof Model\Asset) {
             throw new \RuntimeException(sprintf('The imported asset %s wasn\'t found', $importedAsset->getLocalAssetIdentifier()), 1791800002);
         }
-        $asset = $this->asset($this->assetResolver->neosProxy($localAsset));
+        // the IPTC title may be longer than an asset's title can be
+        if (mb_strlen($localAsset->getTitle()) > AssetTitle::MAX_LENGTH) {
+            $localAsset->setTitle(mb_substr($localAsset->getTitle(), 0, AssetTitle::MAX_LENGTH));
+        }
+        $this->persistenceManager->persistAll();
+        $asset = $this->neosAsset($localAsset);
         return $importedBefore ? $asset : AssetCreated::imported($asset);
     }
 
@@ -590,7 +553,7 @@ final readonly class Assets
         path: '/assets/{assetSourceId}/{assetId}/variants',
         method: 'POST',
         summary: 'Create an image variant',
-        description: 'Creates a variant of an image of neos that shows a part of it, crop in pixels of the image, and returns it as an asset of neos: its id is what a node property refers to. Variants are made from the image, not from other variants: for a variant, use its originalAssetId (else a 422). Other assets than images and a crop that isn\'t inside the image are 422s, as are assets of other sources.',
+        description: 'Creates a variant of an image of neos that shows a part of it, crop in pixels of the image, and returns it as an asset of neos: its id is what a node property refers to. A variant of the image with the very crop (and nothing else) is returned instead, a 200, so a client may ask again. Variants are made from the image, not from other variants: for a variant, use its originalAssetId (else a 422). Other assets than images and a crop that isn\'t inside the image are 422s, as are assets of other sources.',
         operationId: 'createAssetVariant',
         security: [
             ApiAuthContextProvider::SCOPES => [ApiScopes::ASSETS_CREATE],
@@ -600,7 +563,7 @@ final readonly class Assets
         AssetSourceId $assetSourceId,
         AssetId $assetId,
         #[RequestBody(description: 'The crop')] AssetVariantCreate $newVariant,
-    ): AssetCreated|NotFound|UnprocessableContent {
+    ): AssetCreated|Asset|NotFound|UnprocessableContent {
         $image = $this->assetResolver->findAssetToChange($assetSourceId, $assetId);
         if (!$image instanceof Model\Asset) {
             return $image;
@@ -615,11 +578,16 @@ final readonly class Assets
         if ($crop->x + $crop->width > $image->getWidth() || $crop->y + $crop->height > $image->getHeight()) {
             return UnprocessableContent::because(sprintf('The crop isn\'t inside the image of %d×%d pixels', $image->getWidth(), $image->getHeight()));
         }
+        foreach ($image->getVariants() as $variant) {
+            if ($variant->getPresetIdentifier() === null && count($variant->getAdjustments()) === 1 && CropRectangle::of($variant) == $crop) {
+                return $this->neosAsset($variant);
+            }
+        }
         $variant = new Model\ImageVariant($image);
         $newVariant->applyTo($variant);
         $this->assetRepository->add($variant);
         $this->persistenceManager->persistAll();
-        return AssetCreated::variant($this->asset($this->assetResolver->neosProxy($variant)));
+        return AssetCreated::variant($this->neosAsset($variant));
     }
 
     /**
@@ -651,6 +619,24 @@ final readonly class Assets
         return $resource;
     }
 
+    /**
+     * A file whose name says image (Flow takes the media type from it) but that can't be read as one would make the
+     * Image throw: the 422, and the imported file is deleted again. Null for a readable image and other files
+     */
+    private function unreadableImage(PersistentResource $resource): ?UnprocessableContent
+    {
+        if (!str_starts_with($resource->getMediaType(), 'image/')) {
+            return null;
+        }
+        try {
+            $this->imageService->getImageSize($resource);
+            return null;
+        } catch (ImageFileException) {
+            $this->resourceManager->deleteResource($resource);
+            return UnprocessableContent::because(sprintf('The file %s isn\'t an image that can be read, though its name says so', $resource->getFilename()));
+        }
+    }
+
     private static function sha1(UploadedFileInterface $file): string
     {
         $stream = $file->getStream();
@@ -663,6 +649,11 @@ final readonly class Assets
         return hash_final($hash);
     }
 
+    private static function inUse(): Conflict
+    {
+        return Conflict::because('The asset is in use, see listAssetUsages');
+    }
+
     /**
      * Saves the changed asset of neos (Neos flushes the content caches of its usages) and returns it
      */
@@ -670,25 +661,16 @@ final readonly class Assets
     {
         $this->assetRepository->update($asset);
         $this->persistenceManager->persistAll();
+        return $this->neosAsset($asset);
+    }
+
+    private function neosAsset(Model\AssetInterface $asset): Asset
+    {
         return $this->asset($this->assetResolver->neosProxy($asset));
     }
 
     private function asset(AssetProxyInterface $proxy): Asset
     {
         return Asset::from($proxy, $this->persistenceManager);
-    }
-
-    /**
-     * @template T of object
-     * @param list<T> $objects
-     * @return list<T> each object once
-     */
-    private static function distinct(array $objects): array
-    {
-        $distinct = [];
-        foreach ($objects as $object) {
-            $distinct[spl_object_id($object)] = $object;
-        }
-        return array_values($distinct);
     }
 }

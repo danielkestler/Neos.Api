@@ -5,16 +5,20 @@ namespace Neos\Api\Endpoint\Me;
 
 use Neos\Api\Endpoint\Me\RequestBody\PasswordChange;
 use Neos\Api\Endpoint\Me\RequestBody\ProfileUpdate;
+use Neos\Api\Endpoint\Me\Schema\AccessTokenGrant;
+use Neos\Api\Endpoint\Me\Schema\ClientIdentifier;
 use Neos\Api\Endpoint\Me\Schema\CurrentAccount;
 use Neos\Api\Endpoint\Me\Schema\Profile;
+use Neos\Api\Endpoint\Me\Schema\ScopeList;
 use Neos\Api\Endpoint\Users\Schema\Account;
 use Neos\Api\Endpoint\Users\Schema\User;
 use Neos\Api\Security\ApiAuthContextProvider;
 use Neos\Api\Security\ApiCaller;
 use Neos\Api\Security\ApiScopes;
+use Neos\Api\Security\OAuthTokens;
+use Neos\Api\Infrastructure\Http\JsonBody;
 use Neos\Api\Shared\Response\NotFound;
 use Neos\Api\Shared\Response\UnprocessableContent;
-use Neos\Api\Shared\Schema\AccessTokenGrant;
 use Neos\Flow\Annotations as Flow;
 use Neos\Flow\Security;
 use Neos\Flow\Security\Cryptography\HashService;
@@ -24,6 +28,7 @@ use Neos\OpenApi\Attributes\AuthContext;
 use Neos\OpenApi\Attributes\Operation;
 use Neos\OpenApi\Attributes\RequestBody;
 use Neos\Party\Domain\Service\PartyService;
+use Psr\Http\Message\ServerRequestInterface;
 
 /**
  * The account of the access token
@@ -47,6 +52,7 @@ final readonly class Me
         private PartyService $partyService,
         private UserService $userService,
         private HashService $hashService,
+        private OAuthTokens $oauthTokens,
         #[Flow\InjectConfiguration(path: 'userInterface.availableLanguages', package: 'Neos.Neos')]
         array $availableLanguages,
         #[Flow\InjectConfiguration(path: 'userInterface.defaultLanguage', package: 'Neos.Neos')]
@@ -72,7 +78,7 @@ final readonly class Me
         return new CurrentAccount(
             Account::from($caller->account),
             $user !== null ? User::from($user) : null,
-            new AccessTokenGrant($caller->clientIdentifier, $caller->scopes),
+            new AccessTokenGrant(ClientIdentifier::fromString($caller->clientIdentifier), ScopeList::fromStrings(...$caller->scopes)),
         );
     }
 
@@ -96,7 +102,7 @@ final readonly class Me
         path: '/me/profile',
         method: 'PATCH',
         summary: 'Change your profile',
-        description: 'Changes the given fields and preferences and leaves the others as they are.',
+        description: 'Changes the given fields and preferences and leaves the others as they are. interfaceLanguage null resets it to Neos.Neos.userInterface.defaultLanguage.',
         operationId: 'updateProfile',
         security: [
             ApiAuthContextProvider::SCOPES => [ApiScopes::ME_UPDATE],
@@ -105,6 +111,7 @@ final readonly class Me
     public function updateProfile(
         #[AuthContext] ApiCaller $caller,
         #[RequestBody(description: 'The fields and preferences to change')] ProfileUpdate $patch,
+        ServerRequestInterface $request,
     ): Profile|NotFound|UnprocessableContent {
         $user = $this->findUser($caller);
         if ($user === null) {
@@ -117,6 +124,13 @@ final readonly class Me
             return UnprocessableContent::because(sprintf('%s is no preference, set interfaceLanguage instead', Profile::INTERFACE_LANGUAGE_PREFERENCE));
         }
         $patch->applyTo($user);
+        // ProfileUpdate can't tell an interfaceLanguage null from one left out
+        if ($patch->interfaceLanguage === null && JsonBody::has($request, 'interfaceLanguage')) {
+            // no preference: Neos uses its default language
+            $preferences = $user->getPreferences()->getPreferences();
+            unset($preferences[Profile::INTERFACE_LANGUAGE_PREFERENCE]);
+            $user->getPreferences()->setPreferences($preferences);
+        }
         $this->userService->updateUser($user);
         return Profile::from($user, $this->defaultLanguage);
     }
@@ -125,7 +139,7 @@ final readonly class Me
         path: '/me/password',
         method: 'PUT',
         summary: 'Change your password',
-        description: 'Sets the password of the Neos user the access token acts as, for all of its accounts that log in with one, and ends its sessions. Access tokens stay valid. 404 for an account without a Neos user.',
+        description: 'Sets the password of the Neos user the access token acts as, for all of its accounts that log in with one, ends its sessions and revokes the OAuth tokens of its accounts (access and refresh tokens, authorization codes) but the access token of this request. 404 for an account without a Neos user.',
         operationId: 'changePassword',
         security: [
             ApiAuthContextProvider::SCOPES => [ApiScopes::ME_PASSWORD],
@@ -143,6 +157,9 @@ final readonly class Me
             return UnprocessableContent::because('The current password is wrong');
         }
         $this->userService->setUserPassword($user, $change->newPassword->value);
+        foreach ($user->getAccounts() as $account) {
+            $this->oauthTokens->revokeAllOf($account, $caller->accessTokenIdentifier);
+        }
         return null;
     }
 

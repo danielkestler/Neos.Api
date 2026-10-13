@@ -8,6 +8,7 @@ use Neos\ContentRepository\Core\Feature\ContentStreamEventStreamName;
 use Neos\ContentRepository\Core\Feature\ContentStreamForking\Event\ContentStreamWasForked;
 use Neos\ContentRepository\Core\SharedModel\Workspace\ContentStreamId;
 use Neos\EventStore\EventStoreInterface;
+use Neos\EventStore\Model\EventEnvelope;
 use Neos\EventStore\Model\EventStream\EventStreamInterface;
 
 /**
@@ -32,19 +33,37 @@ final readonly class ContentStreamEvents implements ContentRepositoryServiceInte
     }
 
     /**
-     * The event the content stream starts with if it was forked from another one (where it branched off), else null
-     * (e.g. live's, created empty). Reads the first event only
+     * The first event of the content stream, null for an empty one. Its sequence number is the lowest of the stream:
+     * events of the workspace's earlier content streams all have lower ones
+     */
+    public function findFirst(ContentStreamId $contentStreamId): EventEnvelope|null
+    {
+        foreach ($this->load($contentStreamId)->limit(1) as $envelope) {
+            return $envelope;
+        }
+        return null;
+    }
+
+    /**
+     * Where the content stream branched off another one if its first event is the fork, else null (e.g. live's,
+     * created empty)
+     */
+    public static function forkOf(EventEnvelope $firstEvent): ContentStreamWasForked|null
+    {
+        // the event store keeps the short class name as the type
+        if ($firstEvent->event->type->value !== 'ContentStreamWasForked') {
+            return null;
+        }
+        return ContentStreamWasForked::fromArray(json_decode($firstEvent->event->data->value, true, flags: JSON_THROW_ON_ERROR));
+    }
+
+    /**
+     * The event the content stream starts with if it was forked from another one, else null. Reads the first event
+     * only
      */
     public function findFork(ContentStreamId $contentStreamId): ContentStreamWasForked|null
     {
-        foreach ($this->load($contentStreamId)->limit(1) as $envelope) {
-            // the event store keeps the short class name as the type
-            if ($envelope->event->type->value !== 'ContentStreamWasForked') {
-                return null;
-            }
-            $payload = json_decode($envelope->event->data->value, true, flags: JSON_THROW_ON_ERROR);
-            return ContentStreamWasForked::fromArray($payload);
-        }
-        return null;
+        $firstEvent = $this->findFirst($contentStreamId);
+        return $firstEvent !== null ? self::forkOf($firstEvent) : null;
     }
 }

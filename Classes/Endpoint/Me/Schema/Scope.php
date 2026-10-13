@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-namespace Neos\Api\Shared\Schema;
+namespace Neos\Api\Endpoint\Me\Schema;
 
 use Neos\JsonSchema\ProvidesSchema;
 use Neos\JsonSchema\Schema;

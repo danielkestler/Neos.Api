@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Neos\Api\Endpoint\NodeTypes\Schema;
 
+use Neos\Api\Infrastructure\ContentRepository\NodeTypeUi;
 use Neos\Api\Infrastructure\I18n\Labels;
 use Neos\ContentRepository\Core;
 use Neos\JsonSchema\AnyOfSchema;
@@ -15,7 +16,6 @@ use Neos\JsonSchema\ProvidesSchema;
 use Neos\JsonSchema\Schema;
 use Neos\JsonSchema\StringSchema;
 use Neos\JsonSchema\Support\ObjectProperties;
-use Neos\Neos\Service\IconNameMappingService;
 
 /**
  * A node type with what trees and creation UIs need and, if requested, its properties, references, whole
@@ -58,11 +58,16 @@ final readonly class NodeType implements ProvidesSchema
     ) {
     }
 
+    /**
+     * @param list<Core\NodeType\NodeType> $childNodeTypeCandidates childNodeTypeCandidates() of the node type manager,
+     *     computed once for all node types; only needed with the allowed child node types or tethered child nodes
+     */
     public static function from(
         Core\NodeType\NodeType $nodeType,
         Labels $labels,
-        IconNameMappingService $iconNameMappingService,
+        NodeTypeUi $nodeTypeUi,
         Core\NodeType\NodeTypeManager $nodeTypeManager,
+        array $childNodeTypeCandidates,
         bool $withProperties,
         bool $withReferences,
         bool $withConfiguration,
@@ -71,11 +76,11 @@ final readonly class NodeType implements ProvidesSchema
     ): self {
         $group = $nodeType->getConfiguration('ui.group');
         $position = $nodeType->getConfiguration('ui.position');
-        $configuration = self::translateLabels($nodeType->getFullConfiguration(), $labels);
+        $configuration = $withConfiguration ? self::translateLabels($nodeType->getFullConfiguration(), $labels) : null;
         return new self(
             NodeTypeName::fromString($nodeType->name->value),
-            $labels->label($nodeType->getLabel()) ?? $nodeType->name->value,
-            self::icon($nodeType->getConfiguration('ui.icon'), $iconNameMappingService),
+            $nodeTypeUi->label($nodeType, $labels),
+            $nodeTypeUi->icon($nodeType),
             $nodeType->isAbstract(),
             $nodeType->isFinal(),
             new NodeTypeNameList(...array_map(
@@ -87,9 +92,9 @@ final readonly class NodeType implements ProvidesSchema
             $withProperties ? self::properties($nodeType, $labels) : null,
             $withReferences ? self::references($nodeType, $labels) : null,
             // an object where it is empty: the serializer can't tell an empty map from an empty list
-            $withConfiguration ? ($configuration === [] ? new \stdClass() : $configuration) : null,
-            $withAllowedChildNodeTypes ? self::allowedChildNodeTypes($nodeType, $nodeTypeManager) : null,
-            $withTetheredChildNodes ? self::tetheredChildNodes($nodeType, $nodeTypeManager) : null,
+            $configuration === [] ? new \stdClass() : $configuration,
+            $withAllowedChildNodeTypes ? self::allowedChildNodeTypes($nodeType, $childNodeTypeCandidates) : null,
+            $withTetheredChildNodes ? self::tetheredChildNodes($nodeType, $nodeTypeManager, $childNodeTypeCandidates) : null,
         );
     }
 
@@ -153,28 +158,12 @@ final readonly class NodeType implements ProvidesSchema
         return new NodeTypeReferenceList(...$references);
     }
 
-    private static function allowedChildNodeTypes(Core\NodeType\NodeType $nodeType, Core\NodeType\NodeTypeManager $nodeTypeManager): NodeTypeNameList
-    {
-        return NodeTypeNameList::from(...array_filter(
-            self::childNodeTypeCandidates($nodeTypeManager),
-            static fn (Core\NodeType\NodeType $candidate) => $nodeType->allowsChildNodeType($candidate),
-        ));
-    }
-
-    private static function tetheredChildNodes(Core\NodeType\NodeType $nodeType, Core\NodeType\NodeTypeManager $nodeTypeManager): NodeTypeTetheredChildNodeList
-    {
-        $candidates = self::childNodeTypeCandidates($nodeTypeManager);
-        return new NodeTypeTetheredChildNodeList(...$nodeType->tetheredNodeTypeDefinitions->map(
-            static fn (Core\NodeType\TetheredNodeTypeDefinition $definition) => NodeTypeTetheredChildNode::from($nodeType, $definition, $nodeTypeManager, $candidates),
-        ));
-    }
-
     /**
      * The node types a node can be created with: neither abstract nor root, sorted by name
      *
      * @return list<Core\NodeType\NodeType>
      */
-    private static function childNodeTypeCandidates(Core\NodeType\NodeTypeManager $nodeTypeManager): array
+    public static function childNodeTypeCandidates(Core\NodeType\NodeTypeManager $nodeTypeManager): array
     {
         $candidates = array_filter(
             $nodeTypeManager->getNodeTypes(false),
@@ -182,6 +171,27 @@ final readonly class NodeType implements ProvidesSchema
         );
         ksort($candidates);
         return array_values($candidates);
+    }
+
+    /**
+     * @param list<Core\NodeType\NodeType> $candidates
+     */
+    private static function allowedChildNodeTypes(Core\NodeType\NodeType $nodeType, array $candidates): NodeTypeNameList
+    {
+        return NodeTypeNameList::from(...array_filter(
+            $candidates,
+            static fn (Core\NodeType\NodeType $candidate) => $nodeType->allowsChildNodeType($candidate),
+        ));
+    }
+
+    /**
+     * @param list<Core\NodeType\NodeType> $candidates
+     */
+    private static function tetheredChildNodes(Core\NodeType\NodeType $nodeType, Core\NodeType\NodeTypeManager $nodeTypeManager, array $candidates): NodeTypeTetheredChildNodeList
+    {
+        return new NodeTypeTetheredChildNodeList(...$nodeType->tetheredNodeTypeDefinitions->map(
+            static fn (Core\NodeType\TetheredNodeTypeDefinition $definition) => NodeTypeTetheredChildNode::from($nodeType, $definition, $nodeTypeManager, $candidates),
+        ));
     }
 
     /**
@@ -198,21 +208,5 @@ final readonly class NodeType implements ProvidesSchema
             }
         }
         return $configuration;
-    }
-
-    /**
-     * Node types configure anything from bare legacy names ("file") over "icon-file" to full classes ("fas fa-file").
-     * IconNameMappingService only maps "icon-" names, so bare ones get the prefix first. Full classes (with a space)
-     * are kept
-     */
-    private static function icon(mixed $icon, IconNameMappingService $iconNameMappingService): string|null
-    {
-        if (!is_string($icon) || $icon === '') {
-            return null;
-        }
-        if (str_contains($icon, ' ')) {
-            return $icon;
-        }
-        return $iconNameMappingService->convert(str_starts_with($icon, 'icon-') ? $icon : 'icon-' . $icon);
     }
 }

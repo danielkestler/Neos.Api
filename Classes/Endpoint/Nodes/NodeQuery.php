@@ -49,8 +49,8 @@ final readonly class NodeQuery
     }
 
     /**
-     * The query, a 400 if both filterByHierarchy and filterByReference are given or the sort or filterByProperty is
-     * invalid. The node types are checked by find(), they are the ones of the entry point's content repository
+     * The query, a 400 if both filterByHierarchy and filterByReference are given or the sort, filterByProperty or the
+     * syntax of filterByNodeType is invalid. The node types are checked by find(), they are the ones of the entry point's content repository
      */
     public static function create(
         ?HierarchyFilter $hierarchy,
@@ -74,10 +74,16 @@ final readonly class NodeQuery
         } catch (\InvalidArgumentException $exception) {
             return BadRequest::because(sprintf('filterByProperty is invalid: %s', $exception->getMessage()));
         }
+        try {
+            $nodeTypeCriteria = $nodeTypes !== null ? Filter\NodeType\NodeTypeCriteria::fromFilterString($nodeTypes->value) : null;
+        } catch (\InvalidArgumentException $exception) {
+            // e.g. an empty node type name in "!" or "Neos.Neos:Document,"
+            return BadRequest::because(sprintf('filterByNodeType is invalid: %s', $exception->getMessage()));
+        }
         return new self(
             $hierarchy,
             $reference,
-            $nodeTypes !== null ? Filter\NodeType\NodeTypeCriteria::fromFilterString($nodeTypes->value) : null,
+            $nodeTypeCriteria,
             $search !== null ? Filter\SearchTerm\SearchTerm::fulltext($search->value) : null,
             $propertyValue,
             self::ordering($sort),
@@ -110,7 +116,7 @@ final readonly class NodeQuery
         if ($unknownNodeTypes !== []) {
             return BadRequest::because(sprintf('There is no node type %s', implode(', ', $unknownNodeTypes)));
         }
-        if ($this->hierarchy?->type === HierarchyFilterType::PARENT) {
+        if ($this->hierarchy?->type === HierarchyFilterType::CHILD_OF) {
             $childNodesFilter = Filter\FindChildNodesFilter::create($this->nodeTypes, $this->searchTerm, $this->propertyValue, $this->ordering, $this->pagination);
             return [
                 iterator_to_array($subgraph->findChildNodes($entryPoint->aggregateId, $childNodesFilter), false),
@@ -134,7 +140,7 @@ final readonly class NodeQuery
                 $subgraph->countBackReferences($entryPoint->aggregateId, Filter\CountBackReferencesFilter::fromFindBackReferencesFilter($backReferencesFilter)),
             ];
         }
-        // filterByHierarchy with type ancestor, or the default site node without an entry point
+        // filterByHierarchy with type descendantOf, or the default site node without an entry point
         $descendantNodesFilter = Filter\FindDescendantNodesFilter::create($this->nodeTypes, $this->searchTerm, $this->propertyValue, $this->ordering, $this->pagination);
         return [
             iterator_to_array($subgraph->findDescendantNodes($entryPoint->aggregateId, $descendantNodesFilter), false),

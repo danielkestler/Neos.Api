@@ -16,7 +16,6 @@ use Neos\Api\Shared\Response\NotFound;
 use Neos\Flow\Persistence\PersistenceManagerInterface;
 use Neos\Media\Domain\Model;
 use Neos\Media\Domain\Repository\AssetCollectionRepository;
-use Neos\Media\Domain\Repository\AssetRepository;
 use Neos\Neos\Domain\Repository\SiteRepository;
 use Neos\OpenApi\Attributes\Operation;
 use Neos\OpenApi\Attributes\RequestBody;
@@ -28,7 +27,7 @@ final readonly class AssetCollections
 {
     public function __construct(
         private AssetCollectionRepository $assetCollectionRepository,
-        private AssetRepository $assetRepository,
+        private AssetCollectionFinder $assetCollectionFinder,
         private SiteRepository $siteRepository,
         private PersistenceManagerInterface $persistenceManager,
     ) {
@@ -38,7 +37,7 @@ final readonly class AssetCollections
         path: '/assetcollections',
         method: 'GET',
         summary: 'List the asset collections',
-        description: 'All collections of the media library, sorted by title. The collections are the account\'s, as Neos\' media privileges allow.',
+        description: 'All collections of the media library, sorted by title, each with its tags. The collections, and the assets assetCount counts, are the account\'s, as Neos\' media privileges allow.',
         operationId: 'listAssetCollections',
         security: [
             ApiAuthContextProvider::SCOPES => [ApiScopes::ASSETCOLLECTIONS_READ],
@@ -46,10 +45,9 @@ final readonly class AssetCollections
     )]
     public function list(): AssetCollectionListing
     {
-        return AssetCollectionListing::of(new AssetCollectionList(...array_map(
-            $this->assetCollection(...),
-            $this->assetCollectionRepository->findAll()->toArray(),
-        )));
+        return AssetCollectionListing::of(new AssetCollectionList(
+            ...$this->assetCollectionFinder->read($this->assetCollectionRepository->findAll()),
+        ));
     }
 
     #[Operation(
@@ -81,8 +79,8 @@ final readonly class AssetCollections
     )]
     public function get(AssetCollectionId $assetCollectionId): AssetCollection|NotFound
     {
-        $assetCollection = $this->findAssetCollection($assetCollectionId);
-        return $assetCollection !== null ? $this->assetCollection($assetCollection) : self::notFound($assetCollectionId);
+        $assetCollection = $this->assetCollectionFinder->find($assetCollectionId);
+        return $assetCollection !== null ? $this->assetCollection($assetCollection) : NotFound::because(AssetCollectionFinder::noCollection($assetCollectionId));
     }
 
     #[Operation(
@@ -99,9 +97,9 @@ final readonly class AssetCollections
         AssetCollectionId $assetCollectionId,
         #[RequestBody(description: 'The properties to change')] AssetCollectionUpdate $patch,
     ): AssetCollection|NotFound {
-        $assetCollection = $this->findAssetCollection($assetCollectionId);
+        $assetCollection = $this->assetCollectionFinder->find($assetCollectionId);
         if ($assetCollection === null) {
-            return self::notFound($assetCollectionId);
+            return NotFound::because(AssetCollectionFinder::noCollection($assetCollectionId));
         }
         $patch->applyTo($assetCollection);
         $this->assetCollectionRepository->update($assetCollection);
@@ -121,9 +119,9 @@ final readonly class AssetCollections
     )]
     public function delete(AssetCollectionId $assetCollectionId): NotFound|null
     {
-        $assetCollection = $this->findAssetCollection($assetCollectionId);
+        $assetCollection = $this->assetCollectionFinder->find($assetCollectionId);
         if ($assetCollection === null) {
-            return self::notFound($assetCollectionId);
+            return NotFound::because(AssetCollectionFinder::noCollection($assetCollectionId));
         }
         // the site's reference would keep it from being deleted
         foreach ($this->siteRepository->findByAssetCollection($assetCollection) as $site) {
@@ -135,19 +133,8 @@ final readonly class AssetCollections
         return null;
     }
 
-    private function findAssetCollection(AssetCollectionId $assetCollectionId): ?Model\AssetCollection
-    {
-        $assetCollection = $this->assetCollectionRepository->findByIdentifier($assetCollectionId->value);
-        return $assetCollection instanceof Model\AssetCollection ? $assetCollection : null;
-    }
-
     private function assetCollection(Model\AssetCollection $assetCollection): AssetCollection
     {
-        return AssetCollection::from($assetCollection, $this->persistenceManager, $this->assetRepository);
-    }
-
-    private static function notFound(AssetCollectionId $assetCollectionId): NotFound
-    {
-        return NotFound::because(sprintf('There is no asset collection with the ID %s', $assetCollectionId->value));
+        return $this->assetCollectionFinder->read([$assetCollection])[0];
     }
 }

@@ -92,7 +92,10 @@ class PrivilegeScopesTest extends FunctionalTestCase
         $scopes = [];
         foreach ($document['paths'] as $path => $operations) {
             foreach ($operations as $method => $operation) {
-                foreach ($operation['security'] ?? [] as $alternative) {
+                // an operation without a security requirement would be public
+                self::assertNotEmpty($operation['security'] ?? [], $method . ' ' . $path . ' has no security requirement');
+                foreach ($operation['security'] as $alternative) {
+                    self::assertNotEmpty($alternative['oauth2'] ?? [], $method . ' ' . $path . ' has an alternative without scopes');
                     foreach ($alternative['oauth2'] ?? [] as $scope) {
                         $scopes[] = $scope;
                         self::assertNotEmpty($privilegeScopes->privilegeTargetOf($scope), $method . ' ' . $path);

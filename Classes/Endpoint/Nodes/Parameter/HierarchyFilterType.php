@@ -8,18 +8,18 @@ use Neos\JsonSchema\Schema;
 use Neos\JsonSchema\StringSchema;
 
 /**
- * What the node of a HierarchyFilter is to the nodes listed
+ * What the nodes listed are to the node of a HierarchyFilter
  */
 enum HierarchyFilterType: string implements ProvidesSchema
 {
-    case PARENT = 'parent';
-    case ANCESTOR = 'ancestor';
+    case CHILD_OF = 'childOf';
+    case DESCENDANT_OF = 'descendantOf';
 
     public static function schema(): Schema
     {
         static $schema = null;
         return $schema ??= StringSchema::create(
-            description: 'parent for the direct child nodes, ancestor for all nodes below it',
+            description: 'childOf for its direct child nodes, descendantOf for all nodes below it',
             enum: array_map(static fn (self $case) => $case->value, self::cases()),
         );
     }

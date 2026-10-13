@@ -10,6 +10,8 @@ use Neos\Schematic\Schematic;
 
 final readonly class SiteNodeName implements ProvidesSchema
 {
+    public const int MAX_LENGTH = 250;
+
     private function __construct(
         public string $value,
     ) {
@@ -27,7 +29,7 @@ final readonly class SiteNodeName implements ProvidesSchema
             description: 'The node name of a site\'s node in the content repository, which identifies the site',
             examples: ['neosdemo'],
             minLength: 1,
-            maxLength: 250,
+            maxLength: self::MAX_LENGTH,
             pattern: '^[a-z0-9-]+$',
         );
     }

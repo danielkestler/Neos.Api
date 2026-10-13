@@ -6,7 +6,6 @@ namespace Neos\Api\Infrastructure\Http;
 use GuzzleHttp\Psr7\Response;
 use Neos\Api\Security\InsufficientScope;
 use Neos\Api\Security\MissingPrivileges;
-use Neos\Flow\Annotations as Flow;
 use Neos\OAuth\Security\IssuerNotConfigured;
 use Neos\OAuth\Security\ProtectedResources;
 use Neos\OpenApi\Problem\ProblemDocument;
@@ -32,8 +31,10 @@ final class OAuthChallengeMiddleware implements MiddlewareInterface
      */
     public const string RESOURCE = 'Neos.Api';
 
-    #[Flow\Inject]
-    protected ProtectedResources $protectedResources;
+    public function __construct(
+        private readonly ProtectedResources $protectedResources,
+    ) {
+    }
 
     public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
     {
@@ -58,9 +59,7 @@ final class OAuthChallengeMiddleware implements MiddlewareInterface
     private static function forbidden(string $title, string $detail): ResponseInterface
     {
         $problem = ProblemDocument::create(HttpStatusCode::fromInteger(403), $title, $detail);
-        return new Response(403, [
-            'Content-Type' => ProblemDocument::CONTENT_TYPE,
-            'Cache-Control' => 'no-store',
-        ], json_encode($problem, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+        // ApiCacheHeadersMiddleware adds the cache headers
+        return new Response(403, ['Content-Type' => ProblemDocument::CONTENT_TYPE], json_encode($problem, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
     }
 }

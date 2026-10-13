@@ -10,7 +10,7 @@ use Neos\JsonSchema\Schema;
 /**
  * Changes to the properties of a node, the properties by name: the ones to set, what is left out stays as it is
  *
- * Only describes and validates the body, as DataSourceArguments the query: Schematic builds an object from its named
+ * Only describes and validates the body, as Shared\Parameter\Arguments the query: Schematic builds an object from its named
  * constructor parameters, which a free-form map has none of, so the operation reads the values from the body itself.
  * There is no applyTo(): a node is changed by a command, which PropertyValues builds the values for
  */
