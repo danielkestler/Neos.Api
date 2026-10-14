@@ -66,6 +66,60 @@ Neos:
     # the scopes are the ApiPrivilege targets of Policy.yaml
     scopeProviders:
       "Neos.Api": 'Neos\Api\Security\PrivilegeScopes'
+    # the consent page's groups, the icons are Font Awesome Free (CC BY 4.0)
+    scopeGroups:
+      "me":
+        label: 'Your profile'
+        icon: 'resource://Neos.Api/Public/Icons/Scopes/user.svg'
+        position: 10
+      "users":
+        label: 'Users'
+        icon: 'resource://Neos.Api/Public/Icons/Scopes/users.svg'
+        position: 20
+      "sites":
+        label: 'Sites'
+        icon: 'resource://Neos.Api/Public/Icons/Scopes/globe.svg'
+        position: 30
+      "contentrepositories":
+        label: 'Content repositories'
+        icon: 'resource://Neos.Api/Public/Icons/Scopes/database.svg'
+        position: 40
+      "nodetypes":
+        label: 'Node types'
+        icon: 'resource://Neos.Api/Public/Icons/Scopes/cubes.svg'
+        position: 50
+      "nodes":
+        label: 'Content'
+        icon: 'resource://Neos.Api/Public/Icons/Scopes/file-lines.svg'
+        position: 60
+      "workspaces":
+        label: 'Workspaces'
+        icon: 'resource://Neos.Api/Public/Icons/Scopes/layer-group.svg'
+        position: 70
+      "views":
+        label: 'Rendering'
+        icon: 'resource://Neos.Api/Public/Icons/Scopes/eye.svg'
+        position: 80
+      "datasources":
+        label: 'Data sources'
+        icon: 'resource://Neos.Api/Public/Icons/Scopes/plug.svg'
+        position: 90
+      "assets":
+        label: 'Media'
+        icon: 'resource://Neos.Api/Public/Icons/Scopes/image.svg'
+        position: 100
+      "assettags":
+        label: 'Media tags'
+        icon: 'resource://Neos.Api/Public/Icons/Scopes/tags.svg'
+        position: 110
+      "assetcollections":
+        label: 'Media collections'
+        icon: 'resource://Neos.Api/Public/Icons/Scopes/folder-open.svg'
+        position: 120
+      "caches":
+        label: 'Caches'
+        icon: 'resource://Neos.Api/Public/Icons/Scopes/bolt.svg'
+        position: 130
     protectedResources:
       # the key is Neos\Api\Infrastructure\Http\OAuthChallengeMiddleware::RESOURCE
       "Neos.Api":
